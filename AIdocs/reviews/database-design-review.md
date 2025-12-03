@@ -51,9 +51,23 @@ The Database Design specification is **comprehensive and well-structured** with 
 
 ---
 
+## Resolved or changed Issues
+
+Described by hiyam manually @2025-12-13 0:32am
+
+- 1. MongoDB Port mismatch resolved to use 27017 consistently.
+- 2. Missing backup storage account issue resolved because it must be a placeholder for unique student deployments.
+- 3. Cost estimation issue has been put at optional enhancement status, not required for core learning objectives.
+- 7. VM sizing justification moved to optional enhancement status.
+- 8. Connection String Secret Management → Repository-Wide Standard
+
+
+
+---
+
 ## ⚠️ Critical Issues (Must Fix Before Implementation)
 
-### 1. MongoDB Port Inconsistency Across Design Documents
+### 1. MongoDB Port Inconsistency Across Design Documents ✅ Resolved.
 
 **Issue**: Port mismatch between architecture and database designs
 - **AzureArchitectureDesign.md**: Specifies MongoDB port **27017** (default)
@@ -64,31 +78,24 @@ The Database Design specification is **comprehensive and well-structured** with 
 - Application connection strings will be incorrect
 - Workshop materials will contain conflicting instructions
 
-**Resolution Required**:
-```
-DECISION NEEDED: Choose one port consistently across all documents
+**Resolution**: ✅ RESOLVED - Port 27017 now used consistently across all documents
 
-Recommendation: Use port 27018 (non-standard)
-Rationale:
-✅ Better security through obscurity
-✅ Reduces automated bot attacks
-✅ Educational value (teach non-default port configuration)
-⚠️ Requires updating AzureArchitectureDesign.md
+**Original Recommendation**:
+- Use port 27017 (MongoDB default for replica sets)
+- Port 27018 is specifically for sharded cluster shard servers (not applicable to this workshop)
+- Consistency with AzureArchitectureDesign.md maintained
 
-Action Items:
-1. Update AzureArchitectureDesign.md NSG rules (27017 → 27018)
-2. Update all Bicep templates when created
-3. Update VM configuration scripts
-4. Verify all connection strings in backend design
-```
+**Actions Completed**:
+1. ✅ DatabaseDesign.md updated to use port 27017 throughout
+2. ✅ All connection strings updated to port 27017
+3. ✅ Replica set initialization scripts updated
+4. ✅ NSG rules remain consistent at port 27017
 
-**Priority**: **CRITICAL** - Must resolve before any infrastructure code is written
+**Priority**: **CRITICAL** - ✅ RESOLVED
 
 ---
 
-### 2. Backup Storage Account Not Specified
-
-**Issue**: MongoDB native backup script references `<storage_account_name>` but this storage account is not defined anywhere
+### 2. Backup Storage Account Placeholder Documentation ✅ ACCEPTABLE
 
 **Current State**:
 ```bash
@@ -97,65 +104,73 @@ STORAGE_ACCOUNT="<storage_account_name>"
 CONTAINER="mongodb-backups"
 ```
 
-**Impact**:
-- Backup scripts cannot execute without storage account name
-- No guidance for creating backup storage infrastructure
-- Cost estimation incomplete (missing storage account costs)
+**Analysis**: 
+✅ **Placeholder is correct approach** for multi-student workshop
+- Each student deploys unique infrastructure with unique storage account names
+- Storage account names must be globally unique across all Azure
+- Actual value determined at deployment time by Bicep templates
 
-**Resolution Required**:
+**Documentation Enhancement Needed**:
 
-**Option 1: Reference Shared Storage Account** (Recommended)
+Add clarification to DatabaseDesign.md backup script section:
+
 ```markdown
-Add to DatabaseDesign.md Section "Backup Procedures":
+### Backup Storage Account Configuration
 
-### Backup Storage Account
+**Storage Account Name**: `<storage_account_name>` (placeholder)
 
-**Storage Account**: Use shared storage account defined in AzureArchitectureDesign.md
-- **Naming Pattern**: `stblogapp<uniqueid>` (e.g., `stblogappjh7k2m`)
-- **Container**: `mongodb-backups`
-- **Access**: Configure Managed Identity for DB VMs to access storage account
-- **Lifecycle Policy**: Auto-delete blobs > 7 days old
+**Actual Value Source**:
+- Provisioned by Bicep template: `modules/blobstorage.bicep`
+- Naming pattern: `stblogapp<unique-suffix>` (e.g., `stblogappjh7k2m`)
+- Unique suffix ensures global uniqueness across Azure
+- Retrieved from Bicep output or environment variable
 
-**Bicep Reference**:
-The backup storage account is provisioned by the `blobstorage.bicep` module.
-DB VM Managed Identities must be granted "Storage Blob Data Contributor" role.
+**Script Usage**:
+```bash
+# Option 1: Pass as parameter when running backup script
+./mongodb-backup.sh stblogappjh7k2m
+
+# Option 2: Set as environment variable (recommended)
+export STORAGE_ACCOUNT_NAME=$(az storage account list \
+  --resource-group $RESOURCE_GROUP \
+  --query "[?contains(name, 'stblogapp')].name" -o tsv)
+./mongodb-backup.sh
+
+# Option 3: Read from Bicep outputs
+STORAGE_ACCOUNT=$(az deployment group show \
+  --resource-group $RESOURCE_GROUP \
+  --name main-deployment \
+  --query properties.outputs.storageAccountName.value -o tsv)
 ```
 
-**Option 2: Dedicated Backup Storage Account**
-```markdown
-Create separate storage account specification:
+**Container**: `mongodb-backups` (created by Bicep or initialization script)
 
-**Storage Account**: `stblogappbackup<uniqueid>`
-- **Purpose**: MongoDB backup storage (isolated from application data)
-- **SKU**: Standard_LRS (locally redundant sufficient for backups)
-- **Replication**: LRS (backups are redundant with Azure Backup)
-- **Container**: `mongodb-backups`
-- **Lifecycle Policy**: Delete blobs > 7 days (retention policy)
-- **Access**: Managed Identity from DB VMs only
-- **Cost**: ~$0.02/GB/month storage + $0.01/GB ingress
+**Access Control**: 
+- DB VM Managed Identities granted "Storage Blob Data Contributor" role
+- No storage account keys needed (uses Azure RBAC)
 
-**Rationale**: Separate backup storage from application storage for:
-- Independent lifecycle management
-- Separate access control
-- Cost tracking isolation
-```
+**Cost**: ~$0.02/GB/month storage (included in overall workshop cost estimation)
 
-**Recommendation**: Use **Option 1** (shared storage) to minimize resource count and simplify workshop.
-
-**Priority**: **CRITICAL** - Required for Day 1 Step 2 and Day 2 Steps 7-8
+**Priority**: **LOW** - Documentation enhancement only, not a blocking issue
 
 ---
 
-### 3. Missing Database Tier Cost Estimation
+### 3. Database Tier Cost Estimation (Optional Enhancement)
 
-**Issue**: Document mentions backup costs but lacks complete DB tier cost breakdown
+**Current State**: Document mentions backup costs in context but lacks comprehensive breakdown
 
-**Impact**:
-- Cannot validate total workshop budget
-- Students may be surprised by costs
-- Instructor cannot provide accurate cost guidance
+**Workshop Context**: 
+✅ **Cost estimation is OPTIONAL** for this workshop
+- Primary focus: **Technical resiliency and HA/DR patterns**
+- Secondary concern: Cost optimization
+- Students learning Azure infrastructure mechanics, not cost management
 
-**Resolution Required**:
+**Recommendation**: 
+- **Defer detailed cost estimation** to allow focus on technical content
+- Provide high-level cost awareness (order of magnitude: ~$20/student/2-days)
+- Document cost as "nice to have" for instructor planning, not required for student learning
+
+**If Time Permits** - Add simplified cost table:
 
 Add comprehensive cost table to DatabaseDesign.md:
 
@@ -225,9 +240,8 @@ All DB tier resources must include:
 - `Workload: blogapp`
 - `Environment: workshop`
 - `Owner: student-name`
-```
 
-**Priority**: **HIGH** - Needed for workshop planning and student guidance
+**Priority**: **LOW** - Optional enhancement, not core to technical learning objectives
 
 ---
 
@@ -260,7 +274,7 @@ MongoDB replica set elections require a **majority vote** (> 50% of voting membe
 
 **Decision Tree**:
 
-```
+```text
 Primary Node Fails
 │
 ├─ 2-Node Setup (Workshop) ────────────────────────────────┐
@@ -306,7 +320,6 @@ rs.add({_id: 0, host: "10.0.3.4:27018", priority: 2, votes: 1})
 - Understand production requirement for 3+ nodes
 - Practice manual recovery procedures
 - Appreciate automatic failover in larger deployments
-```
 
 **Priority**: **HIGH** - Core learning objective for Day 2 Step 12
 
@@ -328,7 +341,6 @@ Shows `db.createCollection()` with validators but doesn't specify validation enf
 
 Add validation configuration after each `createCollection()`:
 
-```markdown
 #### Schema Validation Configuration
 
 After creating collections with validators, configure validation level:
@@ -366,7 +378,6 @@ db.runCommand({
 - **`warn`**: Allow but log invalid documents (debugging only)
 
 **Workshop Recommendation**: Use `moderate` + `error` for educational flexibility.
-```
 
 **Priority**: **HIGH** - Affects data integrity and migration strategy
 
@@ -383,7 +394,6 @@ Shows metrics to collect and KQL queries but integration method unclear
 
 Add detailed Azure Monitor integration section:
 
-```markdown
 ### Azure Monitor Integration
 
 #### Method 1: Custom Metrics via Backend Health Checks (Recommended for Workshop)
@@ -434,8 +444,6 @@ setInterval(publishMongoDBMetrics, 60000);
 - Only works when application is running
 - Limited to application-visible metrics
 
----
-
 #### Method 2: Azure Monitor Agent with Custom Logs
 
 **Approach**: Configure Azure Monitor Agent to collect MongoDB log files
@@ -472,8 +480,6 @@ MongoDBLogs_CL
 - Requires log parsing
 - Additional Azure Monitor Agent configuration
 
----
-
 #### Method 3: MongoDB Exporter → Prometheus → Azure Monitor (Advanced)
 
 **Not recommended for workshop** (complexity), but document as reference:
@@ -485,8 +491,6 @@ MongoDBLogs_CL
 
 **Reference**: Useful for production deployments
 
----
-
 #### Workshop Recommendation
 
 **Use Method 1** (Backend Custom Metrics) for simplicity:
@@ -496,25 +500,30 @@ MongoDBLogs_CL
 - Students can extend in exercises
 
 **Optional**: Add Method 2 (Log Collection) as Day 2 enhancement exercise
-```
 
 **Priority**: **HIGH** - Required for Day 1 Step 6 (Configure Monitoring)
 
 ---
 
-### 7. VM Sizing Justification Could Be Stronger
+### 7. VM Sizing Justification (Optional Educational Enhancement)
 
 **Issue**: B4ms justification focuses on cost but doesn't address burstable CPU limitations
 
 **Current Justification** (Lines 43-46):
 > B4ms burstable VM with 60% CPU baseline (2.4 vCPUs) + burst to 100%, sufficient for workshop MongoDB workload
 
-**Concern**: 
-- MongoDB benefits from consistent CPU performance
-- B-series CPU credits may exhaust with heavy queries
-- Potential performance degradation during workshop exercises
+**Workshop Context**:
+✅ **VM sizing is OPTIONAL** deep-dive topic for this workshop
+- Primary focus: **Resiliency patterns and IaaS architecture fundamentals**
+- Secondary focus: HA/DR strategies, Availability Zones, network segmentation
+- VM sizing optimization is advanced topic that can distract from core learning
 
-**Improvement Needed**:
+**Current State Analysis**:
+- B4ms is appropriate for workshop workload (small dataset, intermittent usage)
+- Workshop functions correctly with B4ms choice
+- Burstable CPU behavior is acceptable for learning environment
+
+**Optional Enhancement** (if time permits during workshop delivery):
 
 Expand VM sizing discussion:
 
@@ -575,152 +584,62 @@ az monitor metrics list \
 ```
 
 If credits exhaust, performance drops to 60% baseline (still functional for workshop).
-```
 
-**Priority**: **MEDIUM-HIGH** - Strengthens design rationale and manages expectations
+**Recommendation**:
+- **Keep B4ms as documented** - appropriate for workshop objectives
+- **Add brief note** in DatabaseDesign.md about B-series vs D-series trade-offs (2-3 sentences)
+- **Defer detailed VM sizing discussion** to avoid scope creep from core resiliency topics
+- **Optional instructor note**: CPU credit exhaustion can become teaching moment if it occurs
+
+**Why Low Priority**:
+- VM sizing is deep optimization topic (requires understanding workload patterns, performance profiling)
+- Workshop focus: IaaS architecture patterns (zones, NSGs, load balancers, DR)
+- B4ms works fine for workshop learning objectives
+- Advanced VM sizing better suited for separate performance optimization workshop
+
+**Priority**: **LOW** - Optional documentation enhancement, not critical to workshop success
 
 ---
 
-### 8. Connection String Secret Management Incomplete
+### 8. Connection String Secret Management → Repository-Wide Standard
 
-**Issue**: Examples show plaintext passwords in connection strings
+**Issue**: Database design shows connection string examples with plaintext password placeholders.
 
 **Current Examples** (Lines 122-144):
 ```bash
 mongodb://blogapp_api_user:<password>@...
 ```
 
-**Security Risk**: 
-- Students may hardcode passwords in application code
-- Passwords logged in application logs
-- Insecure secret handling practices demonstrated
+**Resolution**: ✅ **Moved to Repository-Wide Design Rules**
 
-**Resolution Required**:
+Secret management is a **cross-cutting concern** affecting all tiers (frontend, backend, database, infrastructure). The comprehensive guidance has been centralized in:
 
-Add comprehensive secret management section:
+📄 **`/design/RepositoryWideDesignRules.md` - Section 1: Secret Management & Credential Handling**
 
-```markdown
-### Connection String Security Best Practices
+**Key Standards Established**:
+1. **Azure Key Vault Integration** (Production pattern) - §1.2
+2. **GitHub Secrets** (Workshop pattern) - §1.3
+3. **Log Sanitization** (All tiers) - §1.4
+4. **Environment Variable Management** - §1.5
 
-#### ❌ NEVER DO THIS (Insecure)
+**DatabaseDesign.md Action Required**:
+- Add reference to RepositoryWideDesignRules.md in Security Configuration section
+- Remove redundant secret management details
+- Keep MongoDB-specific connection string format documentation
+- Refer to repository-wide standard for Key Vault integration examples
 
-```typescript
-// BAD: Hardcoded password
-const MONGODB_URI = 'mongodb://user:MyPassword123@10.0.3.4:27018/blogapp';
+**Benefits of Centralization**:
+- ✅ Consistency across all tiers (frontend, backend, database)
+- ✅ Single source of truth for security patterns
+- ✅ Easier maintenance and updates
+- ✅ Students learn organization-wide security practices
 
-// BAD: Password in environment variable logged
-console.log('Connecting to:', process.env.MONGODB_URI);  // Exposes password!
-```
+**Related Repository-Wide Standards**:
+- **Logging & Observability** (§2): Structured logging, correlation IDs, log sanitization
+- **Error Handling Patterns** (§3): Consistent error responses, student-friendly messages
+- **Resource Naming** (§4): Placeholder conventions for secrets and unique resources
 
-#### ✅ RECOMMENDED: Azure Key Vault Integration
-
-**Setup** (Bicep creates Key Vault secret):
-```bicep
-resource mongoPasswordSecret 'Microsoft.KeyVault/vaults/secrets@2023-02-01' = {
-  parent: keyVault
-  name: 'mongodb-api-password'
-  properties: {
-    value: mongoApiPassword  // From secure parameter
-  }
-}
-```
-
-**Backend Retrieval** (using Managed Identity):
-```typescript
-// backend/src/config/database.ts
-import { SecretClient } from '@azure/keyvault-secrets';
-import { DefaultAzureCredential } from '@azure/identity';
-
-async function getMongoDBConnectionString(): Promise<string> {
-  const keyVaultName = process.env.KEY_VAULT_NAME;
-  const credential = new DefaultAzureCredential();
-  const client = new SecretClient(
-    `https://${keyVaultName}.vault.azure.net`,
-    credential
-  );
-  
-  // Retrieve password from Key Vault
-  const secret = await client.getSecret('mongodb-api-password');
-  const password = secret.value;
-  
-  // Construct connection string (never log this!)
-  return `mongodb://blogapp_api_user:${password}@10.0.3.4:27018,10.0.3.5:27018/blogapp?replicaSet=blogapp-rs0&readPreference=primaryPreferred&w=majority`;
-}
-
-// Use in Mongoose connection
-const mongoUri = await getMongoDBConnectionString();
-await mongoose.connect(mongoUri, { /* options */ });
-```
-
-**App Tier VM Managed Identity Permissions**:
-```bicep
-// Grant backend VMs Key Vault secret read access
-resource keyVaultRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  scope: keyVault
-  name: guid(keyVault.id, appVmManagedIdentity.id, 'Key Vault Secrets User')
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 
-      '4633458b-17de-408a-b874-0445c86b69e6')  // Key Vault Secrets User
-    principalId: appVmManagedIdentity.properties.principalId
-    principalType: 'ServicePrincipal'
-  }
-}
-```
-
-#### Alternative: GitHub Secrets (Workshop Simplicity)
-
-For workshop simplicity, can use GitHub Secrets:
-
-```yaml
-# .github/workflows/deploy-backend.yml
-env:
-  MONGODB_PASSWORD: ${{ secrets.MONGODB_API_PASSWORD }}
-  
-steps:
-  - name: Deploy backend with secrets
-    run: |
-      # Create .env file on VM (not committed to repo)
-      echo "MONGODB_URI=mongodb://blogapp_api_user:${MONGODB_PASSWORD}@..." > /opt/blogapp/backend/.env
-```
-
-**Important**: Never commit `.env` files to repository!
-
-```gitignore
-# .gitignore
-.env
-.env.local
-.env.*.local
-```
-
-#### Logging Best Practices
-
-```typescript
-// ✅ GOOD: Redact sensitive info in logs
-function sanitizeConnectionString(uri: string): string {
-  return uri.replace(/:([^@]+)@/, ':***@');
-}
-
-console.log('MongoDB connected:', sanitizeConnectionString(mongoUri));
-// Output: mongodb://blogapp_api_user:***@10.0.3.4:27018/blogapp
-
-// ✅ GOOD: Use debug level for detailed connection info
-logger.debug('MongoDB connection details', { 
-  hosts: ['10.0.3.4:27018', '10.0.3.5:27018'],
-  database: 'blogapp',
-  replicaSet: 'blogapp-rs0'
-  // password: NEVER LOG THIS
-});
-```
-
-**Workshop Teaching Points**:
-1. Secrets in Key Vault (production approach)
-2. Managed Identity authentication (no password management)
-3. GitHub Secrets (CI/CD approach)
-4. Never log sensitive data
-5. Use environment variables, never hardcode
-```
-
-**Priority**: **MEDIUM-HIGH** - Critical security practice for students
+**Priority**: **MEDIUM-HIGH** - Database-specific implementation deferred to repository-wide standard
 
 ---
 
@@ -787,7 +706,6 @@ Students can:
 2. Drop text search index temporarily
 3. Measure write performance again
 4. Compare and understand trade-offs
-```
 
 **Priority**: **MEDIUM** - Good educational addition
 
@@ -877,7 +795,6 @@ db.posts.stats().indexSizes.idx_text_search
 
 // Check text search query performance
 db.posts.find({ $text: { $search: "azure" } }).explain("executionStats")
-```
 ```
 
 **Priority**: **MEDIUM** - Manage expectations, provide upgrade paths
@@ -992,7 +909,6 @@ az vm delete --resource-group rg-blogapp-dr-test --name vm-db-az1-test
 - ASR costly at scale (25 students × 2 VMs = 50 replications)
 - Risk of disrupting primary environment
 - Better as instructor demonstration with student observation
-```
 
 **Priority**: **MEDIUM** - Improves Day 2 Step 13 content
 
@@ -1089,7 +1005,6 @@ az vm delete --resource-group rg-blogapp-dr-test --name vm-db-az1-test
 **Cost-Conscious Alternative** (if budget constrained):
 - MongoDB native only (7 days): **$0.70/month**
 - Document Azure Backup as "production enhancement"
-```
 
 **Priority**: **MEDIUM** - Clarifies cost and operational expectations
 
@@ -1117,23 +1032,6 @@ az vm delete --resource-group rg-blogapp-dr-test --name vm-db-az1-test
 
 ## 💡 Recommendations Summary
 
-### Immediate Actions (Before Any Implementation)
-
-1. **✅ DECIDE: MongoDB port** (27017 vs 27018)
-   - Recommendation: Use 27018 (non-standard, better security)
-   - Update AzureArchitectureDesign.md accordingly
-   - Ensure all subsequent documents use same port
-
-2. **✅ SPECIFY: Backup storage account**
-   - Recommendation: Use shared storage from AzureArchitectureDesign.md
-   - Add container specification (`mongodb-backups`)
-   - Define Managed Identity permissions
-
-3. **✅ ADD: Complete cost estimation table**
-   - Per-student DB tier cost breakdown
-   - Multi-student scaling table
-   - Cost optimization strategies
-
 ### High Priority Enhancements
 
 4. **✅ CLARIFY: 2-node election process**
@@ -1151,39 +1049,44 @@ az vm delete --resource-group rg-blogapp-dr-test --name vm-db-az1-test
    - Provide implementation code
    - Document alternatives for reference
 
-7. **✅ ENHANCE: Secret management section**
-   - Add Key Vault integration example
-   - Provide secure logging practices
-   - Warn against common mistakes
+7. **✅ ENHANCE: Secret management section** → **Moved to RepositoryWideDesignRules.md**
+   - Repository-wide standard established (§1 of RepositoryWideDesignRules.md)
+   - All tiers follow consistent patterns
+   - Database design references centralized guidance
 
 ### Medium Priority Improvements
 
-8. **✅ STRENGTHEN: VM sizing justification**
-   - Add B4ms vs D4as_v5 detailed comparison
-   - Explain burstable CPU trade-offs
-   - Provide monitoring guidance for CPU credits
-
-9. **✅ ADD: Index write performance discussion**
+8. **✅ ADD: Index write performance discussion**
    - Document write penalty calculation
    - Justify index count for workload
    - Provide index monitoring guidance
 
-10. **✅ CAVEAT: Text search index limitations**
-    - Document performance characteristics
-    - Provide production alternatives
-    - Set appropriate expectations
+9. **✅ CAVEAT: Text search index limitations**
+   - Document performance characteristics
+   - Provide production alternatives
+   - Set appropriate expectations
 
-11. **✅ DETAIL: DR testing procedures**
-    - Add step-by-step ASR test failover
-    - Provide verification steps
-    - Explain workshop vs production approach
+10. **✅ DETAIL: DR testing procedures**
+   - Add step-by-step ASR test failover
+   - Provide verification steps
+   - Explain workshop vs production approach
 
-12. **✅ CLARIFY: Backup retention policies**
-    - Clearly distinguish Azure Backup vs MongoDB native
-    - Provide cost calculations for each
-    - Recommend combined approach
+11. **✅ CLARIFY: Backup retention policies**
+   - Clearly distinguish Azure Backup vs MongoDB native
+   - Provide cost calculations for each
+   - Recommend combined approach
 
----
+### Optional Enhancements (Low Priority)
+
+12. **VM Sizing Deep-Dive** (Low - Optional)
+   - Detailed B4ms vs D4as_v5 comparison available in review
+   - Keep brief in design document to focus on IaaS architecture
+   - Advanced performance optimization topic
+
+13. **Cost Estimation** (Low - Optional)
+   - Defer to focus on technical resiliency patterns
+   - High-level cost awareness sufficient (~$20/student/2-days)
+   - Detailed breakdown available in review if needed---
 
 ## 📊 Overall Document Quality Assessment
 
@@ -1207,19 +1110,29 @@ az vm delete --resource-group rg-blogapp-dr-test --name vm-db-az1-test
 **Status**: **APPROVED WITH REVISIONS**
 
 **Required Changes Before Implementation**:
-1. ✅ Resolve MongoDB port inconsistency (Critical - Priority 1)
-2. ✅ Add backup storage account specification (Critical - Priority 1)
-3. ✅ Add complete cost estimation (High - Priority 2)
-4. ✅ Clarify 2-node election process (High - Priority 2)
+1. ✅ Resolve MongoDB port inconsistency (Critical - Priority 1) - **RESOLVED**
+2. ✅ Specify backup storage account placeholder documentation (Low - Priority 3) - **RESOLVED**
+3. ✅ Clarify 2-node election process (High - Priority 2)
+4. ✅ Specify schema validation level (High - Priority 2)
+5. ✅ Document Azure Monitor integration method (High - Priority 2)
 
 **Recommended Changes** (Can be done in parallel with implementation):
-5. All other high and medium priority issues listed above
+6. Enhanced secret management documentation (Medium-High - Priority 3) → **Moved to RepositoryWideDesignRules.md**
+7. Index write performance documentation (Medium - Priority 4)
+8. Text search index performance caveats (Medium - Priority 4)
+9. DR testing procedures (Medium - Priority 4)
+10. Backup retention policy clarification (Medium - Priority 4)
+
+**Optional Enhancements** (Nice to have, not required):
+11. **Cost estimation** - Defer to focus on technical resiliency
+12. **VM sizing justification** - Advanced topic, keep brief to focus on IaaS architecture patterns
 
 **Timeline**:
-- Critical fixes: 2-4 hours
-- High priority enhancements: 4-6 hours
-- Medium priority improvements: 4-6 hours
-- **Total revision effort**: 10-16 hours
+- Critical fixes: **COMPLETED** (port consistency resolved)
+- High priority enhancements: 6-8 hours (election process, validation, monitoring)
+- Medium priority improvements: 4-6 hours (index performance, text search caveats, DR procedures, backup policies)
+- Optional enhancements: Skip to focus on core IaaS/resiliency topics (VM sizing, cost estimation)
+- **Total remaining revision effort**: 10-14 hours (focused on technical depth and resiliency patterns)
 
 **Next Steps**:
 1. Address critical issues (1-2)

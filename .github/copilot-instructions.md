@@ -155,12 +155,35 @@ This is a **teaching repository** - code should be instructive:
 
 ## Security Guidelines
 
+**CRITICAL**: All code must comply with `/design/RepositoryWideDesignRules.md` - read this document before implementing security-related features.
+
+### Secret Management (MANDATORY)
+
+**NEVER**:
+- ❌ Hardcode credentials or API keys in source code
+- ❌ Commit `.env` files or secrets to version control
+- ❌ Log passwords, connection strings, or tokens
+- ❌ Store secrets in localStorage (frontend)
+- ❌ Pass secrets via URL parameters
+
+**ALWAYS**:
+- ✅ Use Azure Key Vault for production secrets
+- ✅ Use Managed Identities for Azure resource authentication
+- ✅ Use GitHub Secrets for CI/CD workflows
+- ✅ Sanitize logs to redact sensitive information (see RepositoryWideDesignRules.md §1.4)
+- ✅ Use sessionStorage for tokens (frontend, never localStorage)
+- ✅ Add `.env*` and `*.key` files to `.gitignore`
+
+**Implementation**:
+- See `/design/RepositoryWideDesignRules.md` Section 1 for complete patterns
+- Backend: Use `@azure/keyvault-secrets` with `DefaultAzureCredential`
+- Frontend: Store auth tokens in sessionStorage, clear on logout
+- Bicep: Use `@secure()` parameters and Azure RBAC for Key Vault access
+
 ### Authentication & Authorization
-- Never hardcode credentials or secrets
-- Use environment variables for sensitive configuration
-- Implement proper JWT validation
-- Use Managed Identities for Azure resource access
-- Store tokens in sessionStorage (not localStorage)
+- Implement proper JWT validation (backend)
+- Use Microsoft Entra ID OAuth2.0 with MSAL (frontend)
+- Use Managed Identities for Azure resource access (no passwords)
 - Clear tokens completely on logout
 
 ### Input Validation
@@ -174,6 +197,13 @@ This is a **teaching repository** - code should be instructive:
 - X-Frame-Options: SAMEORIGIN
 - X-Content-Type-Options: nosniff
 - X-XSS-Protection: 1; mode=block
+
+### Logging Security
+**CRITICAL**: Never log sensitive information
+- Sanitize connection strings: `mongodb://user:***@host` (not real password)
+- Redact tokens: `Bearer ***` (not actual token)
+- Sanitize user emails in logs: `u***@example.com`
+- Use structured logging with correlation IDs (see RepositoryWideDesignRules.md §2)
 
 ## Git Commit Standards
 
@@ -283,13 +313,22 @@ Ask the user for clarification when:
 ## Reference Documentation
 
 Always reference and follow:
+- `/design/RepositoryWideDesignRules.md` - **CRITICAL**: Cross-cutting security, logging, error handling, and operational patterns
 - `/design/AzureArchitectureDesign.md` - Infrastructure specifications
 - `/design/FrontendApplicationDesign.md` - Frontend specifications
+- `/design/DatabaseDesign.md` - Database specifications
+- `/design/BackendApplicationDesign.md` - Backend specifications
 - `WorkshopPlan.md` - Workshop goals and requirements
 - Agent-specific instructions in `/.github/agents/`
 - [Google TypeScript Style Guide](https://google.github.io/styleguide/tsguide.html)
 - [Azure Well-Architected Framework](https://learn.microsoft.com/azure/well-architected/)
 - [Azure naming conventions](https://learn.microsoft.com/azure/cloud-adoption-framework/ready/azure-best-practices/resource-naming)
+
+**Priority Order**:
+1. **RepositoryWideDesignRules.md** - Mandatory for all tiers (security, logging, error handling)
+2. Tier-specific design documents (architecture, frontend, backend, database)
+3. Workshop plan and educational requirements
+4. External style guides and best practices
 
 ---
 

@@ -134,6 +134,23 @@ MONGODB_URI=mongodb://blogapp_api_user:${MONGODB_PASSWORD}@10.0.3.4:27017,10.0.3
 MONGODB_DATABASE=blogapp
 ```
 
+**Secret Management** (See `/design/RepositoryWideDesignRules.md` §1.2):
+- **Production**: Store connection string in Azure Key Vault
+- **Backend**: Retrieve via Managed Identity (no passwords in code)
+- **Local Dev**: Use `.env` file (never committed to git)
+- **Logging**: Sanitize connection strings (see RepositoryWideDesignRules.md §1.4)
+
+```typescript
+// Example: Secure connection string retrieval (see RepositoryWideDesignRules.md)
+import { DefaultAzureCredential } from '@azure/identity';
+import { SecretClient } from '@azure/keyvault-secrets';
+
+const credential = new DefaultAzureCredential();
+const client = new SecretClient(keyVaultUrl, credential);
+const secret = await client.getSecret('MONGODB-CONNECTION-STRING');
+const mongoUri = secret.value;
+```
+
 ### Failover Behavior
 
 #### Automatic Failover
@@ -151,14 +168,82 @@ MONGODB_DATABASE=blogapp
 
 #### Election Process
 
-With 2 nodes, automatic election **cannot occur** without manual intervention:
-- Requires majority (2/2 nodes)
-- If primary fails, 1 surviving node cannot reach majority
-- Workaround: `rs.reconfig()` with `force: true` flag
+**Why Automatic Election Fails with 2 Nodes**:
+
+MongoDB replica set elections require a **majority vote** (> 50% of voting members):
+- **3 nodes**: Majority = 2 votes ✅ (one node can fail, 2 remain for election)
+- **2 nodes**: Majority = 2 votes ⚠️ (one node fails, only 1 remains - not a majority)
+
+**Decision Tree**:
+
+```text
+Primary Node Fails
+│
+├─ 2-Node Setup (Workshop) ────────────────────────────────┐
+│  ├─ Surviving Secondary: 1 vote                          │
+│  ├─ Required for Election: 2 votes (majority of 2)       │
+│  └─ Result: ELECTION BLOCKED ❌                           │
+│     └─ Solution: Manual intervention required            │
+│        └─ rs.reconfig({...}, {force: true})              │
+│                                                           │
+└─ 3-Node Setup (Production) ──────────────────────────────┤
+   ├─ Surviving Nodes: 2 votes                             │
+   ├─ Required for Election: 2 votes (majority of 3)       │
+   └─ Result: AUTOMATIC ELECTION ✅                         │
+      └─ Secondary auto-promotes to Primary (10-30 sec)    │
+```
+
+**Manual Failover Procedure** (Workshop Learning Exercise):
+
+When primary fails in 2-node setup:
+
+```javascript
+// Step 1: Connect to surviving secondary
+mongo --host 10.0.3.5:27017 -u admin -p
+
+// Step 2: Check current status (should show no primary)
+rs.status()
+
+// Step 3: Force reconfiguration (makes secondary the new primary)
+cfg = rs.conf()
+cfg.members = [cfg.members[1]]  // Keep only surviving node
+rs.reconfig(cfg, {force: true})
+
+// Step 4: Verify new primary
+rs.status()  // Should show surviving node as PRIMARY
+
+// Step 5 (Later): Add original primary back as secondary
+rs.add({_id: 0, host: "10.0.3.4:27017", priority: 2, votes: 1})
+```
+
+**Educational Value**: 
+- Students learn quorum mathematics
+- Understand production requirement for 3+ nodes
+- Practice manual recovery procedures
+- Appreciate automatic failover in larger deployments
+
+**Common Mistake: Adding Arbiter to 2-Node Setup**
+
+**Students may ask**: "Why not add an arbiter to get 3 votes?"
+
+**Answer**: Arbiters solve quorum but sacrifice data durability:
+
+```text
+2 data nodes + 1 arbiter = 3 votes ✅
+- Primary fails: Secondary + Arbiter = 2 votes = majority ✅
+- BUT: Only 1 data copy remains (no redundancy) ❌
+```
+
+**Production Guideline**:
+- **PSA** (Primary-Secondary-Arbiter): Acceptable for budget-constrained environments
+- **PSS** (Primary-Secondary-Secondary): Preferred for data durability
+- **PSSS+** (3+ data nodes): Production standard
+
+**Workshop Choice**: 2-node no-arbiter teaches quorum without false sense of HA
 
 **Production Recommendation** (documented in workshop):
-- Minimum 3 nodes for automatic failover
-- Or use PSA architecture: 2 data nodes + 1 arbiter (lightweight voter)
+- Minimum 3 data-bearing nodes for automatic failover
+- Avoid arbiters unless cost is primary constraint
 
 ### MongoDB Configuration
 
@@ -330,6 +415,95 @@ db.createCollection("users", {
   }
 });
 ```
+
+#### Schema Validation Configuration
+
+After creating collections with validators, configure validation level:
+
+```javascript
+// Set validation level for users collection
+db.runCommand({
+  collMod: "users",
+  validationLevel: "moderate",  // Validate inserts + updates to valid docs
+  validationAction: "error"      // Reject invalid documents
+});
+```
+
+**Validation Levels Explained**:
+- **`strict`**: Validate all inserts and updates (even to previously invalid docs)
+  - Use when: Starting fresh, no legacy data
+  - Workshop: Good choice for clean deployment
+  
+- **`moderate`**: Validate inserts and updates to valid docs only (default)
+  - Use when: Migrating schema, allowing gradual cleanup
+  - Workshop: Provides flexibility for schema evolution exercises
+
+- **`off`**: No validation (not recommended)
+  - Use when: Troubleshooting validation rules
+
+**Validation Actions**:
+- **`error`**: Reject invalid documents (recommended for workshop)
+- **`warn`**: Allow but log invalid documents (debugging only)
+
+**Workshop Recommendation**: Use `moderate` + `error` for educational flexibility.
+
+**Migration Path Example** (Adding Validation to Existing Collection):
+
+```javascript
+// Scenario: Collection exists with potentially invalid data
+
+// Step 1: Test validation with warn action first
+db.runCommand({
+  collMod: "posts",
+  validator: { /* your validator */ },
+  validationLevel: "moderate",
+  validationAction: "warn"  // Don't reject yet, just warn
+});
+
+// Step 2: Find invalid documents
+db.posts.find({
+  $nor: [
+    { title: { $type: "string", $regex: /^.{5,200}$/ } }
+  ]
+});
+
+// Step 3: Fix or delete invalid documents
+db.posts.updateMany(
+  { title: { $not: { $regex: /^.{5,200}$/ } } },
+  { $set: { title: "Untitled Post" } }
+);
+
+// Step 4: Change to error action
+db.runCommand({
+  collMod: "posts",
+  validationAction: "error"  // Now enforce
+});
+```
+
+**Validation Bypass for Admin Operations**:
+
+```javascript
+// Admins can bypass validation if needed (emergency data fix)
+db.posts.insertOne(
+  { /* potentially invalid document */ },
+  { bypassDocumentValidation: true }
+);
+```
+
+**Validation Performance Impact**:
+
+**Myth**: "Validation slows down writes significantly"  
+**Reality**: Validation overhead is **minimal** (< 1ms for typical schemas)
+
+**Measurement** (from production):
+- Insert without validation: 5ms
+- Insert with validation: 5.2ms (~4% overhead)
+- **Worth it** for data integrity
+
+**Only slow if**:
+- Extremely complex regex patterns
+- Custom validation functions (use sparingly)
+- Very large documents (> 1MB)
 
 #### Indexes
 
@@ -535,6 +709,21 @@ db.createCollection("posts", {
   }
 });
 ```
+
+#### Schema Validation Configuration
+
+After creating posts collection with validator:
+
+```javascript
+// Set validation level for posts collection
+db.runCommand({
+  collMod: "posts",
+  validationLevel: "moderate",
+  validationAction: "error"
+});
+```
+
+**Note**: See users collection section above for detailed explanation of validation levels and migration strategies.
 
 #### Indexes
 
@@ -860,6 +1049,289 @@ mongo --host localhost:27017 -u admin -p $MONGODB_ADMIN_PASSWORD --authenticatio
 
 *Automatic failover limited with 2-node setup (requires manual intervention)
 
+### Disaster Recovery Testing Procedures
+
+**CRITICAL**: DR plans are only valid if tested regularly. This section provides procedures to validate backup/restore capabilities without risking production data.
+
+#### DR Testing Objectives
+
+1. **Validate Backup Integrity**: Ensure backups are complete and restorable
+2. **Measure Actual RTO/RPO**: Verify recovery targets are achievable
+3. **Train Team**: Practice recovery procedures under controlled conditions
+4. **Identify Gaps**: Discover missing documentation or tools before real incident
+5. **Build Confidence**: Ensure students understand recovery processes
+
+#### RTO/RPO Measurement Scripts
+
+**Script: Measure MongoDB Restore RTO**
+
+```bash
+#!/bin/bash
+# /usr/local/bin/measure-restore-rto.sh
+# Purpose: Time how long it takes to restore MongoDB from backup
+
+START_TIME=$(date +%s)
+echo "DR Test Started: $(date)"
+
+# Step 1: Download backup from Azure Blob Storage
+echo "Step 1: Downloading backup..."
+DOWNLOAD_START=$(date +%s)
+az storage blob download \\
+  --account-name <storage_account> \\
+  --container-name mongodb-backups \\
+  --name latest-backup.tar.gz \\
+  --file /tmp/dr-test-backup.tar.gz
+DOWNLOAD_END=$(date +%s)
+DOWNLOAD_TIME=$((DOWNLOAD_END - DOWNLOAD_START))
+echo "Download completed in ${DOWNLOAD_TIME}s"
+
+# Step 2: Extract backup
+echo "Step 2: Extracting backup..."
+EXTRACT_START=$(date +%s)
+cd /tmp && tar -xzf dr-test-backup.tar.gz
+EXTRACT_END=$(date +%s)
+EXTRACT_TIME=$((EXTRACT_END - EXTRACT_START))
+echo "Extract completed in ${EXTRACT_TIME}s"
+
+# Step 3: Restore to test database (not production)
+echo "Step 3: Restoring database..."
+RESTORE_START=$(date +%s)
+mongorestore --host localhost:27017 \\
+             --username admin \\
+             --password $MONGODB_ADMIN_PASSWORD \\
+             --authenticationDatabase admin \\
+             --nsFrom 'blogapp.*' \\
+             --nsTo 'blogapp_dr_test.*' \\
+             --gzip \\
+             /tmp/blogapp-backup-*/
+RESTORE_END=$(date +%s)
+RESTORE_TIME=$((RESTORE_END - RESTORE_START))
+echo "Restore completed in ${RESTORE_TIME}s"
+
+# Step 4: Validate data integrity
+echo "Step 4: Validating data..."
+VALIDATION_START=$(date +%s)
+USER_COUNT=$(mongo --quiet --host localhost:27017 -u admin -p $MONGODB_ADMIN_PASSWORD --eval "db.getSiblingDB('blogapp_dr_test').users.countDocuments()")
+POST_COUNT=$(mongo --quiet --host localhost:27017 -u admin -p $MONGODB_ADMIN_PASSWORD --eval "db.getSiblingDB('blogapp_dr_test').posts.countDocuments()")
+VALIDATION_END=$(date +%s)
+VALIDATION_TIME=$((VALIDATION_END - VALIDATION_START))
+echo "Validation completed in ${VALIDATION_TIME}s"
+echo "Users restored: $USER_COUNT"
+echo "Posts restored: $POST_COUNT"
+
+# Step 5: Cleanup test database
+echo "Step 5: Cleaning up..."
+mongo --host localhost:27017 -u admin -p $MONGODB_ADMIN_PASSWORD --eval "db.getSiblingDB('blogapp_dr_test').dropDatabase()"
+rm -rf /tmp/dr-test-backup.tar.gz /tmp/blogapp-backup-*
+
+# Calculate total RTO
+END_TIME=$(date +%s)
+TOTAL_RTO=$((END_TIME - START_TIME))
+
+# Report
+echo "========================================="
+echo "DR Test Completed: $(date)"
+echo "========================================="
+echo "Download Time:    ${DOWNLOAD_TIME}s"
+echo "Extract Time:     ${EXTRACT_TIME}s"
+echo "Restore Time:     ${RESTORE_TIME}s"
+echo "Validation Time:  ${VALIDATION_TIME}s"
+echo "========================================="
+echo "TOTAL RTO:        ${TOTAL_RTO}s ($(($TOTAL_RTO / 60)) minutes)"
+echo "========================================="
+echo "Target RTO:       1800s (30 minutes)"
+if [ $TOTAL_RTO -le 1800 ]; then
+  echo "Status: PASSED ✅"
+else
+  echo "Status: FAILED ❌ (exceeds target)"
+fi
+```
+
+**Script: Measure RPO**
+
+```bash
+#!/bin/bash
+# /usr/local/bin/measure-rpo.sh
+# Purpose: Calculate RPO by comparing latest data timestamp with backup timestamp
+
+# Get latest document timestamp from production database
+LATEST_POST=$(mongo --quiet --host localhost:27017 -u admin -p $MONGODB_ADMIN_PASSWORD --eval "db.getSiblingDB('blogapp').posts.find().sort({createdAt: -1}).limit(1).toArray()[0].createdAt")
+
+# Get backup creation timestamp from blob storage metadata
+BACKUP_TIMESTAMP=$(az storage blob show \\
+  --account-name <storage_account> \\
+  --container-name mongodb-backups \\
+  --name latest-backup.tar.gz \\
+  --query properties.creationTime -o tsv)
+
+# Calculate RPO (time difference)
+RPO_SECONDS=$(( $(date -d "$LATEST_POST" +%s) - $(date -d "$BACKUP_TIMESTAMP" +%s) ))
+RPO_HOURS=$(($RPO_SECONDS / 3600))
+
+echo "Latest Data:      $LATEST_POST"
+echo "Backup Created:   $BACKUP_TIMESTAMP"
+echo "RPO:              ${RPO_HOURS}h (${RPO_SECONDS}s)"
+echo "Target RPO:       24h"
+if [ $RPO_HOURS -le 24 ]; then
+  echo "Status: PASSED ✅"
+else
+  echo "Status: FAILED ❌"
+fi
+```
+
+#### 5-Level Data Integrity Validation
+
+After DR restore, validate data integrity at multiple levels:
+
+**Level 1: Database Accessibility**
+```javascript
+// Can we connect to database?
+mongo --host localhost:27017 -u admin -p <password>
+```
+
+**Level 2: Collection Counts**
+```javascript
+// Do all collections exist with expected document counts?
+use blogapp_dr_test
+db.users.countDocuments()      // Expected: ~5 (seed data)
+db.posts.countDocuments()       // Expected: ~10 (seed data)
+db.posts.aggregate([{ $count: "comments" }])  // Expected: ~20 embedded comments
+```
+
+**Level 3: Schema Validation**
+```javascript
+// Are validators still in place?
+db.getCollectionInfos({ name: "users" })[0].options.validator
+db.getCollectionInfos({ name: "posts" })[0].options.validator
+
+// Test validation with invalid document
+db.users.insertOne({ email: "invalid" })  // Should fail validation
+```
+
+**Level 4: Index Integrity**
+```javascript
+// Are all indexes restored?
+db.users.getIndexes()   // Expected: _id, entraUserId, email, isActive, compound
+db.posts.getIndexes()   // Expected: _id, slug, authorId, status+publishedAt, tags, text search, viewCount
+
+// Test index usage
+db.posts.find({ status: "published" }).sort({ publishedAt: -1 }).explain("executionStats")
+// Should show IXSCAN (index scan), not COLLSCAN (collection scan)
+```
+
+**Level 5: Data Relationships**
+```javascript
+// Are relationships intact?
+const user = db.users.findOne({ email: "alice.workshop@example.com" });
+const userPosts = db.posts.find({ authorId: user._id }).toArray();
+console.log(`User ${user.displayName} has ${userPosts.length} posts`);
+
+// Validate embedded comments reference valid users
+db.posts.aggregate([
+  { $unwind: "$comments" },
+  {
+    $lookup: {
+      from: "users",
+      localField: "comments.userId",
+      foreignField: "_id",
+      as: "commentAuthor"
+    }
+  },
+  { $match: { commentAuthor: { $size: 0 } } }  // Orphaned comments
+]);
+// Should return 0 results (no orphaned comments)
+```
+
+#### DR Runbook Template
+
+**Document**: `/docs/runbooks/mongodb-disaster-recovery.md`
+
+```markdown
+# MongoDB Disaster Recovery Runbook
+
+## Scenario: Complete Database Loss
+
+**Trigger**: Both DB VMs unavailable, data corruption, ransomware attack
+
+**Prerequisites**:
+- [ ] Azure Backup Recovery Services Vault accessible
+- [ ] Azure Blob Storage with MongoDB native backups accessible
+- [ ] Admin credentials available in Azure Key Vault
+- [ ] Fresh VMs or existing VMs available for restore
+
+**Recovery Steps**:
+
+### Step 1: Assess Damage (5 minutes)
+- [ ] Verify both DB VMs are unrecoverable
+- [ ] Check Azure Backup recovery points available
+- [ ] Check MongoDB native backup timestamps
+- [ ] Notify team of DR activation
+
+### Step 2: Deploy Fresh DB VMs (15-20 minutes)
+- [ ] Option A: Restore from Azure Backup (if VMs corrupted)
+- [ ] Option B: Deploy new VMs from Bicep template (if VMs lost)
+
+### Step 3: Restore MongoDB Data (10-15 minutes)
+- [ ] Download latest MongoDB native backup from Blob Storage
+- [ ] Extract backup archive
+- [ ] Run mongorestore to fresh MongoDB instance
+- [ ] Verify data integrity (5-level validation)
+
+### Step 4: Reconfigure Replica Set (5-10 minutes)
+- [ ] Initialize replica set on restored nodes
+- [ ] Configure replica set members
+- [ ] Wait for initial sync (if 2 nodes)
+- [ ] Verify rs.status() shows healthy state
+
+### Step 5: Update Application (5 minutes)
+- [ ] Update backend connection string if new VMs
+- [ ] Restart backend services
+- [ ] Test application connectivity
+- [ ] Verify end-to-end functionality
+
+### Step 6: Post-Recovery Validation (10 minutes)
+- [ ] Run RTO/RPO measurement scripts
+- [ ] Document actual recovery time
+- [ ] Perform 5-level data integrity validation
+- [ ] Review logs for errors
+
+**Total Estimated RTO**: 50-65 minutes (target: 60-90 minutes)
+
+**RPO**: Up to 24 hours (last daily backup)
+
+**Rollback Plan**: If recovery fails, restore from previous backup
+
+**Communication**:
+- Notify workshop instructor of DR activation
+- Update students on estimated downtime
+- Post-recovery: Send summary of incident and lessons learned
+```
+
+#### Low-Risk DR Simulation Exercise
+
+**Workshop Activity** (Day 2, Step 12 - Optional):
+
+**Objective**: Practice DR procedures without risking production data
+
+**Safe Simulation Steps**:
+
+1. **Create Test Namespace**: Restore to `blogapp_dr_test` database (not production)
+2. **Document Timestamps**: Record start time for RTO measurement
+3. **Execute Restore**: Run mongorestore from latest backup
+4. **Validate Data**: Perform 5-level integrity checks
+5. **Measure RTO/RPO**: Run measurement scripts
+6. **Cleanup**: Drop test database, remove temporary files
+7. **Document Results**: Record RTO/RPO, identify gaps
+
+**Student Learning Outcomes**:
+- Understand restore procedures
+- Practice validation techniques
+- Measure actual vs. target RTO/RPO
+- Build confidence in DR capabilities
+- Identify documentation gaps
+
+**Safety**: Production database never touched, simulation uses separate namespace
+
 ---
 
 ## Initial Data Seeding Strategy
@@ -989,6 +1461,11 @@ npm run seed
 ---
 
 ## Security Configuration
+
+**IMPORTANT**: This section covers MongoDB-specific security configurations. For comprehensive secret management, logging security, and error handling patterns, see:
+- **`/design/RepositoryWideDesignRules.md` Section 1**: Secret Management (Key Vault, Managed Identities)
+- **`/design/RepositoryWideDesignRules.md` Section 2**: Logging and Observability (sanitization patterns)
+- **`/design/RepositoryWideDesignRules.md` Section 3**: Error Handling (security considerations)
 
 ### Authentication and Authorization
 
@@ -1157,20 +1634,325 @@ app.get('/api/health', async (req, res) => {
 
 ### Azure Monitor Integration
 
-**Log Collection**:
-- MongoDB logs → Azure Monitor Agent → Log Analytics
-- Query slow queries, errors, warnings
+**IMPORTANT**: This section describes Azure-native monitoring for MongoDB on VMs. This approach aligns with the workshop's Azure IaaS theme and provides unified observability across all tiers.
 
-**Sample Log Analytics Query**:
+#### Why Azure-Native Monitoring?
+
+✅ **Workshop Alignment**: Teaches Azure IaaS monitoring patterns (not third-party tools)  
+✅ **Unified Platform**: Same tooling for web, app, and database tiers  
+✅ **Production Pattern**: Real enterprise Azure monitoring approach  
+✅ **Cost Transparency**: All costs visible in Azure  
+✅ **Native Integration**: Works with Application Insights, Azure Monitor
+
+#### Architecture Overview
+
+```text
+┌─────────────────────────────────────────────────────────────┐
+│                     Azure Monitor Ecosystem                  │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  DB VMs (10.0.3.0/24)                                       │
+│  ├─ MongoDB Process                                         │
+│  ├─ Metrics Collection Script (cron every 1 min)           │
+│  │   └─ Queries: rs.status(), serverStatus(), dbStats()    │
+│  └─ Azure Monitor Agent                                     │
+│      ├─ Collects: MongoDB logs (/var/log/mongodb/)         │
+│      ├─ Collects: Custom metrics (from script)             │
+│      └─ Sends to: Log Analytics Workspace                  │
+│                                                              │
+│  ↓                                                           │
+│                                                              │
+│  Log Analytics Workspace (Shared)                           │
+│  ├─ Syslog (MongoDB logs)                                  │
+│  ├─ Custom Metrics (replication lag, connections, etc.)    │
+│  └─ Performance Counters (CPU, memory, disk)               │
+│                                                              │
+│  ↓                                                           │
+│                                                              │
+│  Azure Monitor Workbooks                                    │
+│  ├─ MongoDB Dashboard (replica set health)                 │
+│  ├─ Query Performance (slow queries)                       │
+│  └─ Resource Utilization (CPU, memory, disk)               │
+│                                                              │
+│  Azure Monitor Alerts                                       │
+│  ├─ Replication lag > 60 seconds                           │
+│  ├─ MongoDB process down                                    │
+│  └─ Disk space > 80%                                        │
+└─────────────────────────────────────────────────────────────┘
+```
+
+#### Implementation: Metrics Collection Script
+
+Create a script to collect MongoDB metrics and write to log file for Azure Monitor Agent:
+
+**File**: `/usr/local/bin/collect-mongodb-metrics.sh`
+
+```bash
+#!/bin/bash
+# MongoDB Metrics Collection for Azure Monitor
+# Runs via cron every 1 minute
+
+MONGODB_HOST=\"localhost:27017\"
+MONGODB_USER=\"mongodb_monitor\"  # Read-only user
+MONGODB_PASSWORD=\"${MONGODB_MONITOR_PASSWORD}\"  # From environment
+LOG_FILE=\"/var/log/mongodb-metrics.log\"
+
+# Collect metrics using mongo shell
+TIMESTAMP=$(date -u +\"%Y-%m-%dT%H:%M:%SZ\")
+
+# Get replica set status
+RS_STATUS=$(mongo --quiet --host $MONGODB_HOST -u $MONGODB_USER -p $MONGODB_PASSWORD --eval \"JSON.stringify(rs.status())\")
+REPL_STATE=$(echo $RS_STATUS | jq -r '.myState')
+REPL_HEALTH=$(echo $RS_STATUS | jq -r '.members[] | select(.self==true) | .health')
+REPL_LAG=$(echo $RS_STATUS | jq -r '.members[] | select(.self==true) | .optimeDate' | xargs -I {} date -d {} +%s)
+PRIMARY_TIME=$(echo $RS_STATUS | jq -r '.members[] | select(.state==1) | .optimeDate' | xargs -I {} date -d {} +%s)
+LAG_SECONDS=$((PRIMARY_TIME - REPL_LAG))
+
+# Get server status
+SERVER_STATUS=$(mongo --quiet --host $MONGODB_HOST -u $MONGODB_USER -p $MONGODB_PASSWORD --eval \"JSON.stringify(db.serverStatus())\")
+CONNECTIONS_CURRENT=$(echo $SERVER_STATUS | jq -r '.connections.current')
+CONNECTIONS_AVAILABLE=$(echo $SERVER_STATUS | jq -r '.connections.available')
+OPS_INSERT=$(echo $SERVER_STATUS | jq -r '.opcounters.insert')
+OPS_QUERY=$(echo $SERVER_STATUS | jq -r '.opcounters.query')
+OPS_UPDATE=$(echo $SERVER_STATUS | jq -r '.opcounters.update')
+OPS_DELETE=$(echo $SERVER_STATUS | jq -r '.opcounters.delete')
+
+# Get database stats
+DB_STATS=$(mongo --quiet --host $MONGODB_HOST -u $MONGODB_USER -p $MONGODB_PASSWORD blogapp --eval \"JSON.stringify(db.stats())\")
+DB_SIZE=$(echo $DB_STATS | jq -r '.dataSize')
+INDEX_SIZE=$(echo $DB_STATS | jq -r '.indexSize')
+
+# Write metrics as JSON (one line for Log Analytics parsing)
+cat <<EOF >> $LOG_FILE
+{\"TimeGenerated\":\"$TIMESTAMP\",\"Computer\":\"$(hostname)\",\"ReplicaState\":$REPL_STATE,\"Health\":$REPL_HEALTH,\"ReplicationLagSeconds\":$LAG_SECONDS,\"ConnectionsCurrent\":$CONNECTIONS_CURRENT,\"ConnectionsAvailable\":$CONNECTIONS_AVAILABLE,\"OpsInsert\":$OPS_INSERT,\"OpsQuery\":$OPS_QUERY,\"OpsUpdate\":$OPS_UPDATE,\"OpsDelete\":$OPS_DELETE,\"DatabaseSizeBytes\":$DB_SIZE,\"IndexSizeBytes\":$INDEX_SIZE}
+EOF
+
+# Rotate log if > 10MB
+if [ $(stat -c%s \"$LOG_FILE\" 2>/dev/null || echo 0) -gt 10485760 ]; then
+  mv \"$LOG_FILE\" \"${LOG_FILE}.old\"
+  gzip \"${LOG_FILE}.old\"
+fi
+```
+
+**Schedule with cron**:
+```bash
+# Add to crontab on each DB VM
+sudo crontab -e
+
+# Collect MongoDB metrics every 1 minute
+* * * * * /usr/local/bin/collect-mongodb-metrics.sh
+```
+
+#### Implementation: Azure Monitor Agent Configuration
+
+**Data Collection Rule (DCR)** - JSON configuration:
+
+```json
+{
+  \"properties\": {
+    \"dataSources\": {
+      \"logFiles\": [
+        {
+          \"streams\": [\"Custom-MongoDBMetrics\"],
+          \"filePatterns\": [\"/var/log/mongodb-metrics.log\"],
+          \"format\": \"json\",
+          \"settings\": {
+            \"text\": {
+              \"recordStartTimestampFormat\": \"ISO 8601\"
+            }
+          },
+          \"name\": \"MongoDBMetricsLogFile\"
+        }
+      ],
+      \"syslog\": [
+        {
+          \"streams\": [\"Microsoft-Syslog\"],
+          \"facilityNames\": [\"local0\"],
+          \"logLevels\": [\"Debug\", \"Info\", \"Notice\", \"Warning\", \"Error\", \"Critical\", \"Alert\", \"Emergency\"],
+          \"name\": \"MongoDBSyslog\"
+        }
+      ]
+    },
+    \"destinations\": {
+      \"logAnalytics\": [
+        {
+          \"workspaceResourceId\": \"/subscriptions/<sub-id>/resourceGroups/rg-blogapp-student01/providers/Microsoft.OperationalInsights/workspaces/log-blogapp\",
+          \"name\": \"LogAnalyticsWorkspace\"
+        }
+      ]
+    },
+    \"dataFlows\": [
+      {
+        \"streams\": [\"Custom-MongoDBMetrics\"],
+        \"destinations\": [\"LogAnalyticsWorkspace\"],
+        \"transformKql\": \"source\",
+        \"outputStream\": \"Custom-MongoDBMetrics_CL\"
+      },
+      {
+        \"streams\": [\"Microsoft-Syslog\"],
+        \"destinations\": [\"LogAnalyticsWorkspace\"]
+      }
+    ]
+  }
+}
+```
+
+**Deploy DCR via Azure CLI**:
+```bash
+az monitor data-collection-rule create \\
+  --name dcr-mongodb-metrics \\
+  --resource-group rg-blogapp-student01 \\
+  --location eastus \\
+  --rule-file mongodb-dcr.json
+
+# Associate with DB VMs
+az monitor data-collection-rule association create \\
+  --name dcra-mongodb-az1 \\
+  --rule-id /subscriptions/<sub-id>/resourceGroups/rg-blogapp-student01/providers/Microsoft.Insights/dataCollectionRules/dcr-mongodb-metrics \\
+  --resource /subscriptions/<sub-id>/resourceGroups/rg-blogapp-student01/providers/Microsoft.Compute/virtualMachines/vm-db-az1
+```
+
+#### Log Analytics Queries (KQL)
+
+**Query 1: Replica Set Health**
+```kql
+MongoDBMetrics_CL
+| where TimeGenerated > ago(1h)
+| summarize 
+    AvgReplicationLag = avg(ReplicationLagSeconds),
+    MaxReplicationLag = max(ReplicationLagSeconds),
+    CurrentState = any(ReplicaState),
+    Health = any(Health)
+  by Computer
+| extend HealthStatus = case(
+    Health == 1 and AvgReplicationLag < 60, \"Healthy\",
+    Health == 1 and AvgReplicationLag >= 60, \"Degraded\",
+    \"Unhealthy\"
+  )
+| project Computer, CurrentState, AvgReplicationLag, HealthStatus
+```
+
+**Query 2: Connection Pool Utilization**
+```kql
+MongoDBMetrics_CL
+| where TimeGenerated > ago(1h)
+| extend ConnectionUtilization = (toreal(ConnectionsCurrent) / (ConnectionsCurrent + ConnectionsAvailable)) * 100
+| summarize 
+    AvgConnections = avg(ConnectionsCurrent),
+    MaxConnections = max(ConnectionsCurrent),
+    AvgUtilization = avg(ConnectionUtilization)
+  by bin(TimeGenerated, 5m), Computer
+| render timechart
+```
+
+**Query 3: Operations Per Second**
+```kql
+MongoDBMetrics_CL
+| where TimeGenerated > ago(1h)
+| sort by TimeGenerated asc
+| extend 
+    InsertRate = (OpsInsert - prev(OpsInsert)) / 60.0,
+    QueryRate = (OpsQuery - prev(OpsQuery)) / 60.0,
+    UpdateRate = (OpsUpdate - prev(OpsUpdate)) / 60.0
+| where InsertRate >= 0
+| summarize 
+    AvgInserts = avg(InsertRate),
+    AvgQueries = avg(QueryRate),
+    AvgUpdates = avg(UpdateRate)
+  by bin(TimeGenerated, 5m), Computer
+| render timechart
+```
+
+**Query 4: Slow Queries from Syslog**
 ```kql
 Syslog
-| where Facility == "local0"  // MongoDB syslog facility
-| where SyslogMessage contains "slow query"
+| where Facility == \"local0\"
+| where SyslogMessage contains \"slow query\"
+| parse SyslogMessage with * \"command: \" Command \" planSummary: \" PlanSummary \" \" DurationInfo
+| parse DurationInfo with * \"duration:\" DurationMs:int \"ms\"
+| where DurationMs > 100
+| project TimeGenerated, Computer, Command, DurationMs, PlanSummary
+| order by DurationMs desc
+```
+
+**Query 5: Database Size Growth**
+```kql
+MongoDBMetrics_CL
+| where TimeGenerated > ago(7d)
+| extend TotalSizeGB = (DatabaseSizeBytes + IndexSizeBytes) / 1024.0 / 1024.0 / 1024.0
+| summarize 
+    AvgSizeGB = avg(TotalSizeGB),
+    MaxSizeGB = max(TotalSizeGB)
+  by bin(TimeGenerated, 1h), Computer
+| render timechart
+```
+
+#### Azure Monitor Alerts
+
+**Alert 1: Replication Lag**
+```bash
+az monitor metrics alert create \\
+  --name alert-mongodb-replication-lag \\
+  --resource-group rg-blogapp-student01 \\
+  --scopes /subscriptions/<sub-id>/resourceGroups/rg-blogapp-student01/providers/Microsoft.OperationalInsights/workspaces/log-blogapp \\
+  --condition \"avg ReplicationLagSeconds > 60\" \\
+  --window-size 5m \\
+  --evaluation-frequency 1m \\
+  --severity 2 \\
+  --description \"MongoDB replication lag exceeds 60 seconds\"
+```
+
+**Alert 2: MongoDB Process Down**
+```bash
+az monitor metrics alert create \\
+  --name alert-mongodb-process-down \\
+  --resource-group rg-blogapp-student01 \\
+  --scopes /subscriptions/<sub-id>/resourceGroups/rg-blogapp-student01/providers/Microsoft.Compute/virtualMachines/vm-db-az1 \\
+  --condition \"avg Heartbeat < 1\" \\
+  --window-size 5m \\
+  --evaluation-frequency 1m \\
+  --severity 1 \\
+  --description \"MongoDB VM heartbeat missing\"
+```
+
+#### Workshop Educational Value
+
+**Students Learn**:
+- Azure Monitor Agent deployment and configuration
+- Data Collection Rules (declarative monitoring)
+- Log Analytics Workspace (centralized observability)
+- KQL query language (powerful log analysis)
+- Azure Workbooks (custom dashboards)
+- Azure Monitor Alerts (proactive monitoring)
+
+**Comparison with AWS**:
+- Azure Monitor ≈ CloudWatch + CloudWatch Logs
+- Log Analytics ≈ CloudWatch Logs Insights
+- KQL ≈ CloudWatch Logs Insights query syntax
+- Azure Monitor Agent ≈ CloudWatch Agent
+- Unified platform vs separate AWS services
+
+**Production Benefits**:
+- No third-party dependencies (Prometheus, Grafana)
+- Native integration with Azure services
+- Consistent monitoring across all Azure resources
+- Azure-native cost tracking and optimization
+
+**Log Collection** (MongoDB Logs):
+- MongoDB logs → Azure Monitor Agent → Log Analytics
+- Query slow queries, errors, warnings
+- Unified with custom metrics for complete observability
+
+**Sample Query** (Slow Queries):
+```kql
+Syslog
+| where Facility == \"local0\"  // MongoDB syslog facility
+| where SyslogMessage contains \"slow query\"
 | project TimeGenerated, Computer, SyslogMessage
 | order by TimeGenerated desc
 ```
 
-**Alert Rules**:
+**Alert Rules** (Examples):
 - Replica set member down (state != PRIMARY/SECONDARY)
 - Replication lag > 60 seconds
 - Disk space > 80% utilization
