@@ -4589,6 +4589,1683 @@ setInterval(() => {
 
 ---
 
+## Operations & Deployment
+
+### Process Management
+
+#### systemd (Recommended for Production)
+
+**Why systemd**:
+- Native Linux service management (Ubuntu 24.04 LTS default)
+- Automatic restart on failure
+- System boot integration
+- Centralized logging with journald
+- Resource limits and security controls
+
+**systemd Service Configuration**:
+
+```ini
+# /etc/systemd/system/blogapp-api.service
+[Unit]
+Description=Blog Application API Server
+Documentation=https://github.com/your-org/blogapp
+After=network.target mongod.service
+Wants=mongod.service
+
+[Service]
+Type=simple
+User=blogapp
+Group=blogapp
+WorkingDirectory=/opt/blogapp/backend
+
+# Environment file (contains secrets)
+EnvironmentFile=/opt/blogapp/backend/.env
+
+# Start command
+ExecStart=/usr/bin/node /opt/blogapp/backend/dist/server.js
+
+# Restart policy
+Restart=on-failure
+RestartSec=10
+StartLimitInterval=200
+StartLimitBurst=5
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=blogapp-api
+
+# Resource limits
+LimitNOFILE=65536
+MemoryLimit=512M
+CPUQuota=150%
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/blogapp/backend/logs
+
+[Install]
+WantedBy=multi-user.target
+```
+
+**Service Management Commands**:
+
+```bash
+# Enable service (start on boot)
+sudo systemctl enable blogapp-api
+
+# Start service
+sudo systemctl start blogapp-api
+
+# Check status
+sudo systemctl status blogapp-api
+
+# View logs (last 100 lines)
+sudo journalctl -u blogapp-api -n 100
+
+# Follow logs in real-time
+sudo journalctl -u blogapp-api -f
+
+# Restart service (after code update)
+sudo systemctl restart blogapp-api
+
+# Stop service
+sudo systemctl stop blogapp-api
+```
+
+**Deployment Workflow**:
+
+```bash
+#!/bin/bash
+# scripts/deploy.sh - Simple deployment script
+
+set -e  # Exit on error
+
+echo "Starting deployment..."
+
+# 1. Pull latest code
+cd /opt/blogapp/backend
+git pull origin main
+
+# 2. Install dependencies
+npm ci --production
+
+# 3. Run TypeScript build
+npm run build
+
+# 4. Run database migrations (if any)
+# npm run migrate
+
+# 5. Restart service
+sudo systemctl restart blogapp-api
+
+# 6. Wait for service to be healthy
+echo "Waiting for health check..."
+sleep 5
+
+# 7. Verify health
+if curl -f http://localhost:3000/api/health; then
+  echo "✅ Deployment successful!"
+  exit 0
+else
+  echo "❌ Deployment failed - health check failed"
+  exit 1
+fi
+```
+
+**Comparison with PM2**:
+
+| Feature | systemd | PM2 |
+|---------|---------|-----|
+| **Auto-restart** | ✅ Yes | ✅ Yes |
+| **Clustering** | ❌ No (use load balancer) | ✅ Yes (built-in) |
+| **Log management** | ✅ journald | ✅ Built-in rotation |
+| **Boot integration** | ✅ Native | ⚠️ Requires systemd service |
+| **Resource limits** | ✅ Native cgroups | ⚠️ Via systemd |
+| **Ecosystem** | ✅ System-wide | ✅ Node.js-specific |
+| **Learning value** | ✅ Linux fundamentals | ⚠️ Tool-specific |
+
+**Workshop Recommendation**: Use systemd for educational value (teaches Linux service management).
+
+---
+
+### Azure Monitor Integration
+
+**Application Insights SDK Setup**:
+
+```typescript
+// src/config/monitoring.ts
+import * as appInsights from 'applicationinsights';
+import { logger } from '../utils/logger.util';
+
+/**
+ * Initialize Application Insights
+ * 
+ * Sends telemetry to Azure Monitor for:
+ * - Request/response tracking
+ * - Exception logging
+ * - Custom metrics
+ * - Dependency tracking (MongoDB, HTTP calls)
+ */
+export const initializeMonitoring = (): void => {
+  const connectionString = process.env.APPLICATIONINSIGHTS_CONNECTION_STRING;
+
+  if (!connectionString) {
+    logger.warn('Application Insights not configured (APPLICATIONINSIGHTS_CONNECTION_STRING missing)');
+    return;
+  }
+
+  appInsights
+    .setup(connectionString)
+    .setAutoDependencyCorrelation(true)  // Track MongoDB calls
+    .setAutoCollectRequests(true)         // Track HTTP requests
+    .setAutoCollectPerformance(true)      // Track performance counters
+    .setAutoCollectExceptions(true)       // Track exceptions
+    .setAutoCollectDependencies(true)     // Track external dependencies
+    .setAutoCollectConsole(false)         // Don't duplicate console logs
+    .setUseDiskRetryCaching(true)        // Retry on network failures
+    .setSendLiveMetrics(true)            // Enable live metrics stream
+    .start();
+
+  logger.info('Application Insights initialized', {
+    instrumentationKey: appInsights.defaultClient.config.instrumentationKey?.substring(0, 8) + '...'
+  });
+};
+
+// Get telemetry client for custom tracking
+export const getTelemetryClient = () => appInsights.defaultClient;
+```
+
+```typescript
+// src/server.ts
+import { initializeMonitoring } from './config/monitoring';
+
+// Initialize monitoring BEFORE other imports
+initializeMonitoring();
+
+import app from './app';
+import { connectDatabase } from './config/database';
+import { logger } from './utils/logger.util';
+
+const PORT = process.env.PORT || 3000;
+
+// ... rest of server setup
+```
+
+**Custom Metrics Example**:
+
+```typescript
+// src/controllers/posts.controller.ts
+import { getTelemetryClient } from '../config/monitoring';
+
+export const createPost = asyncHandler(async (req: Request, res: Response) => {
+  const startTime = Date.now();
+  
+  try {
+    const post = await postService.create(req.body, req.user!.userId);
+    
+    // Track custom metric
+    getTelemetryClient()?.trackMetric({
+      name: 'PostCreated',
+      value: 1,
+      properties: {
+        authorId: req.user!.userId,
+        status: post.status,
+        wordCount: post.metadata.wordCount
+      }
+    });
+    
+    res.status(201).json({ data: post });
+  } catch (error) {
+    // Track custom event for failures
+    getTelemetryClient()?.trackEvent({
+      name: 'PostCreationFailed',
+      properties: {
+        error: error.message,
+        authorId: req.user!.userId
+      }
+    });
+    throw error;
+  }
+});
+```
+
+**Correlation IDs for Distributed Tracing**:
+
+```typescript
+// src/middleware/correlation.middleware.ts
+import { Request, Response, NextFunction } from 'express';
+import { v4 as uuidv4 } from 'uuid';
+
+/**
+ * Correlation ID Middleware
+ * 
+ * Adds X-Correlation-ID header to track requests across services.
+ * Uses existing correlation ID from client or generates new one.
+ */
+export const correlationMiddleware = (req: Request, res: Response, next: NextFunction): void => {
+  // Use existing correlation ID or generate new one
+  const correlationId = (req.headers['x-correlation-id'] as string) || uuidv4();
+  
+  // Attach to request for logging
+  req.correlationId = correlationId;
+  
+  // Add to response headers
+  res.setHeader('X-Correlation-ID', correlationId);
+  
+  next();
+};
+
+// Add to Express augmentation
+declare global {
+  namespace Express {
+    interface Request {
+      correlationId?: string;
+    }
+  }
+}
+```
+
+```typescript
+// src/utils/logger.util.ts
+// Update logger to include correlation ID
+export const requestLogger = (req: Request, res: Response, next: NextFunction): void => {
+  const startTime = Date.now();
+
+  res.on('finish', () => {
+    const duration = Date.now() - startTime;
+    
+    logger.info('HTTP Request', {
+      correlationId: req.correlationId,  // ← Include correlation ID
+      method: req.method,
+      path: req.path,
+      statusCode: res.statusCode,
+      duration,
+      userAgent: req.get('user-agent'),
+      ip: req.ip,
+      userId: req.user?.userId
+    });
+  });
+
+  next();
+};
+```
+
+**Monitoring Dashboard Queries** (Azure Monitor Logs):
+
+```kusto
+// Average response time by endpoint
+requests
+| where timestamp > ago(1h)
+| summarize 
+    avgDuration = avg(duration),
+    p95Duration = percentile(duration, 95),
+    count = count()
+  by name
+| order by avgDuration desc
+
+// Error rate by endpoint
+requests
+| where timestamp > ago(24h)
+| summarize 
+    total = count(),
+    errors = countif(success == false),
+    errorRate = 100.0 * countif(success == false) / count()
+  by name
+| where errorRate > 0
+| order by errorRate desc
+
+// Custom metric: Posts created per hour
+customMetrics
+| where name == "PostCreated"
+| where timestamp > ago(24h)
+| summarize count() by bin(timestamp, 1h)
+| render timechart
+
+// Trace requests by correlation ID
+union requests, dependencies, traces, exceptions
+| where timestamp > ago(1h)
+| where customDimensions.correlationId == "your-correlation-id-here"
+| project timestamp, itemType, operation_Name, message, resultCode
+| order by timestamp asc
+```
+
+**Alert Rules** (configure in Azure Portal):
+
+1. **High Error Rate Alert**:
+   - Metric: `requests/count` where `success == false`
+   - Threshold: > 5% error rate over 5 minutes
+   - Action: Send email to on-call engineer
+
+2. **High Response Time Alert**:
+   - Metric: `requests/duration` (95th percentile)
+   - Threshold: > 1000ms over 10 minutes
+   - Action: Send notification to Slack/Teams
+
+3. **Service Availability Alert**:
+   - Metric: Health probe failures
+   - Threshold: 3 consecutive failures
+   - Action: Critical alert + auto-restart attempt
+
+**Workshop Exercise**: Create custom dashboard in Azure Portal with:
+- Request rate timeline
+- Error rate percentage
+- Response time histogram (p50, p95, p99)
+- Custom metrics (posts created, user registrations)
+
+---
+
+### Deployment Strategy
+
+**Simple Deployment Approach** (Workshop):
+
+```bash
+#!/bin/bash
+# scripts/deploy-simple.sh
+
+set -e
+
+API_SERVER="10.0.2.4"  # App VM in AZ1
+SSH_USER="azureuser"
+
+echo "Deploying to $API_SERVER..."
+
+# 1. Copy code to server
+rsync -avz --exclude node_modules --exclude dist \
+  ./ $SSH_USER@$API_SERVER:/opt/blogapp/backend/
+
+# 2. Build and restart on server
+ssh $SSH_USER@$API_SERVER << 'EOF'
+  cd /opt/blogapp/backend
+  npm ci --production
+  npm run build
+  sudo systemctl restart blogapp-api
+EOF
+
+# 3. Health check
+echo "Waiting for service to be ready..."
+sleep 5
+
+if curl -f http://$API_SERVER:3000/api/health; then
+  echo "✅ Deployment successful!"
+else
+  echo "❌ Deployment failed!"
+  exit 1
+fi
+```
+
+**Multi-VM Deployment** (2 API servers):
+
+```bash
+#!/bin/bash
+# scripts/deploy-multi-vm.sh - Deploy to both VMs
+
+set -e
+
+API_SERVERS=("10.0.2.4" "10.0.2.5")
+SSH_USER="azureuser"
+
+for SERVER in "${API_SERVERS[@]}"; do
+  echo "Deploying to $SERVER..."
+  
+  # Copy and build
+  rsync -avz --exclude node_modules --exclude dist ./ $SSH_USER@$SERVER:/opt/blogapp/backend/
+  
+  ssh $SSH_USER@$SERVER << 'EOF'
+    cd /opt/blogapp/backend
+    npm ci --production
+    npm run build
+    sudo systemctl restart blogapp-api
+EOF
+
+  # Health check
+  sleep 5
+  if curl -f http://$SERVER:3000/api/health; then
+    echo "✅ $SERVER deployed successfully"
+  else
+    echo "❌ $SERVER deployment failed"
+    exit 1
+  fi
+done
+
+echo "✅ All servers deployed successfully!"
+```
+
+**Rollback Procedure**:
+
+```bash
+#!/bin/bash
+# scripts/rollback.sh
+
+set -e
+
+API_SERVER="10.0.2.4"
+SSH_USER="azureuser"
+
+echo "Rolling back to previous version..."
+
+ssh $SSH_USER@$API_SERVER << 'EOF'
+  cd /opt/blogapp/backend
+  
+  # Git rollback to previous commit
+  git reset --hard HEAD~1
+  
+  # Rebuild
+  npm ci --production
+  npm run build
+  
+  # Restart
+  sudo systemctl restart blogapp-api
+EOF
+
+echo "✅ Rollback complete"
+```
+
+**Future Enhancement**: Blue-Green Deployment
+
+For production environments, consider blue-green deployment pattern:
+
+- **Blue environment**: Current production (e.g., VM 10.0.2.4)
+- **Green environment**: New version (e.g., VM 10.0.2.5)
+- **Process**:
+  1. Deploy new version to green environment
+  2. Test green environment (health checks, smoke tests)
+  3. Switch load balancer to green environment
+  4. Monitor for issues
+  5. Keep blue environment for quick rollback if needed
+
+**Note**: Blue-green requires additional infrastructure (duplicate VMs) and load balancer reconfiguration. Out of scope for 2-day workshop but recommended for production.
+
+**Reference**: [Azure DevOps deployment strategies](https://learn.microsoft.com/en-us/azure/devops/pipelines/release/deployment-patterns/)
+
+---
+
+### Capacity Planning
+
+**VM Resource Requirements**:
+
+| Component | Specification | Rationale |
+|-----------|--------------|-----------|
+| **CPU** | 2 vCPU (Standard_B2ms) | Node.js single-threaded, 50% baseline + burst to 200% |
+| **Memory** | 8 GB RAM | ~512 MB per Node process + OS overhead + headroom |
+| **Storage** | 30 GB Premium SSD | Fast npm install, TypeScript compilation, logs |
+| **Network** | 1 Gbps | Sufficient for API responses (JSON payloads) |
+
+**Performance Baselines** (workshop scale):
+
+```
+Expected Load (20-30 students):
+- Concurrent users: 20-30
+- Peak RPS: 5-10 requests/second
+- Average response time: < 100ms
+- P95 response time: < 500ms
+- Memory usage: 300-500 MB per process
+- CPU usage: 10-20% average, 50% peak
+```
+
+**Horizontal Scaling Triggers**:
+
+When to add more API VMs:
+- ✅ CPU sustained > 70% for 10+ minutes
+- ✅ Memory usage > 80% consistently
+- ✅ Response time P95 > 1000ms
+- ✅ Request queue depth > 100
+
+**Workshop Scale**: 2 VMs sufficient (1 per AZ for HA)
+
+**Production Scale Estimate**:
+
+```
+10,000 daily active users:
+- Peak RPS: ~100 requests/second
+- Recommended: 4-6 VMs (Standard_B2ms)
+- Or migrate to Azure Container Apps (auto-scaling)
+```
+
+**Cost Estimate** (East US, pay-as-you-go):
+
+```
+Workshop Configuration (2 VMs):
+- 2x Standard_B2ms: $60/month each = $120/month
+- 2x Premium SSD 30GB: $5/month each = $10/month
+- Load Balancer: $18/month
+- Bandwidth: ~$5/month
+Total: ~$155/month
+
+Scale-up Configuration (6 VMs):
+- 6x Standard_B2ms: $360/month
+- Other resources: $30/month
+Total: ~$390/month
+```
+
+**Monitoring Resource Usage**:
+
+```bash
+# CPU usage
+top -b -n 1 | grep node
+
+# Memory usage
+ps aux | grep node
+
+# Disk usage
+df -h /opt/blogapp
+
+# Network connections
+netstat -an | grep :3000 | wc -l
+
+# systemd resource usage
+systemctl status blogapp-api
+```
+
+---
+
+## API Tier High Availability & Disaster Recovery
+
+### Stateless Architecture Principles
+
+**Design Principle**: API servers are **completely stateless** and **disposable**.
+
+**What "Stateless" Means**:
+
+| State Type | Storage Location | Recovery Behavior |
+|------------|-----------------|-------------------|
+| **Authentication** | JWT tokens (client-side) | No server-side sessions |
+| **User data** | MongoDB (database tier) | Persisted across API restarts |
+| **Posts/Comments** | MongoDB (database tier) | Persisted across API restarts |
+| **Application code** | Git repository | Re-deploy from source |
+| **Dependencies** | npm (package.json) | Reinstall on demand |
+| **Configuration** | Environment variables / Key Vault | Retrieved on startup |
+
+**Benefits of Stateless Design**:
+- ✅ **Any API server can handle any request** (no sticky sessions)
+- ✅ **Easy horizontal scaling** (add/remove VMs without coordination)
+- ✅ **Fast recovery** (spin up new VM, deploy code, start serving)
+- ✅ **Simplified load balancing** (round-robin, no session affinity)
+- ✅ **Zero data loss risk** (no state stored on VMs)
+
+**Common Mistake - Session State on VMs**:
+
+```typescript
+// ❌ ANTI-PATTERN: Storing sessions in Express memory
+import session from 'express-session';
+
+app.use(session({
+  secret: 'secret-key',
+  resave: false,
+  saveUninitialized: false
+  // Problem: Session lost when VM restarts
+  // Problem: Load balancer needs sticky sessions (complex)
+  // Problem: Horizontal scaling breaks sessions (session on VM1, user routed to VM2)
+}));
+```
+
+**Workshop Pattern - JWT Tokens (Stateless)**:
+
+```typescript
+// ✅ CORRECT: JWT tokens contain all user info
+export const authenticateJWT = (req: Request, res: Response, next: NextFunction): void => {
+  const token = req.headers.authorization?.substring(7);
+  
+  jwt.verify(token, getKey, (err, decoded) => {
+    if (!err && decoded) {
+      // User info from token (no server-side session)
+      req.user = {
+        userId: decoded.oid,
+        email: decoded.email,
+        displayName: decoded.name
+      };
+    }
+    next();
+  });
+};
+
+// Benefits:
+// ✅ Token contains all user info (oid, email, name)
+// ✅ Any VM can validate any token (no server state)
+// ✅ No session affinity required in load balancer
+```
+
+**AWS Comparison**:
+
+| Pattern | Azure Workshop | AWS Equivalent |
+|---------|---------------|----------------|
+| **Authentication** | Entra ID JWT tokens | Cognito JWT tokens |
+| **State storage** | MongoDB on VMs | DynamoDB or RDS |
+| **Session management** | Stateless (JWT) | Stateless (JWT) or ElastiCache (stateful) |
+| **Load balancing** | Azure Load Balancer (Layer 4) | Application Load Balancer (Layer 7) |
+
+Unlike AWS Lambda (inherently stateless), VMs **could** store state but **shouldn't** for HA/DR.
+
+---
+
+### VM Failure Scenarios & Recovery
+
+**Scenario Matrix**:
+
+| Failure Scenario | Impact | Automatic Recovery | Manual Steps Required |
+|------------------|--------|-------------------|----------------------|
+| **Single VM fails** (e.g., VM1 crashes) | Reduced capacity (50% if 2 VMs) | Load balancer detects unhealthy probe → Routes to VM2 | Replace failed VM, deploy code |
+| **All VMs in AZ1 fail** (zone outage) | Reduced capacity | Load balancer routes to AZ2 VMs | Azure auto-replaces VMs (if configured) |
+| **All API VMs fail** (code bug, config error) | **Service unavailable** | ❌ No automatic recovery | Deploy fix or rollback code |
+| **Load balancer fails** | Service unavailable | Azure auto-replaces LB (managed service) | None (wait ~5 minutes) |
+| **MongoDB fails** | Degraded (health check fails) | Replica set failover (DB tier) | Verify DB health, restart API VMs if needed |
+
+**Health Probe Behavior**:
+
+```
+Azure Load Balancer Health Probe:
+- Endpoint: http://<vm-ip>:3000/api/health
+- Interval: 30 seconds
+- Timeout: 5 seconds
+- Unhealthy threshold: 2 consecutive failures
+
+When VM marked unhealthy:
+1. Load balancer stops sending new requests to VM
+2. Existing connections drained (graceful shutdown)
+3. All traffic routed to healthy VMs
+4. VM automatically restarted (if systemd configured)
+5. When health probe succeeds again, VM added back to pool
+```
+
+**Recovery Time Objectives (RTO/RPO)**:
+
+| Metric | Target | Explanation |
+|--------|--------|-------------|
+| **RTO** (Recovery Time Objective) | < 5 minutes | Time to restore service (automatic failover to healthy VM) |
+| **RTO** (Manual recovery) | < 30 minutes | Time to deploy new VM + code if all VMs lost |
+| **RPO** (Recovery Point Objective) | 0 seconds | No data stored on API tier (all data in MongoDB) |
+
+**Comparison with Database Tier**:
+
+| Tier | State | RTO | RPO | Recovery Method |
+|------|-------|-----|-----|-----------------|
+| **API Tier** | Stateless | 5 min (auto) | 0 sec | Load balancer failover |
+| **Database Tier** | Stateful | 10 sec - 5 min | 0 sec (replica) | Replica set failover |
+
+---
+
+### Backup & Recovery Requirements
+
+**What to Backup**:
+
+| Component | Backup Method | Frequency | Restore Time |
+|-----------|---------------|-----------|--------------|
+| **Source code** | Git repository | Every commit | 1 minute (git clone) |
+| **Dependencies** | package.json | N/A (defined in code) | 5 minutes (npm install) |
+| **Configuration** | Environment variables in Key Vault | On change | 1 minute (retrieve from vault) |
+| **Secrets** | Azure Key Vault (auto-backed up) | Continuous | 1 minute |
+| **VM disks** | ❌ Not needed (stateless) | N/A | N/A |
+
+**Disaster Recovery Procedure** (Total API Tier Loss):
+
+```bash
+# Scenario: All API VMs destroyed (e.g., catastrophic Azure region failure)
+
+# Step 1: Provision new VMs (via Bicep)
+az deployment group create \
+  --resource-group rg-blogapp-prod \
+  --template-file bicep/main.bicep
+
+# Step 2: Deploy application code
+git clone https://github.com/your-org/blogapp.git
+cd blogapp/backend
+npm ci --production
+npm run build
+
+# Step 3: Retrieve secrets from Key Vault
+az keyvault secret show --vault-name kv-blogapp --name MONGODB-URI
+# Configure environment variables
+
+# Step 4: Start service
+sudo systemctl start blogapp-api
+
+# Step 5: Verify health
+curl http://localhost:3000/api/health
+
+# RTO: ~20-30 minutes (mostly Azure VM provisioning time)
+```
+
+**No Data Loss**: Because API tier is stateless, all user data (posts, comments, profiles) remains safe in MongoDB replica set.
+
+---
+
+### Load Balancer Integration
+
+**Health Probe Configuration** (reference for infrastructure team):
+
+```bicep
+// Bicep configuration for Azure Load Balancer health probe
+resource healthProbe 'Microsoft.Network/loadBalancers/probes@2023-05-01' = {
+  name: 'api-health-probe'
+  properties: {
+    protocol: 'Http'
+    port: 3000
+    requestPath: '/api/health'
+    intervalInSeconds: 30
+    numberOfProbes: 2  // Unhealthy after 2 consecutive failures
+  }
+}
+```
+
+**Backend Response Requirements**:
+
+```typescript
+// Health check must return:
+// - Status 200 if healthy
+// - Status 503 if unhealthy
+// - Response within 5 seconds (probe timeout)
+
+GET /api/health
+→ 200 OK: { "status": "healthy", "database": "connected", "uptime": 86400 }
+→ 503 Service Unavailable: { "status": "unhealthy", "database": "disconnected" }
+```
+
+**Educational Note**: 
+Unlike AWS ALB (supports Layer 7 path-based routing), Azure Standard Load Balancer operates at Layer 4 (transport). Health probe uses HTTP/TCP, but routing is based on IP/port, not HTTP path.
+
+---
+
+## Authentication Troubleshooting Guide
+
+### Common JWT Validation Errors
+
+This section helps students debug the most common authentication issues when integrating with Microsoft Entra ID.
+
+---
+
+#### Error: "No token provided"
+
+**Cause**: Frontend not sending `Authorization` header with request.
+
+**Debugging Steps**:
+
+1. **Check browser DevTools**:
+   - Open Network tab
+   - Find failing request
+   - Check Request Headers
+   - Verify `Authorization: Bearer <token>` header exists
+
+2. **Test with curl**:
+```bash
+# Missing token (will fail with 401)
+curl http://localhost:3000/api/auth/me
+
+# With token (should succeed)
+curl -H "Authorization: Bearer <your-jwt-token>" \
+  http://localhost:3000/api/auth/me
+```
+
+3. **Frontend code check**:
+```typescript
+// ✅ CORRECT: Include Authorization header
+const response = await fetch('/api/auth/me', {
+  headers: {
+    'Authorization': `Bearer ${accessToken}`
+  }
+});
+
+// ❌ WRONG: Missing header
+const response = await fetch('/api/auth/me');  // No auth header!
+```
+
+**Solution**: Ensure MSAL integration in frontend passes token correctly.
+
+---
+
+#### Error: "Invalid token"
+
+**Causes** (multiple):
+
+1. **Wrong audience** (most common)
+2. **Expired token**
+3. **Signing key mismatch**
+4. **Malformed token**
+
+**Debugging Workflow**:
+
+**Step 1**: Decode token at [https://jwt.io](https://jwt.io)
+
+Paste your JWT token into jwt.io and check claims:
+
+```json
+{
+  "aud": "api://12345678-1234-1234-1234-123456789abc",  // ← Check this!
+  "iss": "https://login.microsoftonline.com/{tenantId}/v2.0",
+  "exp": 1701435600,  // ← Unix timestamp (check if expired)
+  "oid": "a1b2c3d4-...",
+  "email": "user@example.com"
+}
+```
+
+**Step 2**: Verify `aud` (audience) claim
+
+```typescript
+// Backend expects:
+audience: `api://${process.env.ENTRA_CLIENT_ID}`
+
+// Token must have matching `aud` claim
+// Example: "aud": "api://12345678-1234-1234-1234-123456789abc"
+```
+
+**Common Mistake**: Token has wrong audience (e.g., frontend client ID instead of API client ID)
+
+**Solution**: 
+1. Verify `ENTRA_CLIENT_ID` in backend `.env` matches API app registration
+2. Frontend MSAL config must request token with correct scope:
+```typescript
+// Frontend MSAL configuration
+const tokenRequest = {
+  scopes: [`api://${apiClientId}/user_impersonation`]  // ← Correct scope
+};
+```
+
+**Step 3**: Check token expiration
+
+```bash
+# Decode `exp` claim (Unix timestamp)
+# Example: exp = 1701435600
+
+# Convert to human-readable date
+date -r 1701435600
+# Output: Sat Dec  2 10:00:00 PST 2023
+
+# If current time > exp, token is expired
+```
+
+**Solution**: Frontend must refresh token when expired (MSAL handles automatically).
+
+**Step 4**: Verify issuer
+
+```typescript
+// Backend expects:
+issuer: `https://login.microsoftonline.com/${process.env.ENTRA_TENANT_ID}/v2.0`
+
+// Token must have matching `iss` claim
+```
+
+**Common Mistake**: Tenant ID mismatch (dev vs prod tenant)
+
+---
+
+#### Error: "Unable to find a signing key"
+
+**Cause**: Backend cannot fetch JWKS (JSON Web Key Set) from Microsoft Entra ID.
+
+**JWKS Endpoint**:
+```
+https://login.microsoftonline.com/{tenantId}/discovery/v2.0/keys
+```
+
+**Debugging**:
+
+```bash
+# Test JWKS endpoint manually
+TENANT_ID="your-tenant-id"
+curl https://login.microsoftonline.com/$TENANT_ID/discovery/v2.0/keys
+
+# Should return JSON with keys:
+{
+  "keys": [
+    {
+      "kid": "...",
+      "kty": "RSA",
+      "use": "sig",
+      "n": "...",
+      "e": "AQAB"
+    }
+  ]
+}
+```
+
+**Common Causes**:
+
+1. **No internet connectivity from VM**
+   - Solution: Check NSG rules allow outbound HTTPS
+   - Test: `curl https://login.microsoftonline.com`
+
+2. **Wrong tenant ID in JWKS URL**
+   - Solution: Verify `ENTRA_TENANT_ID` in `.env`
+
+3. **JWKS cache stale** (rare)
+   - Solution: Restart API server (clears cache)
+
+**Library Behavior** (jwks-rsa):
+- Caches keys for 24 hours
+- Retries on transient failures
+- Falls back to cache if endpoint unreachable
+
+---
+
+### Authentication Flow Debugging Checklist
+
+**Visual Flow**:
+
+```
+┌─────────────┐         ┌──────────────────┐         ┌─────────────────┐
+│   Frontend  │  Token  │  Backend API     │  Verify │ Microsoft Entra │
+│    (MSAL)   │────────>│  (Express)       │────────>│  ID (JWKS)      │
+└─────────────┘         └──────────────────┘         └─────────────────┘
+     │                           │                            │
+     │ 1. User logs in           │                            │
+     │ 2. MSAL gets token        │                            │
+     │ 3. Send Authorization     │                            │
+     │    header                 │                            │
+     │                           │ 4. Extract token           │
+     │                           │ 5. Fetch signing key       │───> (cached)
+     │                           │ 6. Verify signature        │
+     │                           │ 7. Check expiration        │
+     │                           │ 8. Validate audience       │
+     │                           │ 9. Extract claims (oid)    │
+     │                           │ 10. Set req.user           │
+     │                           │                            │
+     │<───── 200 OK ─────────────│                            │
+```
+
+**Debugging Checklist**:
+
+- [ ] Frontend: User successfully logged in with MSAL?
+- [ ] Frontend: Access token acquired with correct scope (`api://.../user_impersonation`)?
+- [ ] Network: Authorization header sent with request?
+- [ ] Network: Header format correct (`Authorization: Bearer <token>`)?
+- [ ] Backend: Token extracted from header (substring(7))?
+- [ ] Backend: JWKS endpoint reachable from VM?
+- [ ] Backend: Tenant ID correct in JWKS URL?
+- [ ] Token: `aud` claim matches backend's `ENTRA_CLIENT_ID`?
+- [ ] Token: `iss` claim matches backend's expected issuer?
+- [ ] Token: `exp` claim not expired (current time < exp)?
+- [ ] Token: Contains required claims (`oid`, `email`, `name`)?
+
+**Enable Debug Logging** (development only):
+
+```typescript
+// src/middleware/auth.middleware.ts
+if (process.env.NODE_ENV === 'development') {
+  logger.debug('JWT validation attempt', {
+    hasToken: !!token,
+    tokenPreview: token?.substring(0, 20) + '...',
+    expectedAudience: authConfig.audience,
+    expectedIssuer: authConfig.issuer
+  });
+}
+```
+
+---
+
+### Learning Resources
+
+**For Students New to OAuth 2.0**:
+- [OAuth 2.0 Simplified](https://aaronparecki.com/oauth-2-simplified/) - Beginner-friendly explanation
+- [JWT.io Introduction](https://jwt.io/introduction) - Understanding JSON Web Tokens
+- [Microsoft Identity Platform Overview](https://learn.microsoft.com/en-us/azure/active-directory/develop/v2-overview) - Official Azure docs
+
+**Workshop Exercise**: 
+1. Decode a sample JWT at jwt.io
+2. Inspect claims (`aud`, `iss`, `exp`, `oid`)
+3. Understand how backend validates each claim
+4. Simulate expired token error (manually change `exp` claim)
+
+**AWS Comparison**:
+- **Azure Entra ID** ≈ **AWS Cognito** (identity provider)
+- **JWT validation with jwks-rsa** ≈ **API Gateway Cognito Authorizer** (but manual in Express)
+- **MSAL library** ≈ **Amplify Auth** (frontend SDK)
+
+Key difference: AWS API Gateway can validate JWT automatically (managed authorizer), while Express requires manual implementation. This teaches underlying OAuth 2.0 mechanics.
+
+---
+
+## Technology Evolution & Deployment Patterns
+
+### Why VMs for This Workshop?
+
+**Educational Rationale**:
+
+1. **Foundational Understanding**
+   - Learn OS-level concerns (systemd, networking, security)
+   - Understand infrastructure as code (Bicep for VM provisioning)
+   - Debug at system level (logs, processes, resource limits)
+
+2. **Cost Predictability**
+   - Fixed monthly cost (~$60/VM) regardless of traffic
+   - No surprise bills from serverless cold starts or container scaling
+   - Easier budgeting for workshop with 20-30 students
+
+3. **Debugging Skills**
+   - Full control over environment and logs (SSH access)
+   - Can inspect process state, network connections, file system
+   - Learn production troubleshooting (systemctl, journalctl, top)
+
+4. **IaaS Focus**
+   - Workshop specifically teaches **Infrastructure as a Service** patterns
+   - High availability with Availability Zones (VM placement)
+   - Disaster recovery with Azure Site Recovery (VM replication)
+
+**Quote from Azure Well-Architected Framework**:
+> "Choose IaaS when you need full control over the operating system and application stack, or when migrating existing on-premises applications."
+
+---
+
+### Architectural Trade-offs: VMs vs Containers vs Serverless
+
+| Pattern | Best For | Pros | Cons | Azure Service |
+|---------|----------|------|------|---------------|
+| **VMs (IaaS)** | Long-running apps, full control, predictable costs | Complete control, easy lift-and-shift, fixed costs | Manual scaling, OS patching, configuration drift | Azure VMs |
+| **Containers** | Microservices, auto-scaling, portability | Fast deployment, efficient resources, orchestration | Orchestration complexity, learning curve | Azure Container Apps, AKS |
+| **Serverless (FaaS)** | Event-driven, sporadic workload, rapid development | No server management, auto-scale to zero, pay-per-execution | Cold start latency, stateless required, vendor lock-in | Azure Functions |
+
+**When to Use Each**:
+
+```
+Use VMs when:
+- ✅ Long-running processes (web servers, APIs)
+- ✅ Need full OS control (custom kernel modules, system packages)
+- ✅ Predictable workload (cost-effective vs serverless)
+- ✅ Lift-and-shift from on-premises
+- ✅ Learning infrastructure fundamentals
+
+Use Containers when:
+- ✅ Microservices architecture (many small services)
+- ✅ Need horizontal auto-scaling (traffic spikes)
+- ✅ Multi-cloud or hybrid deployments (portability)
+- ✅ CI/CD with consistent dev/prod environments
+
+Use Serverless when:
+- ✅ Event-driven tasks (file uploads, queue processing)
+- ✅ Sporadic or unpredictable traffic (scale to zero)
+- ✅ Rapid prototyping (no infrastructure management)
+- ✅ Pay only for actual compute time
+```
+
+---
+
+### Migration Path from VMs
+
+**Evolution Strategy** (how to modernize over time):
+
+```
+Phase 0: Current Workshop State
+┌─────────────────────────────────────┐
+│  VMs (Ubuntu 24.04 LTS)             │
+│  ├─ Node.js + Express (manual)      │
+│  ├─ systemd service                 │
+│  └─ Azure Load Balancer             │
+└─────────────────────────────────────┘
+
+↓ Containerization (no architecture change)
+
+Phase 1: Containerize App (Lift-and-shift)
+┌─────────────────────────────────────┐
+│  Same VMs                            │
+│  ├─ Docker container                │
+│  ├─ Dockerfile + docker-compose     │
+│  └─ Still manual deployment         │
+└─────────────────────────────────────┘
+Benefits: Consistent environments, easier rollback
+
+↓ Managed Container Platform
+
+Phase 2: Azure Container Apps
+┌─────────────────────────────────────┐
+│  Azure Container Apps (managed)     │
+│  ├─ Same container image            │
+│  ├─ Auto-scaling (CPU/memory/HTTP)  │
+│  ├─ Zero-downtime deployments       │
+│  └─ Built-in load balancer          │
+└─────────────────────────────────────┘
+Benefits: No VM management, auto-scale, lower ops burden
+
+↓ Microservices Decomposition
+
+Phase 3: Serverless Microservices
+┌─────────────────────────────────────┐
+│  Hybrid Architecture                │
+│  ├─ Azure Functions (image uploads) │
+│  ├─ Container Apps (API)            │
+│  ├─ Azure Service Bus (messaging)   │
+│  └─ Azure API Management (gateway)  │
+└─────────────────────────────────────┘
+Benefits: Optimal scaling, polyglot microservices
+```
+
+**Cost Comparison** (Workshop scale: 2 instances, 20 students):
+
+| Pattern | Monthly Cost | Auto-scale? | Management Effort |
+|---------|--------------|-------------|-------------------|
+| **VMs** (Standard_B2ms) | ~$120 (2 VMs always on) | ❌ Manual | High (OS patching, systemd) |
+| **Container Apps** (consumption) | ~$60 (scale to zero) | ✅ Yes | Low (managed platform) |
+| **Azure Functions** (consumption) | ~$10 (pay per execution) | ✅ Yes | Very low (fully serverless) |
+
+**Workshop Scale**: VMs are cost-competitive at small scale.  
+**Production Scale** (10,000+ users): Container Apps or Functions become more cost-effective.
+
+---
+
+### Real-World Production Recommendations
+
+**After Workshop, Consider**:
+
+1. **Keep VMs if**:
+   - Team already experienced with Linux system administration
+   - Predictable traffic (cost-effective)
+   - Compliance requires OS-level control
+
+2. **Migrate to Container Apps if**:
+   - Traffic varies significantly (save costs with scale-to-zero)
+   - Want managed platform (no OS patching)
+   - Planning microservices eventually
+
+3. **Adopt Serverless Functions if**:
+   - Event-driven workload (file processing, queue workers)
+   - Unpredictable or sporadic traffic
+   - Want to focus purely on code (no infrastructure)
+
+**Hybrid Approach** (Best of both worlds):
+```
+- Core API: Container Apps (consistent load, stateful-friendly)
+- Image processing: Azure Functions (event-driven, scales to zero)
+- Background jobs: Azure Functions (queue-triggered)
+- Static frontend: Azure Static Web Apps
+```
+
+**Workshop Takeaway**: 
+- Start with VMs to understand fundamentals
+- Understand trade-offs before jumping to "latest tech"
+- Migrate when **business needs justify complexity**, not for resume-driven development
+
+**AWS Comparison**:
+| Azure | AWS Equivalent |
+|-------|----------------|
+| Azure VMs | EC2 |
+| Azure Container Apps | AWS App Runner or Fargate |
+| Azure Functions | AWS Lambda |
+| Azure Kubernetes Service (AKS) | Amazon EKS |
+
+---
+
+## MongoDB Connection Resilience
+
+### Built-in Mongoose Retry Behavior
+
+**Mongoose v8 Automatic Retry Features**:
+
+```typescript
+// src/config/database.ts
+import mongoose from 'mongoose';
+
+mongoose.connect(mongoUri, {
+  // Automatic reconnection on connection loss
+  // (Mongoose 6+ automatically retries, no config needed)
+  
+  // Server selection timeout (how long to wait for replica set)
+  serverSelectionTimeoutMS: 5000,  // 5 seconds
+  
+  // Socket timeout (prevent hung connections)
+  socketTimeoutMS: 45000,  // 45 seconds
+  
+  // Connection timeout
+  connectTimeoutMS: 10000,  // 10 seconds
+  
+  // Connection pool (reuse connections)
+  maxPoolSize: 10,  // Max 10 concurrent connections
+  minPoolSize: 2,   // Keep 2 connections always open
+  
+  // Write concern (durability)
+  w: 'majority',  // Wait for majority of replica set
+  wtimeoutMS: 5000  // Timeout if write takes > 5 seconds
+});
+```
+
+**What Mongoose Automatically Handles**:
+
+1. **Reconnection on Connection Loss**
+   - Automatically reconnects if connection drops
+   - Queues operations during reconnection
+   - No application code changes needed
+
+2. **Replica Set Failover**
+   - Detects primary node failure
+   - Automatically connects to new primary
+   - Retries failed operations
+
+3. **Transient Error Retry**
+   - Network blips: Retries automatically
+   - Replica set elections: Waits and retries
+   - Write conflicts: Returns error (application handles)
+
+**Workshop Configuration** (recommended):
+
+```typescript
+// Production-ready connection with proper error handling
+export const connectDatabase = async (): Promise<void> => {
+  const mongoUri = process.env.MONGODB_URI!;
+
+  try {
+    await mongoose.connect(mongoUri, {
+      serverSelectionTimeoutMS: 5000,
+      socketTimeoutMS: 45000,
+      maxPoolSize: 10,
+      minPoolSize: 2
+    });
+
+    logger.info('MongoDB connected successfully', {
+      host: mongoose.connection.host,
+      name: mongoose.connection.name,
+      readyState: mongoose.connection.readyState
+    });
+
+    // Handle connection events
+    mongoose.connection.on('connected', () => {
+      logger.info('Mongoose connected to MongoDB');
+    });
+
+    mongoose.connection.on('error', (err) => {
+      logger.error('Mongoose connection error', { error: err });
+    });
+
+    mongoose.connection.on('disconnected', () => {
+      logger.warn('Mongoose disconnected from MongoDB');
+    });
+
+    // Graceful shutdown
+    process.on('SIGINT', async () => {
+      await mongoose.connection.close();
+      logger.info('Mongoose connection closed through app termination');
+      process.exit(0);
+    });
+
+  } catch (error) {
+    logger.error('MongoDB connection failed', { error });
+    throw error;
+  }
+};
+```
+
+**Educational Note**:
+
+Unlike manual retry logic (recommended by some sources), Mongoose **already handles retries** for transient failures. Adding manual retry wrappers would be **redundant** and **increase complexity** without benefit.
+
+**AWS Comparison**:
+- **Mongoose on MongoDB** ≈ **AWS SDK for DynamoDB** (built-in retry logic)
+- **Connection pooling** ≈ **DynamoDB connection reuse** (automatically managed)
+
+---
+
+### JWKS Caching Behavior
+
+**jwks-rsa Library Automatic Caching**:
+
+```typescript
+// src/config/auth.ts
+import jwksRsa from 'jwks-rsa';
+
+export const jwksClient = jwksRsa({
+  jwksUri: `https://login.microsoftonline.com/${tenantId}/discovery/v2.0/keys`,
+  
+  // Automatic caching
+  cache: true,             // Enable caching
+  cacheMaxAge: 86400000,   // Cache for 24 hours (86400 seconds * 1000)
+  
+  // Rate limiting (prevent DoS)
+  rateLimit: true,
+  jwksRequestsPerMinute: 10,  // Max 10 requests/minute
+  
+  // Timeout
+  timeout: 30000  // 30 second timeout for JWKS fetch
+});
+```
+
+**What jwks-rsa Automatically Handles**:
+
+1. **Key Caching**
+   - Caches signing keys for 24 hours
+   - Reduces network calls to Microsoft Entra ID
+   - Improves performance (no JWKS fetch on every request)
+
+2. **Automatic Refresh**
+   - Refetches keys when cache expires
+   - Handles key rotation transparently
+   - No application code changes needed
+
+3. **Failure Fallback**
+   - If JWKS endpoint unreachable, uses cached keys
+   - Retries on transient network failures
+   - Returns error only if cache expired AND fetch fails
+
+4. **Rate Limiting**
+   - Prevents DoS attacks (malicious rapid token validation)
+   - Protects both application and Microsoft's JWKS endpoint
+
+**Workshop Configuration** (already optimal):
+
+The design specification already includes proper jwks-rsa configuration. **No additional caching logic needed**.
+
+**Troubleshooting JWKS Issues**:
+
+```bash
+# Test JWKS endpoint manually
+curl https://login.microsoftonline.com/<tenant-id>/discovery/v2.0/keys
+
+# Check if VM can reach endpoint
+curl -I https://login.microsoftonline.com
+
+# If cache stale, restart API server (clears cache)
+sudo systemctl restart blogapp-api
+```
+
+**Educational Note**:
+
+Adding manual cache fallback (as suggested by some sources) would be **redundant** because jwks-rsa **already implements cache fallback**. The library is production-tested and battle-hardened.
+
+---
+
+## Advanced Topics (Optional Reading)
+
+The following topics are **out of scope** for the 2-day workshop but provided as references for self-directed learning and production deployments.
+
+---
+
+### Database Transactions (Advanced)
+
+**When Transactions Are Needed**:
+
+MongoDB replica sets support multi-document ACID transactions. Use when:
+- Multiple collections updated together (atomicity required)
+- Cross-collection consistency critical (all-or-nothing)
+- Race conditions possible (concurrent updates)
+
+**Workshop Note**: Current schema uses **embedded documents** (comments inside posts), which are **already atomic** (single document updates). Transactions **not needed** for workshop scope.
+
+**Transaction Pattern Example** (for reference):
+
+```typescript
+// src/services/post.service.ts
+import mongoose from 'mongoose';
+
+/**
+ * Create post with transaction (if updating multiple collections)
+ * 
+ * Example: Create post + increment user's post count
+ */
+export const createPostWithTransaction = async (
+  postData: CreatePostDTO,
+  userId: string
+): Promise<IPost> => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+  
+  try {
+    // Create post
+    const [post] = await Post.create([postData], { session });
+    
+    // Update user stats (hypothetical - not in current schema)
+    await User.findByIdAndUpdate(
+      userId,
+      { $inc: { postsCount: 1 } },
+      { session }
+    );
+    
+    await session.commitTransaction();
+    return post;
+  } catch (error) {
+    await session.abortTransaction();
+    throw error;
+  } finally {
+    session.endSession();
+  }
+};
+```
+
+**Best Practices**:
+- Keep transactions short (minimize time between start and commit)
+- Always abort on failure, end session in `finally` block
+- Retry once on write conflicts (`TransientTransactionError`)
+
+**Operations NOT Requiring Transactions**:
+- ✅ Single document updates (already atomic)
+- ✅ Embedded document updates (atomic within parent)
+- ✅ Idempotent operations (safe to retry)
+
+**Reference**: [MongoDB Transactions Documentation](https://www.mongodb.com/docs/manual/core/transactions/)
+
+---
+
+### Performance Optimization (Production)
+
+**Workshop Note**: Premature optimization is avoided. Optimize **after** measuring actual performance bottlenecks.
+
+#### Query Optimization
+
+**N+1 Query Anti-Pattern**:
+
+```typescript
+// ❌ BAD: N+1 queries (1 for posts, N for authors)
+const posts = await Post.find({ status: 'published' });
+for (const post of posts) {
+  post.author = await User.findById(post.authorId);  // N additional queries!
+}
+
+// ✅ GOOD: Use Mongoose populate (single $lookup query)
+const posts = await Post.find({ status: 'published' })
+  .populate('authorId', 'displayName email profilePicture');
+// Single aggregation query with $lookup
+```
+
+**Index Utilization**:
+
+```bash
+# Verify query uses indexes
+db.posts.find({ status: 'published' }).explain('executionStats')
+
+# Check for COLLSCAN (full collection scan - bad)
+{
+  "executionStats": {
+    "executionStages": {
+      "stage": "COLLSCAN"  // ← Means no index used!
+    }
+  }
+}
+
+# Good query uses index
+{
+  "executionStats": {
+    "executionStages": {
+      "stage": "IXSCAN",  // ← Index scan
+      "indexName": "status_1_publishedAt_-1"
+    }
+  }
+}
+```
+
+**Pagination Best Practices**:
+
+```typescript
+// Simple pagination (works for small datasets)
+const posts = await Post.find({ status: 'published' })
+  .skip((page - 1) * pageSize)
+  .limit(pageSize);
+
+// Cursor-based pagination (better for large datasets)
+const posts = await Post.find({
+  status: 'published',
+  _id: { $gt: lastSeenId }  // Continue from last ID
+})
+.limit(pageSize);
+```
+
+#### Caching Strategies (Production Enhancement)
+
+**When to Cache**:
+- Popular posts (high view count)
+- User profiles (change infrequently)
+- Static content (tags list, site metadata)
+
+**In-Memory Cache** (simple, single VM only):
+
+```typescript
+// src/utils/cache.util.ts
+const cache = new Map<string, { data: any; expiry: number }>();
+
+export const cacheGet = (key: string): any | null => {
+  const item = cache.get(key);
+  if (!item || Date.now() > item.expiry) {
+    cache.delete(key);
+    return null;
+  }
+  return item.data;
+};
+
+export const cacheSet = (key: string, data: any, ttlSeconds: number): void => {
+  cache.set(key, {
+    data,
+    expiry: Date.now() + (ttlSeconds * 1000)
+  });
+};
+
+// Usage example
+export const getPopularPosts = asyncHandler(async (req, res) => {
+  const cacheKey = 'popular-posts';
+  let posts = cacheGet(cacheKey);
+  
+  if (!posts) {
+    posts = await Post.find({ status: 'published' })
+      .sort({ viewCount: -1 })
+      .limit(10);
+    cacheSet(cacheKey, posts, 300);  // Cache 5 minutes
+  }
+  
+  res.json({ data: posts });
+});
+```
+
+**Redis Cache** (production, shared across VMs):
+
+Requires additional infrastructure (Azure Cache for Redis). Out of scope for workshop.
+
+**Reference**: [Azure Cache for Redis](https://learn.microsoft.com/en-us/azure/azure-cache-for-redis/)
+
+---
+
+### Circuit Breaker Pattern (Production)
+
+**When Needed**:
+- High request volumes (> 1000 RPS)
+- Unstable external dependencies
+- Prevent cascading failures in microservices
+
+**Workshop Note**: Workshop has 2 stable dependencies (MongoDB, Entra ID JWKS). Circuit breaker adds complexity without benefit at workshop scale.
+
+**Example Pattern** (for reference):
+
+```typescript
+import CircuitBreaker from 'opossum';
+
+// Wrap external dependency
+const breaker = new CircuitBreaker(fetchUserFromExternalAPI, {
+  timeout: 3000,        // Timeout after 3 seconds
+  errorThresholdPercentage: 50,  // Open circuit if 50% fail
+  resetTimeout: 30000   // Try again after 30 seconds
+});
+
+breaker.fallback(() => ({ error: 'Service temporarily unavailable' }));
+
+breaker.on('open', () => logger.warn('Circuit breaker opened'));
+breaker.on('halfOpen', () => logger.info('Circuit breaker half-open'));
+breaker.on('close', () => logger.info('Circuit breaker closed'));
+```
+
+**Reference**: [opossum circuit breaker library](https://github.com/nodeshift/opossum)
+
+---
+
+### Full Observability Stack (Production)
+
+**Three Pillars of Observability**:
+
+1. **Logs** (structured events) - ✅ Already implemented (Winston)
+2. **Metrics** (aggregated measurements) - ⚠️ Basic (Application Insights)
+3. **Traces** (request flow) - ❌ Not implemented (workshop is monolithic)
+
+**Distributed Tracing with OpenTelemetry** (microservices only):
+
+```typescript
+import { trace } from '@opentelemetry/api';
+import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
+
+// Initialize OpenTelemetry
+const provider = new NodeTracerProvider();
+provider.register();
+
+// Create span for operation
+const span = trace.getTracer('blogapp-api').startSpan('createPost');
+try {
+  const post = await postService.create(postData);
+  span.setStatus({ code: SpanStatusCode.OK });
+  return post;
+} catch (error) {
+  span.setStatus({ code: SpanStatusCode.ERROR });
+  throw error;
+} finally {
+  span.end();
+}
+```
+
+**Workshop Note**: Distributed tracing has **limited value** in monolithic applications (single-tier architecture). More valuable when multiple services call each other (microservices).
+
+**Reference**: [OpenTelemetry JavaScript](https://opentelemetry.io/docs/languages/js/)
+
+---
+
+### Microservices Evolution (Future Architecture)
+
+**Current Workshop Architecture**: Monolithic API (all endpoints in one Express app)
+
+**When to Consider Microservices**:
+- Team size > 10 engineers (independent deployments)
+- Different scaling needs (posts service vs user service)
+- Technology diversity (e.g., Python for ML recommendations)
+
+**Potential Service Boundaries**:
+
+```
+1. User Service
+   - Authentication, profiles, authorization
+   - POST /api/auth/*, GET /api/users/*
+
+2. Content Service
+   - Posts, comments, tags
+   - POST /api/posts/*, GET /api/posts/*
+
+3. Media Service
+   - Image uploads, processing, CDN
+   - POST /api/media/*, GET /api/media/*
+
+4. Notification Service
+   - Email, push notifications
+   - POST /api/notifications/* (internal only)
+
+5. Analytics Service
+   - View tracking, recommendations
+   - GET /api/analytics/*
+```
+
+**Azure Services for Microservices**:
+- **Azure API Management**: Gateway, routing, rate limiting
+- **Azure Service Bus**: Async messaging between services
+- **Azure Container Apps**: Managed container orchestration
+- **Azure Functions**: Event-driven serverless components
+
+**Trade-offs**:
+- ✅ **Pros**: Independent scaling, polyglot persistence, team autonomy
+- ❌ **Cons**: Complexity, distributed transactions, monitoring overhead
+
+**Workshop Recommendation**: Start with monolith, evolve when scale demands it.
+
+**Reference**: [Microservices architecture on Azure](https://learn.microsoft.com/en-us/azure/architecture/microservices/)
+
+---
+
 ## Appendix
 
 ### A. API Endpoint Summary

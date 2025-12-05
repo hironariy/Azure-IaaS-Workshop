@@ -20,9 +20,12 @@ This document defines the frontend application requirements for the Azure IaaS W
 - **Language**: TypeScript 5+ (strict mode)
 - **Styling**: TailwindCSS 3+
 - **Routing**: React Router v6
-- **State Management**: React Context API or Redux Toolkit
-- **HTTP Client**: Axios
-- **Build Tool**: Vite (recommended) or Create React App
+- **State Management**: 
+  - **Server State**: @tanstack/react-query 5+ (React Query) - handles API data, caching, retries
+  - **Client State**: React Context API - handles auth, UI preferences, theme
+  - **Note**: Redux Toolkit NOT used (unnecessary complexity for this application)
+- **HTTP Client**: Axios with interceptors
+- **Build Tool**: Vite
 - **Testing**: Vitest + React Testing Library
 - **Code Standard**: Google TypeScript Style Guide
 
@@ -196,7 +199,26 @@ This document defines the frontend application requirements for the Azure IaaS W
 - **Access Token**: Used for API calls (1 hour expiry)
 - **Refresh Token**: Used to get new access tokens
 - **ID Token**: Contains user claims
-- **Silent Renewal**: Automatically renew tokens before expiry
+- **Silent Renewal**: MSAL handles automatically via `acquireTokenSilent()`
+
+**Critical: Token Refresh Error Handling**:
+- **Problem**: MSAL's `acquireTokenSilent()` can fail silently (network errors, session expired)
+- **Impact**: User loses form data when API calls return 401
+- **Solution**: Implement axios interceptors to:
+  1. Catch 401 errors from failed token refresh
+  2. Trigger auto-save before forcing re-login
+  3. Show user-friendly error: "Your session expired. Please log in again."
+  4. Optionally: Warn user 5 minutes before token expiry
+- **Implementation**: See axios interceptor pattern in error handling section
+
+**MSAL Redirect Loop Prevention**:
+- **Common Issue**: Infinite redirect between app and login.microsoftonline.com
+- **Root Cause**: Redirect URI mismatch between code and Entra ID configuration
+- **Prevention**:
+  1. Validate redirect URIs match exactly (including trailing slashes)
+  2. Set `navigateToLoginRequestUrl: false` in MSAL config
+  3. Add validation function to catch configuration errors at startup
+- **Troubleshooting**: See Common Pitfalls section
 
 **Protected Routes**:
 - `/posts/new` - Create post
@@ -207,11 +229,49 @@ This document defines the frontend application requirements for the Azure IaaS W
 ### 4. API Integration
 
 #### Base Configuration
-- **Base URL**: `process.env.REACT_APP_API_BASE_URL` (e.g., `http://loadbalancer-ip/api`)
-- **Timeout**: 30 seconds
+- **Base URL**: `process.env.VITE_API_URL` (e.g., `http://loadbalancer-ip/api`)
+- **Timeout**: 10 seconds (adjustable based on network conditions)
 - **Headers**: 
   - `Content-Type: application/json`
   - `Authorization: Bearer {accessToken}` (for authenticated requests)
+
+#### Network Resilience (CRITICAL)
+- **Retry Logic**: React Query handles retries automatically with exponential backoff
+- **Retry Configuration**:
+  ```typescript
+  // In queryClient configuration
+  defaultOptions: {
+    queries: {
+      retry: 3,
+      retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
+    },
+    mutations: {
+      retry: 1, // Retry once for idempotent operations
+    },
+  }
+  ```
+- **Network Status Detection**: Monitor online/offline state, show user-friendly message
+- **Error Handling**: Differentiate between network errors (retry) vs validation errors (show to user)
+- **Axios Interceptors**:
+  1. Request interceptor: Add auth token automatically
+  2. Response interceptor: Handle 401 (token refresh failure), 403 (forbidden), 500 (server error)
+
+#### API Service Layer Pattern (REQUIRED)
+- **Architecture**: Create service layer to abstract API calls
+- **Structure**:
+  ```
+  src/services/api/
+  ├── client.ts         # Axios instance with interceptors
+  ├── posts.service.ts  # Post-related API calls
+  ├── comments.service.ts
+  └── users.service.ts
+  ```
+- **Benefits**:
+  1. Centralized API logic (easier to test, mock, update)
+  2. Type-safe API calls with TypeScript generics
+  3. Consistent error handling
+  4. Components never call axios directly
+- **Usage**: React Query hooks wrap service functions
 
 #### API Endpoints
 
@@ -310,6 +370,22 @@ interface ApiError {
 - **Success Messages**: Toast notifications
 - **Required Fields**: Mark with asterisk (*)
 
+#### Auto-Save Draft Pattern (CRITICAL)
+- **Problem**: Users lose work on browser crashes, network errors, token expiration
+- **Solution**: Auto-save form data to localStorage every 3 seconds
+- **Implementation**:
+  1. Create `useAutosave` custom hook
+  2. Save draft to localStorage with debouncing (3 second interval)
+  3. On page load, check for existing draft
+  4. Show restore prompt: "You have unsaved changes. Restore?"
+  5. Clear draft after successful submission
+  6. Handle edge cases: empty forms, localStorage quota exceeded
+- **Forms Requiring Auto-Save**:
+  - Create Post form (HIGH priority - long-form content)
+  - Edit Post form (HIGH priority)
+  - Comment form (LOW priority - short content)
+- **Educational Value**: Prevents student frustration, demonstrates production UX patterns
+
 #### Toast Notifications
 - **Success**: Green background, checkmark icon
 - **Error**: Red background, X icon
@@ -384,9 +460,65 @@ REACT_APP_ENVIRONMENT=            # development | staging | production
 1. Install dependencies: `npm install`
 2. Type check: `npm run type-check`
 3. Lint: `npm run lint`
-4. Test: `npm run test`
+4. Test: `npm run test` (optional for workshop)
 5. Build: `npm run build`
-6. Output: `/dist` or `/build` directory
+6. Output: `/dist` directory
+
+#### Environment-Specific Builds
+
+**Development**:
+```bash
+npm run dev  # Uses .env.development
+```
+
+**Production**:
+```bash
+npm run build  # Uses .env.production
+```
+
+**Vite Configuration**:
+```typescript
+// vite.config.ts
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), '');
+  
+  return {
+    build: {
+      sourcemap: mode === 'development',
+      minify: mode === 'production' ? 'esbuild' : false,
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            'react-vendor': ['react', 'react-dom', 'react-router-dom'],
+            'msal-vendor': ['@azure/msal-browser', '@azure/msal-react'],
+            'query-vendor': ['@tanstack/react-query'],
+          },
+        },
+      },
+    },
+  };
+});
+```
+
+**Environment Files**:
+```bash
+# .env.example (committed - template)
+VITE_API_URL=http://localhost:3001
+VITE_ENTRA_CLIENT_ID=your-client-id
+VITE_ENTRA_TENANT_ID=your-tenant-id
+VITE_ENTRA_REDIRECT_URI=http://localhost:3000
+
+# .env.development (NOT committed)
+VITE_API_URL=http://localhost:3001
+VITE_ENTRA_CLIENT_ID=dev-client-id
+# ... development values
+
+# .env.production (NOT committed)
+VITE_API_URL=http://10.0.2.4:3001
+VITE_ENTRA_CLIENT_ID=prod-client-id
+VITE_ENTRA_REDIRECT_URI=http://20.10.5.100
+# ... production values
+```
 
 #### Build Output Structure
 ```
@@ -419,7 +551,7 @@ Example:
 server {
     listen 80;
     server_name _;
-    root /usr/share/nginx/html;
+    root /var/www/blogapp;  # Updated path
     index index.html;
 
     # Gzip compression
@@ -444,11 +576,67 @@ server {
         add_header Cache-Control "public, immutable";
     }
 
-    # SPA routing
+    # SPA routing (CRITICAL: must come last)
     location / {
         try_files $uri $uri/ /index.html;
     }
 }
+```
+
+#### Deployment Verification Checklist
+
+**Pre-Deployment**:
+- [ ] TypeScript compilation passes: `npm run type-check`
+- [ ] ESLint passes: `npm run lint`
+- [ ] Production build succeeds: `npm run build`
+- [ ] Bundle size < 1MB: `du -sh dist/`
+- [ ] Preview build locally: `npm run preview`
+- [ ] `.env.production` file configured
+- [ ] Entra ID redirect URI updated to VM IP
+
+**Post-Deployment (Smoke Tests)**:
+- [ ] Homepage loads: `http://<VM_IP>`
+- [ ] Login redirects to Microsoft login
+- [ ] After login, user sees name in navbar
+- [ ] Posts display on homepage
+- [ ] Post detail page loads
+- [ ] Create post form loads (authenticated)
+- [ ] 404 page shows for invalid routes
+- [ ] SPA routing works (refresh on `/posts/123` doesn't 404)
+
+**Automated Health Checks**:
+```bash
+#!/bin/bash
+VM_IP="20.10.5.100"
+
+echo "Running health checks..."
+curl -f http://${VM_IP}/health || echo "❌ Health check failed"
+curl -f http://${VM_IP}/ || echo "❌ Homepage failed"
+curl -f http://${VM_IP}/assets/index*.js || echo "❌ Static assets failed"
+
+# Check security headers
+curl -sI http://${VM_IP}/ | grep -q "X-Frame-Options" || echo "❌ Missing security headers"
+
+echo "✅ Health checks complete"
+```
+
+**Performance Checks**:
+- [ ] Lighthouse score > 90 (run in Chrome DevTools)
+- [ ] First Contentful Paint < 1.5s
+- [ ] Largest Contentful Paint < 2.5s
+
+**Security Checks**:
+- [ ] No secrets in bundle: `grep -r "secret" dist/`
+- [ ] Security headers present
+- [ ] No console errors in browser
+
+**Rollback Plan**:
+If deployment fails:
+```bash
+ssh azureuser@<VM_IP>
+sudo mv /var/www/blogapp /var/www/blogapp.failed
+sudo mv /var/www/blogapp.backup.YYYYMMDD_HHMMSS /var/www/blogapp
+sudo systemctl reload nginx
 ```
 
 ### 8. Static Assets with Azure Blob Storage
@@ -475,7 +663,216 @@ server {
 - Public blobs: Direct URL access
 - Private blobs: Generate SAS token via backend API
 
-### 9. Testing Requirements
+### 9. Workshop Feature Prioritization
+
+**CRITICAL**: 2-day workshop timeline requires clear prioritization to ensure student success.
+
+#### Day 1: Core Features (MUST COMPLETE - 80% target)
+
+**Morning Session (9:00 AM - 12:00 PM)**:
+1. **Authentication** (90 minutes)
+   - Configure MSAL
+   - Implement login/logout
+   - Test authentication flow
+   - **Checkpoint**: Students can log in successfully
+
+2. **Display Posts** (90 minutes)
+   - Set up React Query
+   - Create `usePosts` hook
+   - Build PostCard component
+   - Display post list
+   - **Checkpoint**: Students see posts on homepage
+
+**Afternoon Session (1:00 PM - 5:00 PM)**:
+3. **Post Detail Page** (60 minutes)
+   - Create `usePost(id)` hook
+   - Build PostDetailPage
+   - Display comments
+   - **Checkpoint**: Students can view individual posts
+
+4. **Protected Routes** (60 minutes)
+   - Create ProtectedRoute wrapper
+   - Implement route protection
+   - Test redirect to login
+   - **Checkpoint**: Unauthenticated users redirected
+
+5. **Deployment** (90 minutes)
+   - Build production bundle
+   - Deploy to Azure VM via NGINX
+   - Update Entra ID redirect URI
+   - **Checkpoint**: App accessible via VM IP
+
+**Day 1 Success Criteria**: Working read-only blog app with authentication, deployed to Azure
+
+---
+
+#### Day 2: Full CRUD (SHOULD COMPLETE - 60% target)
+
+**Morning Session (9:00 AM - 12:00 PM)**:
+6. **Create Post** (90 minutes)
+   - Build CreatePostPage with form
+   - Implement `useCreatePost` mutation
+   - Add form validation
+   - **Implement auto-save draft** (CRITICAL)
+   - **Checkpoint**: Students can create posts
+
+7. **Edit/Delete Posts** (90 minutes)
+   - Build EditPostPage
+   - Implement `useUpdatePost`, `useDeletePost`
+   - Add authorization checks (author only)
+   - **Checkpoint**: Authors can edit/delete own posts
+
+**Afternoon Session (1:00 PM - 5:00 PM)**:
+8. **Add Comments** (60 minutes)
+   - Build CommentForm component
+   - Implement `useCreateComment` mutation
+   - Display new comments
+   - **Checkpoint**: Users can comment on posts
+
+9. **User Profile** (60 minutes)
+   - Build UserProfilePage
+   - Display user's posts
+   - **Checkpoint**: Users can view their profile
+
+10. **Final Deployment** (60 minutes)
+    - Deploy complete app
+    - Run verification checklist
+    - **Final Checkpoint**: All features working on Azure VM
+
+**Day 2 Success Criteria**: Full CRUD blog app with comments, user profiles, deployed to Azure
+
+---
+
+#### Stretch Goals (IF TIME ALLOWS)
+
+For advanced students who finish early:
+- Search/filter posts by tag
+- Pagination component
+- Rich text editor (TinyMCE)
+- Image upload to Azure Blob Storage
+- Skeleton loaders
+- ARIA accessibility enhancements
+
+---
+
+#### Instructor Checkpoints
+
+**Critical Pause Points** (don't proceed until 75%+ students complete):
+- After Milestone 1 (Authentication)
+- After Milestone 2 (Display Posts)
+- After Milestone 5 (Day 1 Deployment)
+
+**Success Metrics**:
+- Day 1 completion: 80% of students
+- Day 2 completion: 60% of students
+- Students who attempt stretch goals: 20%
+
+---
+
+### 10. Common Pitfalls & Troubleshooting
+
+**This section helps students self-resolve issues, reducing instructor support burden.**
+
+#### 🔴 CRITICAL: MSAL Redirect Loop
+
+**Symptom**: Browser continuously redirects between app and `login.microsoftonline.com`
+
+**Root Causes**:
+1. Redirect URI mismatch (90% of cases)
+   - Code: `http://localhost:3000`
+   - Entra ID: `http://localhost:3000/` (extra slash)
+   - **Fix**: Make them EXACTLY identical
+
+2. `navigateToLoginRequestUrl` set to `true`
+   - **Fix**: Set to `false` in MSAL config
+
+**Debug Steps**:
+1. Open DevTools → Network tab
+2. Look for repeated requests to `login.microsoftonline.com`
+3. Check `redirect_uri` parameter in URL
+4. Compare with Entra ID app registration
+
+**AWS Comparison**: Similar to Cognito callback URL mismatch
+
+---
+
+#### 🟠 HIGH: CORS Errors with Backend
+
+**Symptom**: `Access to fetch at 'http://10.0.2.4:3000/api/posts' blocked by CORS policy`
+
+**Root Cause**: Backend not configured to accept requests from frontend origin
+
+**Fix**:
+```typescript
+// Backend (Express.js)
+import cors from 'cors';
+app.use(cors({
+  origin: process.env.FRONTEND_URL, // http://localhost:3000
+  credentials: true
+}));
+```
+
+**Production**: Set `FRONTEND_URL` to VM IP or domain
+
+**AWS Comparison**: Similar to API Gateway CORS configuration
+
+---
+
+#### 🟡 MEDIUM: Token Not Attached to API Requests
+
+**Symptom**: Login succeeds, but API returns 401
+
+**Root Cause**: Forgot to add token to axios requests
+
+**Debug Steps**:
+1. Check Network tab → Request headers
+2. Verify `Authorization: Bearer eyJ...` exists
+3. Copy token to jwt.io to decode
+4. Verify `aud` (audience) matches backend
+
+**Fix**: Ensure axios interceptor is configured correctly
+
+---
+
+#### 🟢 LOW: Port Already in Use
+
+**Symptom**: `Error: listen EADDRINUSE: address already in use :::3000`
+
+**Fix**:
+```bash
+# Option 1: Kill existing process
+kill -9 $(lsof -ti:3000)
+
+# Option 2: Use different port
+PORT=3001 npm run dev
+```
+
+---
+
+#### 🟣 Environment Variables Not Loading
+
+**Symptom**: `import.meta.env.VITE_API_URL` is `undefined`
+
+**Root Causes**:
+1. Forgot `VITE_` prefix (Vite requirement)
+   - ❌ Wrong: `API_URL=...`
+   - ✅ Correct: `VITE_API_URL=...`
+
+2. Didn't restart dev server
+   - **Fix**: Restart `npm run dev`
+
+3. `.env` file in wrong location
+   - Must be in project root (same level as `package.json`)
+
+**Debug**:
+```typescript
+console.log('API URL:', import.meta.env.VITE_API_URL);
+console.log('All env vars:', import.meta.env);
+```
+
+---
+
+### 11. Testing Requirements
 
 #### Unit Tests
 - Component rendering tests
@@ -525,6 +922,15 @@ Students are familiar with AWS, so document differences:
 
 ---
 
-**Document Status**: Living document - update as requirements evolve
-**Last Updated**: 2025-12-01
-**Version**: 1.0
+---
+
+## Document History
+
+| Version | Date | Changes | Author |
+|---------|------|---------|--------|
+| 1.0 | 2025-12-01 | Initial specification | Workshop Team |
+| 2.0 | 2025-12-03 | Critical updates based on consultant review:<br>- React Query adopted for state management<br>- Token refresh error handling added<br>- MSAL redirect loop prevention added<br>- Workshop feature prioritization added<br>- Auto-save draft requirement added<br>- Network resilience patterns added<br>- Common pitfalls troubleshooting added<br>- Deployment verification checklist added | Frontend Engineer |
+
+**Document Status**: Living document - update as requirements evolve  
+**Current Version**: 2.0  
+**Last Updated**: 2025-12-03
