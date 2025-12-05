@@ -1,0 +1,61 @@
+services:
+  # MongoDB Primary Node
+  mongodb-primary:
+    image: mongo:7.0
+    container_name: blogapp-mongo-primary
+    hostname: mongo-primary
+    ports:
+      - "27017:27017"
+    command: mongod --replSet blogapp-rs0 --bind_ip_all --noauth
+    volumes:
+      - mongo-primary-data:/data/db
+      - ./scripts:/scripts
+    networks:
+      - blogapp-network
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # MongoDB Secondary Node
+  mongodb-secondary:
+    image: mongo:7.0
+    container_name: blogapp-mongo-secondary
+    hostname: mongo-secondary
+    ports:
+      - "27018:27017"
+    command: mongod --replSet blogapp-rs0 --bind_ip_all --noauth
+    volumes:
+      - mongo-secondary-data:/data/db
+    networks:
+      - blogapp-network
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # MongoDB Express (Web UI for MongoDB)
+  mongo-express:
+    image: mongo-express:latest
+    container_name: blogapp-mongo-express
+    ports:
+      - "8081:8081"
+    environment:
+      ME_CONFIG_MONGODB_URL: mongodb://mongodb-primary:27017/
+      ME_CONFIG_BASICAUTH_USERNAME: admin
+      ME_CONFIG_BASICAUTH_PASSWORD: admin
+    networks:
+      - blogapp-network
+    depends_on:
+      mongodb-primary:
+        condition: service_healthy
+
+networks:
+  blogapp-network:
+    driver: bridge
+
+volumes:
+  mongo-primary-data:
+  mongo-secondary-data:
