@@ -196,6 +196,7 @@ module vnet 'modules/network/vnet.bicep' = {
 // Module 4: Azure Bastion
 // =============================================================================
 // Secure SSH access without public IPs on VMs
+// Standard SKU enables native client support (SSH from local terminal)
 // =============================================================================
 
 module bastion 'modules/network/bastion.bicep' = if (deployBastion) {
@@ -205,15 +206,15 @@ module bastion 'modules/network/bastion.bicep' = if (deployBastion) {
     environment: environment
     workloadName: workloadName
     bastionSubnetId: vnet.outputs.bastionSubnetId
-    bastionSku: 'Basic'
+    bastionSku: 'Standard'  // Standard enables native client, file copy, IP connect
     tags: allTags
   }
 }
 
 // =============================================================================
-// Module 5: Load Balancer
+// Module 5: Load Balancer (Web Tier - External)
 // =============================================================================
-// Standard Load Balancer for Web tier
+// Standard Load Balancer for Web tier (public-facing)
 // =============================================================================
 
 module loadBalancer 'modules/network/load-balancer.bicep' = {
@@ -222,6 +223,26 @@ module loadBalancer 'modules/network/load-balancer.bicep' = {
     location: location
     environment: environment
     workloadName: workloadName
+    tags: allTags
+  }
+}
+
+// =============================================================================
+// Module 5b: Internal Load Balancer (App Tier)
+// =============================================================================
+// Internal Load Balancer for App tier
+// Prepares architecture for future VMSS auto-scaling migration
+// NGINX (Web tier) → ILB → App tier VMs
+// =============================================================================
+
+module internalLoadBalancer 'modules/network/internal-load-balancer.bicep' = {
+  name: 'deploy-internal-load-balancer'
+  params: {
+    location: location
+    environment: environment
+    workloadName: workloadName
+    subnetId: vnet.outputs.appSubnetId
+    frontendPrivateIp: '10.0.2.10'  // Static IP within App subnet
     tags: allTags
   }
 }
@@ -280,6 +301,7 @@ module webTier 'modules/compute/web-tier.bicep' = {
 // Module 9: App Tier VMs
 // =============================================================================
 // 2 Express/Node.js VMs across Availability Zones
+// Connected to Internal Load Balancer (VMSS-ready architecture)
 // =============================================================================
 
 module appTier 'modules/compute/app-tier.bicep' = {
@@ -289,6 +311,7 @@ module appTier 'modules/compute/app-tier.bicep' = {
     environment: environment
     workloadName: workloadName
     subnetId: vnet.outputs.appSubnetId
+    loadBalancerBackendPoolId: internalLoadBalancer.outputs.backendPoolId  // Internal LB
     adminUsername: adminUsername
     sshPublicKey: sshPublicKey
     vmSize: appVmSize
@@ -363,6 +386,9 @@ output loadBalancerPublicIp string = loadBalancer.outputs.publicIpAddress
 @description('Load Balancer FQDN')
 output loadBalancerFqdn string = loadBalancer.outputs.fqdn
 
+@description('Internal Load Balancer private IP (App tier)')
+output internalLoadBalancerIp string = internalLoadBalancer.outputs.frontendPrivateIp
+
 @description('Web tier VM private IPs')
 output webTierPrivateIps array = webTier.outputs.privateIpAddresses
 
@@ -401,7 +427,11 @@ output bastionName string = bastion.?outputs.?bastionName ?? ''
 //      ]
 //    })"
 //
-// 2. Update NGINX configuration on Web VMs with App tier IPs
+// 2. Update NGINX configuration on Web VMs to use Internal LB:
+//    upstream backend {
+//        server 10.0.2.10:3000;  # Internal LB IP (not individual VM IPs)
+//    }
+//    Note: Using ILB IP prepares for VMSS auto-scaling migration
 //
 // 3. Deploy application code to App and Web VMs
 //

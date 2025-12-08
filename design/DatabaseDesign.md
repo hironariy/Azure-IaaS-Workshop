@@ -2188,7 +2188,15 @@ db.getUsers()
 ### Day 1 Step 2: Configure Database
 
 **Student Actions**:
-1. SSH to DB VM via Azure Bastion
+1. SSH to DB VM via Azure Bastion (Standard SKU - native client support)
+   ```bash
+   az network bastion ssh --name bastion-blogapp-prod \
+     --resource-group rg-blogapp-prod-eastus \
+     --target-resource-id <db-vm-resource-id> \
+     --auth-type ssh-key \
+     --username azureuser \
+     --ssh-key ~/.ssh/id_rsa
+   ```
 2. Verify MongoDB installed and running
 3. Initialize replica set using provided script
 4. Create admin and application users

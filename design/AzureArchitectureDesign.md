@@ -9,8 +9,9 @@ This document defines the technical architecture requirements for the Azure IaaS
 ### Application Overview
 - **Application Type**: Multi-user blog site
 - **Architecture Pattern**: Traditional 3-tier web application
-- **Tiers**: Web (NGINX) → App (Express/TypeScript) → DB (MongoDB)
-- **OS**: Ubuntu 24.04 LTS
+- **Tiers**: Web (NGINX) → Internal LB → App (Express/TypeScript) → DB (MongoDB)
+- **Traffic Flow**: Internet → External LB → Web VMs → Internal LB (10.0.2.10) → App VMs → DB VMs
+- **OS**: Ubuntu 22.04 LTS
 - **HA Strategy**: Availability Zones within primary region
 - **DR Strategy**: Azure Site Recovery to secondary region
 - **Authentication**: OAuth2.0 with Microsoft Entra ID
@@ -158,7 +159,9 @@ This choice becomes a teaching moment: "We're using B-series because workshop lo
 
 ### 3. Load Balancing
 
-#### Standard Load Balancer Configuration
+#### External Load Balancer (Web Tier)
+
+**Purpose**: Public-facing load balancer for web traffic
 
 **SKU**: Standard (not Basic)
 - **Reason**: Zone redundancy, better SLA, required for AZ deployment
@@ -175,8 +178,8 @@ This choice becomes a teaching moment: "We're using B-series because workshop lo
 - Web tier VMs (both AZs)
 
 **Health Probes**:
-- HTTP probe on port 80 or 443
-- Path: / or /health
+- HTTP probe on port 80
+- Path: /health
 - Interval: 15 seconds
 - Unhealthy threshold: 2
 
@@ -186,6 +189,43 @@ This choice becomes a teaching moment: "We're using B-series because workshop lo
 
 **Outbound Rules**:
 - Configure for outbound internet access from backend VMs
+
+#### Internal Load Balancer (App Tier)
+
+**Purpose**: Internal load balancer for App tier (VMSS-ready architecture)
+
+**SKU**: Standard
+- **Reason**: Prepares architecture for future VMSS auto-scaling migration
+
+**Frontend Configuration**:
+- Private IP: 10.0.2.10 (static, within App subnet)
+- Zone-redundant frontend
+
+**Backend Pools**:
+- App tier VMs (both AZs)
+
+**Health Probes**:
+- HTTP probe on port 3000
+- Path: /health
+- Interval: 15 seconds
+- Unhealthy threshold: 2
+
+**Load Balancing Rules**:
+- TCP (port 3000) → Backend port 3000
+
+**Benefits**:
+- Single endpoint for NGINX upstream configuration
+- Azure-native health checks for App tier
+- Seamless VMSS migration path (swap VMs for VMSS, keep ILB IP)
+- Consistent architecture pattern across tiers
+
+**VMSS Migration Path** (Future):
+1. Create VMSS with same configuration as individual VMs
+2. Add VMSS to Internal LB backend pool
+3. Remove individual VMs from backend pool
+4. Delete individual VMs
+5. Enable auto-scaling rules on VMSS
+6. **No changes needed to NGINX or LB** - ILB IP stays the same
 
 ### 4. Storage
 
@@ -304,9 +344,16 @@ Enable for all resources:
 
 #### Azure Bastion
 - Dedicated subnet (AzureBastionSubnet /26 minimum)
-- SKU: Basic or Standard
+- **SKU: Standard** (enables native client support)
 - Purpose: Secure SSH access without public IPs on VMs
 - No public IPs required on any application VMs
+- **Standard SKU Features**:
+  - Native client support (SSH from local terminal via `az network bastion ssh`)
+  - File copy/transfer
+  - IP-based connection
+  - Shareable links
+  - Tunneling support
+- **AWS Comparison**: Similar to AWS Session Manager but browser-based + native client
 
 #### Managed Identities
 - System-assigned managed identities for all VMs
@@ -339,12 +386,13 @@ Enable for all resources:
 Follow Azure naming best practices:
 
 | Resource Type | Pattern | Example |
-|---------------|---------|---------|
+|---------------|---------|---------||
 | Resource Group | rg-{workload}-{env}-{region} | rg-blogapp-prod-eastus |
 | Virtual Network | vnet-{workload}-{env}-{region} | vnet-blogapp-prod-eastus |
 | Subnet | snet-{tier}-{env} | snet-web-prod |
 | VM | vm-{tier}{instance}-{env} | vm-web01-prod |
-| Load Balancer | lbe-{workload}-{env} | lbe-blogapp-prod |
+| External Load Balancer | lbe-{workload}-{env} | lbe-blogapp-prod |
+| Internal Load Balancer | lbi-{tier}-{workload}-{env} | lbi-app-blogapp-prod |
 | Storage Account | st{workload}{uniqueid} | stblogapp001 |
 | NSG | nsg-{subnet}-{env} | nsg-web-prod |
 | Log Analytics | log-{workload}-{env} | log-blogapp-prod |
@@ -375,7 +423,8 @@ Required tags for all resources:
 
 **App Tier**:
 - 2 VMs in different Availability Zones
-- Horizontal scaling ready
+- Internal Load Balancer distributes traffic (10.0.2.10:3000)
+- Horizontal scaling ready (VMSS migration path prepared)
 - Stateless design
 
 **DB Tier**:
@@ -412,21 +461,21 @@ Required tags for all resources:
 
 **Additional Infrastructure Costs (48 hours)**:
 - Managed Disks (6 × Standard SSD 30GB + 2 × Premium SSD 128GB): **~$2.50**
-- Standard Load Balancer + Public IP: **~$1.50**
+- Standard Load Balancer (External + Internal) + Public IP: **~$2.00**
 - Storage Account (Standard LRS, minimal usage): **~$0.50**
-- Azure Bastion (Basic SKU): **~$7.20** (alternative: deallocate when not in use)
+- Azure Bastion (Standard SKU): **~$9.00** (enables native client SSH from terminal)
 - Log Analytics (30-day retention, light ingestion): **~$2.00**
 - Azure Backup (Recovery Services Vault): **~$1.00**
 - Azure Site Recovery (replication): **~$6.00**
 - Data transfer (minimal): **~$0.50**
 
-**Total Estimated Cost**: **~$45 per student** for 48-hour workshop
+**Total Estimated Cost**: **~$47 per student** for 48-hour workshop
 
 **Cost Optimization Tips for Students**:
 - Deallocate VMs during breaks: Save ~$0.50/hour
-- Use Bastion only when needed: Deallocate to save $0.15/hour
+- Use Bastion only when needed: Deallocate to save $0.19/hour
 - Delete all resources after workshop: Zero ongoing costs
-- **For 25 students, total workshop cost**: ~$1,125
+- **For 25 students, total workshop cost**: ~$1,175
 
 *Note: Prices based on East US region, pay-as-you-go rates (December 2025). Actual costs vary by region, currency, and enterprise agreements.*
 

@@ -3499,9 +3499,12 @@ sudo systemctl stop blogapp-api
 # /etc/nginx/sites-available/blogapp-api (on web tier VMs)
 
 upstream backend_api {
-    # App tier VMs
-    server 10.0.2.4:3000 max_fails=3 fail_timeout=30s;
-    server 10.0.2.5:3000 max_fails=3 fail_timeout=30s;
+    # Internal Load Balancer for App tier (VMSS-ready architecture)
+    # Using ILB IP instead of individual VM IPs enables:
+    # - Seamless VMSS auto-scaling migration
+    # - Azure-native health checks
+    # - No NGINX config changes when scaling
+    server 10.0.2.10:3000;
     
     # Keepalive connections
     keepalive 32;
@@ -4179,14 +4182,16 @@ const mongoPassword = await getSecret('mongodb-api-password');
 
 **Student Tasks** (45-60 minutes):
 
-1. **SSH to App Tier VM** (via Azure Bastion)
+1. **SSH to App Tier VM** (via Azure Bastion native client)
    ```bash
-   # From Azure Portal or local machine
-   az network bastion ssh --name bastion-blogapp \
+   # Using Azure Bastion Standard SKU native client support
+   # Enables SSH from local terminal (not just browser)
+   az network bastion ssh --name bastion-blogapp-prod \
      --resource-group rg-blogapp-prod-eastus \
      --target-resource-id /subscriptions/{sub-id}/resourceGroups/rg-blogapp-prod-eastus/providers/Microsoft.Compute/virtualMachines/vm-app01-prod \
-     --auth-type password \
-     --username azureuser
+     --auth-type ssh-key \
+     --username azureuser \
+     --ssh-key ~/.ssh/id_rsa
    ```
 
 2. **Install Node.js 20.x**
@@ -4559,13 +4564,15 @@ setInterval(() => {
 | Aspect | Azure (This Workshop) | AWS Equivalent |
 |--------|----------------------|----------------|
 | **Compute** | Azure VMs (Ubuntu) with systemd | EC2 instances with systemd/PM2 |
-| **Load Balancing** | Azure Standard Load Balancer → NGINX → Express | ALB → EC2/ECS → Express |
+| **Load Balancing** | External LB → NGINX → Internal LB → Express | ALB → EC2/ECS → Express |
 | **Database** | Self-managed MongoDB on VMs | Self-managed MongoDB on EC2 or Amazon DocumentDB |
 | **Authentication** | Microsoft Entra ID + JWT validation | Amazon Cognito + JWT validation |
 | **Secrets** | Azure Key Vault | AWS Secrets Manager |
 | **Monitoring** | Azure Monitor + Log Analytics | CloudWatch Logs + CloudWatch Metrics |
 | **CI/CD** | GitHub Actions → Azure VMs | GitHub Actions → EC2/CodeDeploy |
 | **Service Management** | systemd | systemd or PM2 or ECS |
+
+**Note**: Internal Load Balancer (10.0.2.10:3000) sits between NGINX and Express, enabling future VMSS auto-scaling without NGINX config changes.
 
 ### Key Learning Differences
 

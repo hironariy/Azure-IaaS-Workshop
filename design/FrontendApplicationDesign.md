@@ -514,7 +514,9 @@ VITE_ENTRA_CLIENT_ID=dev-client-id
 # ... development values
 
 # .env.production (NOT committed)
-VITE_API_URL=http://10.0.2.4:3001
+# Note: Frontend accesses API via NGINX reverse proxy, not direct App tier
+# NGINX uses Internal LB (10.0.2.10) to reach App tier
+VITE_API_URL=http://20.10.5.100  # External LB public IP (goes through NGINX)
 VITE_ENTRA_CLIENT_ID=prod-client-id
 VITE_ENTRA_REDIRECT_URI=http://20.10.5.100
 # ... production values
@@ -906,10 +908,14 @@ Students are familiar with AWS, so document differences:
 | Authentication | Microsoft Entra ID + MSAL | Amazon Cognito |
 | OAuth2.0 Flow | Authorization Code with PKCE | Same, but different SDK |
 | Token Storage | Session Storage | Same |
-| API Gateway | Azure Load Balancer + NGINX | AWS ALB + API Gateway |
+| External LB | Azure Standard Load Balancer (public) | AWS ALB (internet-facing) |
+| Internal LB | Azure Internal Load Balancer (App tier) | AWS ALB (internal) |
+| Reverse Proxy | NGINX on Web VMs | NGINX or built into ALB |
 | Static Hosting | NGINX on VM | S3 + CloudFront |
 | Media Storage | Azure Blob Storage | S3 |
 | Identity Claims | Microsoft Graph | Cognito User Pools |
+
+**Traffic Flow**: Browser → External LB → NGINX (Web VM) → Internal LB (10.0.2.10) → Express (App VM) → MongoDB (DB VM)
 
 #### Learning Objectives
 1. Understand OAuth2.0 with Microsoft Entra ID

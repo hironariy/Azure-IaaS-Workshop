@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.39.26.7824",
-      "templateHash": "10078115278134650773"
+      "templateHash": "6881452283133085263"
     }
   },
   "parameters": {
@@ -2134,6 +2134,223 @@
       }
     },
     {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "deploy-internal-load-balancer",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "environment": {
+            "value": "[parameters('environment')]"
+          },
+          "workloadName": {
+            "value": "[parameters('workloadName')]"
+          },
+          "subnetId": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'deploy-vnet'), '2025-04-01').outputs.appSubnetId.value]"
+          },
+          "frontendPrivateIp": {
+            "value": "10.0.2.10"
+          },
+          "tags": {
+            "value": "[variables('allTags')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.39.26.7824",
+              "templateHash": "15948876644778227689"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region for all resources"
+              }
+            },
+            "environment": {
+              "type": "string",
+              "defaultValue": "prod",
+              "allowedValues": [
+                "prod",
+                "dev",
+                "test"
+              ],
+              "metadata": {
+                "description": "Environment name (prod, dev, test)"
+              }
+            },
+            "workloadName": {
+              "type": "string",
+              "defaultValue": "blogapp",
+              "metadata": {
+                "description": "Workload name for naming convention"
+              }
+            },
+            "subnetId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the App tier subnet for frontend IP"
+              }
+            },
+            "frontendPrivateIp": {
+              "type": "string",
+              "defaultValue": "10.0.2.10",
+              "metadata": {
+                "description": "Private IP address for the Internal Load Balancer frontend (must be within App tier subnet 10.0.2.0/24)"
+              }
+            },
+            "tags": {
+              "type": "object",
+              "defaultValue": {},
+              "metadata": {
+                "description": "Tags to apply to all resources"
+              }
+            }
+          },
+          "variables": {
+            "loadBalancerName": "[format('lbi-app-{0}-{1}', parameters('workloadName'), parameters('environment'))]",
+            "frontendName": "frontend-app",
+            "backendPoolName": "backend-app",
+            "healthProbeName": "probe-app-http",
+            "lbRuleName": "rule-app-http",
+            "defaultTags": {
+              "Environment": "[parameters('environment')]",
+              "Workload": "[parameters('workloadName')]",
+              "Tier": "app",
+              "ManagedBy": "Bicep"
+            },
+            "allTags": "[union(variables('defaultTags'), parameters('tags'))]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Network/loadBalancers",
+              "apiVersion": "2023-11-01",
+              "name": "[variables('loadBalancerName')]",
+              "location": "[parameters('location')]",
+              "tags": "[variables('allTags')]",
+              "sku": {
+                "name": "Standard",
+                "tier": "Regional"
+              },
+              "properties": {
+                "frontendIPConfigurations": [
+                  {
+                    "name": "[variables('frontendName')]",
+                    "properties": {
+                      "privateIPAddress": "[parameters('frontendPrivateIp')]",
+                      "privateIPAllocationMethod": "Static",
+                      "subnet": {
+                        "id": "[parameters('subnetId')]"
+                      }
+                    },
+                    "zones": [
+                      "1",
+                      "2",
+                      "3"
+                    ]
+                  }
+                ],
+                "backendAddressPools": [
+                  {
+                    "name": "[variables('backendPoolName')]"
+                  }
+                ],
+                "probes": [
+                  {
+                    "name": "[variables('healthProbeName')]",
+                    "properties": {
+                      "protocol": "Http",
+                      "port": 3000,
+                      "requestPath": "/health",
+                      "intervalInSeconds": 15,
+                      "numberOfProbes": 2,
+                      "probeThreshold": 1
+                    }
+                  }
+                ],
+                "loadBalancingRules": [
+                  {
+                    "name": "[variables('lbRuleName')]",
+                    "properties": {
+                      "frontendIPConfiguration": {
+                        "id": "[resourceId('Microsoft.Network/loadBalancers/frontendIPConfigurations', variables('loadBalancerName'), variables('frontendName'))]"
+                      },
+                      "backendAddressPool": {
+                        "id": "[resourceId('Microsoft.Network/loadBalancers/backendAddressPools', variables('loadBalancerName'), variables('backendPoolName'))]"
+                      },
+                      "probe": {
+                        "id": "[resourceId('Microsoft.Network/loadBalancers/probes', variables('loadBalancerName'), variables('healthProbeName'))]"
+                      },
+                      "protocol": "Tcp",
+                      "frontendPort": 3000,
+                      "backendPort": 3000,
+                      "enableFloatingIP": false,
+                      "idleTimeoutInMinutes": 4,
+                      "loadDistribution": "Default",
+                      "enableTcpReset": true,
+                      "disableOutboundSnat": true
+                    }
+                  }
+                ]
+              }
+            }
+          ],
+          "outputs": {
+            "loadBalancerId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the Internal Load Balancer"
+              },
+              "value": "[resourceId('Microsoft.Network/loadBalancers', variables('loadBalancerName'))]"
+            },
+            "loadBalancerName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the Internal Load Balancer"
+              },
+              "value": "[variables('loadBalancerName')]"
+            },
+            "frontendPrivateIp": {
+              "type": "string",
+              "metadata": {
+                "description": "Private IP address of the Internal Load Balancer frontend"
+              },
+              "value": "[parameters('frontendPrivateIp')]"
+            },
+            "backendPoolId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the backend address pool (for VM NIC association)"
+              },
+              "value": "[reference(resourceId('Microsoft.Network/loadBalancers', variables('loadBalancerName')), '2023-11-01').backendAddressPools[0].id]"
+            },
+            "backendPoolName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the backend address pool"
+              },
+              "value": "[variables('backendPoolName')]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', 'deploy-vnet')]"
+      ]
+    },
+    {
       "condition": "[parameters('deployStorage')]",
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
@@ -3452,6 +3669,9 @@
           "subnetId": {
             "value": "[reference(resourceId('Microsoft.Resources/deployments', 'deploy-vnet'), '2025-04-01').outputs.appSubnetId.value]"
           },
+          "loadBalancerBackendPoolId": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'deploy-internal-load-balancer'), '2025-04-01').outputs.backendPoolId.value]"
+          },
           "adminUsername": {
             "value": "[parameters('adminUsername')]"
           },
@@ -3481,7 +3701,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.39.26.7824",
-              "templateHash": "16761350007461160802"
+              "templateHash": "16206794767696343521"
             }
           },
           "parameters": {
@@ -3557,6 +3777,13 @@
                 "description": "Resource ID of Data Collection Rule"
               }
             },
+            "loadBalancerBackendPoolId": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Resource ID of Internal Load Balancer backend pool"
+              }
+            },
             "tags": {
               "type": "object",
               "defaultValue": {},
@@ -3614,7 +3841,7 @@
                     "value": 30
                   },
                   "loadBalancerBackendPoolId": {
-                    "value": ""
+                    "value": "[parameters('loadBalancerBackendPoolId')]"
                   },
                   "enableMonitoring": {
                     "value": "[parameters('enableMonitoring')]"
@@ -4037,7 +4264,7 @@
                     "value": 30
                   },
                   "loadBalancerBackendPoolId": {
-                    "value": ""
+                    "value": "[parameters('loadBalancerBackendPoolId')]"
                   },
                   "enableMonitoring": {
                     "value": "[parameters('enableMonitoring')]"
@@ -4469,6 +4696,7 @@
       },
       "dependsOn": [
         "[resourceId('Microsoft.Resources/deployments', 'deploy-dcr')]",
+        "[resourceId('Microsoft.Resources/deployments', 'deploy-internal-load-balancer')]",
         "[resourceId('Microsoft.Resources/deployments', 'deploy-log-analytics')]",
         "[resourceId('Microsoft.Resources/deployments', 'deploy-vnet')]"
       ]
@@ -4527,7 +4755,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.39.26.7824",
-              "templateHash": "5482961546371674587"
+              "templateHash": "15994855274954313366"
             }
           },
           "parameters": {
@@ -4633,7 +4861,7 @@
                 "caching": "None"
               }
             ],
-            "mongoInstallScript": "#!/bin/bash\nset -e\n\n# ==========================================================\n# Wait for dpkg/apt locks to be released\n# ==========================================================\n# Azure Linux Agent may be running unattended-upgrades on first boot\n# This can hold dpkg lock for 1-5 minutes\n# We wait up to 5 minutes for the lock to be released\n# ==========================================================\n\nwait_for_apt_lock() {\n  local timeout=300\n  local interval=10\n  local elapsed=0\n  \n  echo \"Checking for dpkg/apt locks...\"\n  \n  while true; do\n    # Check if any apt/dpkg processes are running\n    if ! fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 && \\\n       ! fuser /var/lib/apt/lists/lock >/dev/null 2>&1 && \\\n       ! fuser /var/cache/apt/archives/lock >/dev/null 2>&1; then\n      echo \"All apt/dpkg locks are free, proceeding...\"\n      return 0\n    fi\n    \n    if [ $elapsed -ge $timeout ]; then\n      echo \"ERROR: Timeout waiting for apt/dpkg locks after ${timeout}s\"\n      return 1\n    fi\n    \n    echo \"apt/dpkg lock is held, waiting ${interval}s... (${elapsed}s elapsed)\"\n    sleep $interval\n    elapsed=$((elapsed + interval))\n  done\n}\n\n# Set non-interactive mode to prevent prompts during package installation\nexport DEBIAN_FRONTEND=noninteractive\n\n# Execute wait function (initial check to reduce log spam)\nwait_for_apt_lock\n\n# Update packages with lock timeout (backup protection against race conditions)\n# DPkg::Lock::Timeout waits up to 120 seconds if another process holds the lock\napt-get -o DPkg::Lock::Timeout=120 update\napt-get -o DPkg::Lock::Timeout=120 -y upgrade\n\n# ==========================================================\n# Mount Data Disk\n# ==========================================================\n# Azure disk device names are NOT guaranteed (/dev/sdc may not always be the data disk)\n# The resource/temp disk is often /dev/sdc and is already mounted to /mnt\n# We need to find our Premium SSD data disk by:\n#   1. Looking for unpartitioned disks of the expected size\n#   2. Or by checking Azure metadata for LUN mappings\n# Our data disk is 128GB Premium SSD attached at LUN 0\n# ==========================================================\n\nMOUNT_POINT=\"/data/mongodb\"\nDATA_DISK=\"\"\nEXPECTED_SIZE_GB=128  # Must match dataDiskSizeGB parameter in Bicep\n\necho \"=== Identifying data disk ===\"\necho \"Looking for ${EXPECTED_SIZE_GB}GB disk...\"\n\n# List all disks for debugging\nlsblk -d -o NAME,SIZE,TYPE,MOUNTPOINT\n\n# Find the data disk by size (128GB = ~137GB in lsblk due to GB vs GiB)\n# Look for disks that are close to our expected size and not the OS disk\nfor disk in /dev/sd?; do\n  if [ -b \"$disk\" ]; then\n    DISK_NAME=$(basename \"$disk\")\n    # Get size in bytes\n    DISK_SIZE_BYTES=$(blockdev --getsize64 \"$disk\" 2>/dev/null || echo \"0\")\n    DISK_SIZE_GB=$((DISK_SIZE_BYTES / 1024 / 1024 / 1024))\n    \n    echo \"Checking $disk: ${DISK_SIZE_GB}GB\"\n    \n    # Check if this is approximately our expected size (within 10GB tolerance)\n    if [ $DISK_SIZE_GB -ge $((EXPECTED_SIZE_GB - 10)) ] && [ $DISK_SIZE_GB -le $((EXPECTED_SIZE_GB + 10)) ]; then\n      # Verify it's not already partitioned with a mounted partition\n      MOUNTED=$(lsblk -n -o MOUNTPOINT \"$disk\" 2>/dev/null | grep -v \"^$\" | head -1)\n      if [ -z \"$MOUNTED\" ]; then\n        # Check if any partition is mounted\n        PART_MOUNTED=$(lsblk -n -o MOUNTPOINT \"${disk}\"* 2>/dev/null | grep -v \"^$\" | head -1)\n        if [ -z \"$PART_MOUNTED\" ] || [ \"$PART_MOUNTED\" = \"$MOUNT_POINT\" ]; then\n          DATA_DISK=\"$disk\"\n          echo \"Found data disk: $DATA_DISK (${DISK_SIZE_GB}GB)\"\n          break\n        else\n          echo \"Disk $disk has partition mounted at $PART_MOUNTED, skipping\"\n        fi\n      else\n        echo \"Disk $disk is mounted at $MOUNTED, skipping\"\n      fi\n    fi\n  fi\ndone\n\n# Fallback: If not found by size, try to find any unpartitioned/unused disk\nif [ -z \"$DATA_DISK\" ]; then\n  echo \"Data disk not found by size, trying to find unused disk...\"\n  for disk in /dev/sda /dev/sdd /dev/sde; do\n    if [ -b \"$disk\" ]; then\n      # Check if disk has no partitions or is not mounted\n      PARTS=$(lsblk -n -o NAME \"$disk\" 2>/dev/null | wc -l)\n      MOUNTED=$(lsblk -n -o MOUNTPOINT \"$disk\" 2>/dev/null | grep -v \"^$\" | head -1)\n      if [ -z \"$MOUNTED\" ]; then\n        DATA_DISK=\"$disk\"\n        echo \"Found unused disk: $DATA_DISK\"\n        break\n      fi\n    fi\n  done\nfi\n\nif [ -z \"$DATA_DISK\" ]; then\n  echo \"ERROR: Could not identify the data disk\"\n  echo \"=== All block devices ===\"\n  lsblk\n  exit 1\nfi\n\necho \"Using data disk: $DATA_DISK\"\n\n# Create filesystem if not exists\nif ! blkid \"$DATA_DISK\" | grep -q \"TYPE=\"; then\n  echo \"Creating ext4 filesystem on $DATA_DISK\"\n  mkfs.ext4 -F \"$DATA_DISK\"\nfi\n\n# Create mount point\nmkdir -p \"$MOUNT_POINT\"\n\n# Add to fstab for persistent mount (but don't trigger systemd mount yet)\nif ! grep -q \"$DATA_DISK\" /etc/fstab; then\n  echo \"$DATA_DISK $MOUNT_POINT ext4 defaults,nofail 0 2\" >> /etc/fstab\n  # Reload systemd to recognize new fstab entry\n  systemctl daemon-reload\nfi\n\n# Wait a moment for any systemd mount activity to settle\nsleep 3\n\n# Mount the disk with comprehensive checks and retries\nmount_with_retry() {\n  local max_attempts=5\n  local attempt=1\n  \n  while [ $attempt -le $max_attempts ]; do\n    echo \"Mount attempt $attempt of $max_attempts...\"\n    \n    # Check if mount point is already mounted\n    if mountpoint -q \"$MOUNT_POINT\"; then\n      echo \"$MOUNT_POINT is already mounted\"\n      return 0\n    fi\n    \n    # Check if the disk is already mounted somewhere\n    if mount | grep -q \"^$DATA_DISK \"; then\n      CURRENT_MOUNT=$(mount | grep \"^$DATA_DISK \" | awk '{print $3}')\n      echo \"$DATA_DISK is already mounted at $CURRENT_MOUNT\"\n      if [ \"$CURRENT_MOUNT\" = \"$MOUNT_POINT\" ]; then\n        return 0\n      else\n        echo \"WARNING: Disk mounted at unexpected location, unmounting...\"\n        umount \"$DATA_DISK\" 2>/dev/null || true\n        sleep 2\n      fi\n    fi\n    \n    # Try to mount\n    echo \"Attempting to mount $DATA_DISK to $MOUNT_POINT\"\n    if mount \"$DATA_DISK\" \"$MOUNT_POINT\" 2>/dev/null; then\n      echo \"Mount successful\"\n      return 0\n    fi\n    \n    # Mount failed - check if systemd mounted it in the meantime\n    if mountpoint -q \"$MOUNT_POINT\"; then\n      echo \"Mount point became active (systemd mount succeeded)\"\n      return 0\n    fi\n    \n    echo \"Mount attempt $attempt failed, waiting before retry...\"\n    sleep 5\n    attempt=$((attempt + 1))\n  done\n  \n  echo \"ERROR: Failed to mount $DATA_DISK after $max_attempts attempts\"\n  return 1\n}\n\n# Execute mount with retry logic\nif ! mount_with_retry; then\n  echo \"=== Debug: Current mounts ===\"\n  mount | grep -E \"(sdc|mongodb)\" || echo \"No relevant mounts found\"\n  echo \"=== Debug: fstab content ===\"\n  grep -E \"(sdc|mongodb)\" /etc/fstab || echo \"No relevant fstab entries\"\n  echo \"=== Debug: Block devices ===\"\n  lsblk\n  exit 1\nfi\n\n# Verify mount succeeded\nif mountpoint -q \"$MOUNT_POINT\"; then\n  echo \"Verified: $MOUNT_POINT is mounted successfully\"\n  df -h \"$MOUNT_POINT\"\nelse\n  echo \"ERROR: $MOUNT_POINT is not mounted after all attempts\"\n  exit 1\nfi\n\n# Set ownership for mongodb user (will be created by package)\n# Done after mongodb installation\n\n# ==========================================================\n# Install MongoDB 7.0\n# ==========================================================\n# Import MongoDB public GPG key\napt-get -o DPkg::Lock::Timeout=120 -y install gnupg curl\n\n# Use --batch flag for non-interactive GPG operation (no TTY available in CustomScript)\n# Check if keyring already exists to make script idempotent (re-runnable)\nif [ ! -f /usr/share/keyrings/mongodb-server-7.0.gpg ]; then\n  echo \"Downloading MongoDB GPG key...\"\n  curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc | \\\n    gpg --batch -o /usr/share/keyrings/mongodb-server-7.0.gpg --dearmor\nelse\n  echo \"MongoDB GPG key already exists, skipping download\"\nfi\n\n# Add MongoDB repository if not already present\nif [ ! -f /etc/apt/sources.list.d/mongodb-org-7.0.list ]; then\n  echo \"deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse\" | \\\n    tee /etc/apt/sources.list.d/mongodb-org-7.0.list\nfi\n\n# Create MongoDB data and log directories on data disk BEFORE installing MongoDB\n# This ensures the directories exist when the mongod service first starts\nmkdir -p /data/mongodb/db\nmkdir -p /data/mongodb/log\n\n# Update and install MongoDB\napt-get -o DPkg::Lock::Timeout=120 update\napt-get -o DPkg::Lock::Timeout=120 -y install mongodb-org\n\n# ==========================================================\n# Configure MongoDB for Replica Set\n# ==========================================================\n# Backup original config\ncp /etc/mongod.conf /etc/mongod.conf.bak\n\n# Set ownership (mongodb user created by package installation)\nchown -R mongodb:mongodb /data/mongodb\n\n# Configure MongoDB\n# Note: MongoDB 7.0+ no longer uses storage.journal.enabled (journaling is always on)\ncat > /etc/mongod.conf << 'EOF'\n# MongoDB 7.0 configuration file\n# Reference: https://www.mongodb.com/docs/manual/reference/configuration-options/\n\n# Where and how to store data\nstorage:\n  dbPath: /data/mongodb/db\n  wiredTiger:\n    engineConfig:\n      cacheSizeGB: 8  # Use 50% of RAM (16GB VM)\n\n# Where to write logging data\nsystemLog:\n  destination: file\n  logAppend: true\n  path: /data/mongodb/log/mongod.log\n\n# Network interfaces\nnet:\n  port: 27017\n  bindIp: 0.0.0.0  # Listen on all interfaces (NSG controls access)\n\n# Process management\nprocessManagement:\n  timeZoneInfo: /usr/share/zoneinfo\n\n# Security (enable after replica set is initialized)\n# security:\n#   authorization: enabled\n#   keyFile: /etc/mongodb/keyfile\n\n# Replica set configuration\nreplication:\n  replSetName: blogapp-rs0\nEOF\n\n# Stop MongoDB if it was auto-started with default config\nsystemctl stop mongod 2>/dev/null || true\n\n# Ensure correct ownership after config change\nchown -R mongodb:mongodb /data/mongodb\n\n# Enable and start MongoDB with new configuration\nsystemctl daemon-reload\nsystemctl enable mongod\nsystemctl start mongod\n\n# Wait for MongoDB to start (give it more time on first boot)\necho \"Waiting for MongoDB to start...\"\nsleep 15\n\n# Verify MongoDB is running with retries\nfor i in 1 2 3; do\n  if systemctl is-active --quiet mongod; then\n    echo \"MongoDB installation completed successfully\"\n    # Show MongoDB version for verification\n    mongod --version | head -1\n    exit 0\n  fi\n  echo \"MongoDB not ready yet, waiting... (attempt $i/3)\"\n  sleep 10\ndone\n\n# If we get here, MongoDB failed to start\necho \"MongoDB failed to start after 3 attempts\"\necho \"=== MongoDB service status ===\"\nsystemctl status mongod --no-pager || true\necho \"=== Last 50 lines of MongoDB log ===\"\ntail -50 /data/mongodb/log/mongod.log 2>/dev/null || echo \"No log file found\"\nexit 1\n\n# ==========================================================\n# Post-Installation Notes\n# ==========================================================\n# To initialize the replica set, run the following on the PRIMARY node:\n#\n# mongosh --eval \"rs.initiate({\n#   _id: 'blogapp-rs0',\n#   members: [\n#     { _id: 0, host: 'vm-db-az1-prod:27017', priority: 2 },\n#     { _id: 1, host: 'vm-db-az2-prod:27017', priority: 1 }\n#   ]\n# })\"\n#\n# Check replica set status:\n# mongosh --eval \"rs.status()\"\n"
+            "mongoInstallScript": "#!/bin/bash\nset -e\n\n# ==========================================================\n# Wait for dpkg/apt locks to be released\n# ==========================================================\n# Azure Linux Agent may be running unattended-upgrades on first boot\n# This can hold dpkg lock for 1-5 minutes\n# We wait up to 5 minutes for the lock to be released\n# ==========================================================\n\nwait_for_apt_lock() {\n  local timeout=300\n  local interval=10\n  local elapsed=0\n  \n  echo \"Checking for dpkg/apt locks...\"\n  \n  while true; do\n    # Check if any apt/dpkg processes are running\n    if ! fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 && \\\n       ! fuser /var/lib/apt/lists/lock >/dev/null 2>&1 && \\\n       ! fuser /var/cache/apt/archives/lock >/dev/null 2>&1; then\n      echo \"All apt/dpkg locks are free, proceeding...\"\n      return 0\n    fi\n    \n    if [ $elapsed -ge $timeout ]; then\n      echo \"ERROR: Timeout waiting for apt/dpkg locks after ${timeout}s\"\n      return 1\n    fi\n    \n    echo \"apt/dpkg lock is held, waiting ${interval}s... (${elapsed}s elapsed)\"\n    sleep $interval\n    elapsed=$((elapsed + interval))\n  done\n}\n\n# Set non-interactive mode to prevent prompts during package installation\nexport DEBIAN_FRONTEND=noninteractive\n\n# Execute wait function (initial check to reduce log spam)\nwait_for_apt_lock\n\n# Update packages with lock timeout (backup protection against race conditions)\n# DPkg::Lock::Timeout waits up to 120 seconds if another process holds the lock\napt-get -o DPkg::Lock::Timeout=120 update\napt-get -o DPkg::Lock::Timeout=120 -y upgrade\n\n# ==========================================================\n# Mount Data Disk\n# ==========================================================\n# Azure disk device names are NOT guaranteed (/dev/sdc may not always be the data disk)\n# The resource/temp disk is often /dev/sdc and is already mounted to /mnt\n# We need to find our Premium SSD data disk by:\n#   1. Looking for disks of the expected size\n#   2. Checking if already mounted at our target location (idempotent)\n# Our data disk is 128GB Premium SSD attached at LUN 0\n# ==========================================================\n\nMOUNT_POINT=\"/data/mongodb\"\nDATA_DISK=\"\"\nEXPECTED_SIZE_GB=128  # Must match dataDiskSizeGB parameter in Bicep\nALREADY_MOUNTED=false\n\necho \"=== Identifying data disk ===\"\necho \"Looking for ${EXPECTED_SIZE_GB}GB disk...\"\n\n# First, check if something is already mounted at our mount point\nif mountpoint -q \"$MOUNT_POINT\"; then\n  echo \"$MOUNT_POINT is already mounted!\"\n  # Find which device is mounted there\n  DATA_DISK=$(findmnt -n -o SOURCE \"$MOUNT_POINT\" | sed 's/[0-9]*$//' | head -1)\n  if [ -n \"$DATA_DISK\" ] && [ -b \"$DATA_DISK\" ]; then\n    echo \"Data disk $DATA_DISK is already mounted at $MOUNT_POINT - SUCCESS (idempotent)\"\n    ALREADY_MOUNTED=true\n  fi\nfi\n\n# If not already mounted, find the data disk by size\nif [ \"$ALREADY_MOUNTED\" = \"false\" ]; then\n  # List all disks for debugging\n  lsblk -d -o NAME,SIZE,TYPE,MOUNTPOINT\n  \n  # Find the data disk by size\n  for disk in /dev/sd?; do\n    if [ -b \"$disk\" ]; then\n      DISK_NAME=$(basename \"$disk\")\n      # Get size in bytes\n      DISK_SIZE_BYTES=$(blockdev --getsize64 \"$disk\" 2>/dev/null || echo \"0\")\n      DISK_SIZE_GB=$((DISK_SIZE_BYTES / 1024 / 1024 / 1024))\n      \n      echo \"Checking $disk: ${DISK_SIZE_GB}GB\"\n      \n      # Check if this is approximately our expected size (within 10GB tolerance)\n      if [ $DISK_SIZE_GB -ge $((EXPECTED_SIZE_GB - 10)) ] && [ $DISK_SIZE_GB -le $((EXPECTED_SIZE_GB + 10)) ]; then\n        # Check where this disk (or its partitions) is mounted\n        DISK_MOUNT=$(lsblk -n -o MOUNTPOINT \"$disk\" 2>/dev/null | grep -v \"^$\" | head -1)\n        PART_MOUNT=$(lsblk -n -o MOUNTPOINT \"${disk}\"* 2>/dev/null | grep -v \"^$\" | head -1)\n        \n        # If mounted at our target, we're good\n        if [ \"$DISK_MOUNT\" = \"$MOUNT_POINT\" ] || [ \"$PART_MOUNT\" = \"$MOUNT_POINT\" ]; then\n          DATA_DISK=\"$disk\"\n          ALREADY_MOUNTED=true\n          echo \"Found data disk $DATA_DISK already mounted at $MOUNT_POINT\"\n          break\n        # If not mounted anywhere useful, use it\n        elif [ -z \"$DISK_MOUNT\" ] && [ -z \"$PART_MOUNT\" ]; then\n          DATA_DISK=\"$disk\"\n          echo \"Found unmounted data disk: $DATA_DISK (${DISK_SIZE_GB}GB)\"\n          break\n        # If mounted at /mnt, it's the temp disk - skip\n        elif [ \"$PART_MOUNT\" = \"/mnt\" ] || [ \"$DISK_MOUNT\" = \"/mnt\" ]; then\n          echo \"Disk $disk is the temp disk (mounted at /mnt), skipping\"\n        else\n          echo \"Disk $disk is mounted elsewhere ($DISK_MOUNT $PART_MOUNT), skipping\"\n        fi\n      fi\n    fi\n  done\nfi\n\n# Fallback: If still not found, try to find any unpartitioned/unused large disk\nif [ -z \"$DATA_DISK\" ]; then\n  echo \"Data disk not found by size, trying to find unused disk...\"\n  for disk in /dev/sdd /dev/sde /dev/sdf; do\n    if [ -b \"$disk\" ]; then\n      MOUNTED=$(lsblk -n -o MOUNTPOINT \"$disk\" 2>/dev/null | grep -v \"^$\" | head -1)\n      DISK_SIZE_GB=$(($(blockdev --getsize64 \"$disk\" 2>/dev/null || echo \"0\") / 1024 / 1024 / 1024))\n      if [ -z \"$MOUNTED\" ] && [ $DISK_SIZE_GB -gt 50 ]; then\n        DATA_DISK=\"$disk\"\n        echo \"Found unused disk: $DATA_DISK (${DISK_SIZE_GB}GB)\"\n        break\n      fi\n    fi\n  done\nfi\n\nif [ -z \"$DATA_DISK\" ]; then\n  echo \"ERROR: Could not identify the data disk\"\n  echo \"=== All block devices ===\"\n  lsblk\n  exit 1\nfi\n\necho \"Using data disk: $DATA_DISK (already_mounted=$ALREADY_MOUNTED)\"\n\n# ==========================================================\n# Format and Mount (skip if already mounted at target)\n# ==========================================================\nif [ \"$ALREADY_MOUNTED\" = \"true\" ]; then\n  echo \"Disk is already mounted at $MOUNT_POINT, skipping format and mount steps\"\nelse\n  # Create filesystem if not exists\n  if ! blkid \"$DATA_DISK\" | grep -q \"TYPE=\"; then\n    echo \"Creating ext4 filesystem on $DATA_DISK\"\n    mkfs.ext4 -F \"$DATA_DISK\"\n  fi\n\n  # Create mount point\n  mkdir -p \"$MOUNT_POINT\"\n\n  # Add to fstab for persistent mount (but don't trigger systemd mount yet)\n  if ! grep -q \"$DATA_DISK\" /etc/fstab; then\n    echo \"$DATA_DISK $MOUNT_POINT ext4 defaults,nofail 0 2\" >> /etc/fstab\n    # Reload systemd to recognize new fstab entry\n    systemctl daemon-reload\n  fi\n\n  # Wait a moment for any systemd mount activity to settle\n  sleep 3\n\n  # Mount the disk with comprehensive checks and retries\n  mount_with_retry() {\n    local max_attempts=5\n    local attempt=1\n    \n    while [ $attempt -le $max_attempts ]; do\n      echo \"Mount attempt $attempt of $max_attempts...\"\n      \n      # Check if mount point is already mounted\n      if mountpoint -q \"$MOUNT_POINT\"; then\n        echo \"$MOUNT_POINT is already mounted\"\n        return 0\n      fi\n      \n      # Check if the disk is already mounted somewhere\n      if mount | grep -q \"^$DATA_DISK \"; then\n        CURRENT_MOUNT=$(mount | grep \"^$DATA_DISK \" | awk '{print $3}')\n        echo \"$DATA_DISK is already mounted at $CURRENT_MOUNT\"\n        if [ \"$CURRENT_MOUNT\" = \"$MOUNT_POINT\" ]; then\n          return 0\n        else\n          echo \"WARNING: Disk mounted at unexpected location, unmounting...\"\n          umount \"$DATA_DISK\" 2>/dev/null || true\n          sleep 2\n        fi\n      fi\n      \n      # Try to mount\n      echo \"Attempting to mount $DATA_DISK to $MOUNT_POINT\"\n      if mount \"$DATA_DISK\" \"$MOUNT_POINT\" 2>/dev/null; then\n        echo \"Mount successful\"\n        return 0\n      fi\n      \n      # Mount failed - check if systemd mounted it in the meantime\n      if mountpoint -q \"$MOUNT_POINT\"; then\n        echo \"Mount point became active (systemd mount succeeded)\"\n      return 0\n    fi\n    \n    echo \"Mount attempt $attempt failed, waiting before retry...\"\n    sleep 5\n    attempt=$((attempt + 1))\n  done\n  \n  echo \"ERROR: Failed to mount $DATA_DISK after $max_attempts attempts\"\n  return 1\n}\n\n# Execute mount with retry logic\nif ! mount_with_retry; then\n  echo \"=== Debug: Current mounts ===\"\n  mount | grep -E \"(sdc|mongodb)\" || echo \"No relevant mounts found\"\n  echo \"=== Debug: fstab content ===\"\n  grep -E \"(sdc|mongodb)\" /etc/fstab || echo \"No relevant fstab entries\"\n  echo \"=== Debug: Block devices ===\"\n  lsblk\n  exit 1\nfi\n\n# Verify mount succeeded\nif mountpoint -q \"$MOUNT_POINT\"; then\n  echo \"Verified: $MOUNT_POINT is mounted successfully\"\n  df -h \"$MOUNT_POINT\"\nelse\n  echo \"ERROR: $MOUNT_POINT is not mounted after all attempts\"\n  exit 1\nfi\n\nfi # End of ALREADY_MOUNTED check\n\n# Set ownership for mongodb user (will be created by package)\n# Done after mongodb installation\n\n# ==========================================================\n# Install MongoDB 7.0\n# ==========================================================\n# Import MongoDB public GPG key\napt-get -o DPkg::Lock::Timeout=120 -y install gnupg curl\n\n# Use --batch flag for non-interactive GPG operation (no TTY available in CustomScript)\n# Check if keyring already exists to make script idempotent (re-runnable)\nif [ ! -f /usr/share/keyrings/mongodb-server-7.0.gpg ]; then\n  echo \"Downloading MongoDB GPG key...\"\n  curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc | \\\n    gpg --batch -o /usr/share/keyrings/mongodb-server-7.0.gpg --dearmor\nelse\n  echo \"MongoDB GPG key already exists, skipping download\"\nfi\n\n# Add MongoDB repository if not already present\nif [ ! -f /etc/apt/sources.list.d/mongodb-org-7.0.list ]; then\n  echo \"deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse\" | \\\n    tee /etc/apt/sources.list.d/mongodb-org-7.0.list\nfi\n\n# Create MongoDB data and log directories on data disk BEFORE installing MongoDB\n# This ensures the directories exist when the mongod service first starts\nmkdir -p /data/mongodb/db\nmkdir -p /data/mongodb/log\n\n# Update and install MongoDB\napt-get -o DPkg::Lock::Timeout=120 update\napt-get -o DPkg::Lock::Timeout=120 -y install mongodb-org\n\n# ==========================================================\n# Configure MongoDB for Replica Set\n# ==========================================================\n# Backup original config\ncp /etc/mongod.conf /etc/mongod.conf.bak\n\n# Set ownership (mongodb user created by package installation)\nchown -R mongodb:mongodb /data/mongodb\n\n# Configure MongoDB\n# Note: MongoDB 7.0+ no longer uses storage.journal.enabled (journaling is always on)\ncat > /etc/mongod.conf << 'EOF'\n# MongoDB 7.0 configuration file\n# Reference: https://www.mongodb.com/docs/manual/reference/configuration-options/\n\n# Where and how to store data\nstorage:\n  dbPath: /data/mongodb/db\n  wiredTiger:\n    engineConfig:\n      cacheSizeGB: 8  # Use 50% of RAM (16GB VM)\n\n# Where to write logging data\nsystemLog:\n  destination: file\n  logAppend: true\n  path: /data/mongodb/log/mongod.log\n\n# Network interfaces\nnet:\n  port: 27017\n  bindIp: 0.0.0.0  # Listen on all interfaces (NSG controls access)\n\n# Process management\nprocessManagement:\n  timeZoneInfo: /usr/share/zoneinfo\n\n# Security (enable after replica set is initialized)\n# security:\n#   authorization: enabled\n#   keyFile: /etc/mongodb/keyfile\n\n# Replica set configuration\nreplication:\n  replSetName: blogapp-rs0\nEOF\n\n# Stop MongoDB if it was auto-started with default config\nsystemctl stop mongod 2>/dev/null || true\n\n# Ensure correct ownership after config change\nchown -R mongodb:mongodb /data/mongodb\n\n# Enable and start MongoDB with new configuration\nsystemctl daemon-reload\nsystemctl enable mongod\nsystemctl start mongod\n\n# Wait for MongoDB to start (give it more time on first boot)\necho \"Waiting for MongoDB to start...\"\nsleep 15\n\n# Verify MongoDB is running with retries\nfor i in 1 2 3; do\n  if systemctl is-active --quiet mongod; then\n    echo \"MongoDB installation completed successfully\"\n    # Show MongoDB version for verification\n    mongod --version | head -1\n    exit 0\n  fi\n  echo \"MongoDB not ready yet, waiting... (attempt $i/3)\"\n  sleep 10\ndone\n\n# If we get here, MongoDB failed to start\necho \"MongoDB failed to start after 3 attempts\"\necho \"=== MongoDB service status ===\"\nsystemctl status mongod --no-pager || true\necho \"=== Last 50 lines of MongoDB log ===\"\ntail -50 /data/mongodb/log/mongod.log 2>/dev/null || echo \"No log file found\"\nexit 1\n\n# ==========================================================\n# Post-Installation Notes\n# ==========================================================\n# To initialize the replica set, run the following on the PRIMARY node:\n#\n# mongosh --eval \"rs.initiate({\n#   _id: 'blogapp-rs0',\n#   members: [\n#     { _id: 0, host: 'vm-db-az1-prod:27017', priority: 2 },\n#     { _id: 1, host: 'vm-db-az2-prod:27017', priority: 1 }\n#   ]\n# })\"\n#\n# Check replica set status:\n# mongosh --eval \"rs.status()\"\n"
           },
           "resources": [
             {
@@ -5783,6 +6011,13 @@
         "description": "Load Balancer FQDN"
       },
       "value": "[reference(resourceId('Microsoft.Resources/deployments', 'deploy-load-balancer'), '2025-04-01').outputs.fqdn.value]"
+    },
+    "internalLoadBalancerIp": {
+      "type": "string",
+      "metadata": {
+        "description": "Internal Load Balancer private IP (App tier)"
+      },
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'deploy-internal-load-balancer'), '2025-04-01').outputs.frontendPrivateIp.value]"
     },
     "webTierPrivateIps": {
       "type": "array",

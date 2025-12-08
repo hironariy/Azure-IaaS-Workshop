@@ -53,6 +53,9 @@ param logAnalyticsWorkspaceId string = ''
 @description('Resource ID of Data Collection Rule')
 param dataCollectionRuleId string = ''
 
+@description('Resource ID of Internal Load Balancer backend pool')
+param loadBalancerBackendPoolId string = ''
+
 @description('Tags to apply to all resources')
 param tags object = {}
 
@@ -209,7 +212,7 @@ module vmAz1 'vm.bicep' = {
     sshPublicKey: sshPublicKey
     osDiskType: 'StandardSSD_LRS'
     osDiskSizeGB: 30
-    loadBalancerBackendPoolId: ''  // No LB for app tier
+    loadBalancerBackendPoolId: loadBalancerBackendPoolId  // Internal LB for App tier
     enableMonitoring: enableMonitoring
     logAnalyticsWorkspaceId: logAnalyticsWorkspaceId
     dataCollectionRuleId: dataCollectionRuleId
@@ -231,7 +234,7 @@ module vmAz2 'vm.bicep' = {
     sshPublicKey: sshPublicKey
     osDiskType: 'StandardSSD_LRS'
     osDiskSizeGB: 30
-    loadBalancerBackendPoolId: ''  // No LB for app tier
+    loadBalancerBackendPoolId: loadBalancerBackendPoolId  // Internal LB for App tier
     enableMonitoring: enableMonitoring
     logAnalyticsWorkspaceId: logAnalyticsWorkspaceId
     dataCollectionRuleId: dataCollectionRuleId
