@@ -36,7 +36,7 @@ param bastionSubnetId string
 
 @description('Bastion SKU - Basic is sufficient for workshop')
 @allowed(['Basic', 'Standard', 'Developer'])
-param bastionSku string = 'Basic'
+param bastionSku string = 'Standard'
 
 @description('Tags to apply to all resources')
 param tags object = {}
