@@ -70,7 +70,7 @@ You need **two app registrations** in Azure Portal:
 
 ## Step 2: Start MongoDB (Docker)
 
-\`\`\`bash
+```bash
 # Navigate to dev-environment folder
 cd dev-environment
 
@@ -79,41 +79,41 @@ docker-compose up -d
 
 # Verify container is running
 docker-compose ps
-\`\`\`
+```
 
 **Expected output:**
-\`\`\`
+```bash
 NAME                   STATUS          PORTS
 blogapp-mongo-primary  running         0.0.0.0:27017->27017/tcp
-\`\`\`
+```
 
 ### Initialize Replica Set (First Time Only)
 
-\`\`\`bash
+```bash
 # Wait for MongoDB to be ready
 sleep 5
 
 # Initialize replica set
 docker exec -it blogapp-mongo-primary mongosh /scripts/init-replica-set.js
-\`\`\`
+```
 
 ### Verify MongoDB Connection
 
-\`\`\`bash
+```bash
 # Test connection
 docker exec -it blogapp-mongo-primary mongosh --eval "db.adminCommand('ping')"
-\`\`\`
+```
 
 ### Seed Sample Data (Optional)
 
 After the backend is configured (Step 3), you can populate the database with sample data:
 
-\`\`\`bash
+```bash
 cd materials/backend
 
 # Run seed script
 npm run seed
-\`\`\`
+```
 
 **What the seed script creates:**
 - 3 sample users (Alice, Bob, Carol)
@@ -130,16 +130,16 @@ npm run seed
 
 ### 3.1 Create Environment File
 
-\`\`\`bash
+```bash
 cd materials/backend
 
 # Copy example config
 cp .env.example .env
-\`\`\`
+```
 
 ### 3.2 Edit \`.env\` with Your Values
 
-\`\`\`bash
+```bash
 # materials/backend/.env
 
 NODE_ENV=development
@@ -157,36 +157,36 @@ LOG_LEVEL=debug
 
 # CORS
 CORS_ORIGINS=http://localhost:5173,http://localhost:3000
-\`\`\`
+```
 
 ### 3.3 Install Dependencies and Start
 
-\`\`\`bash
+```bash
 # Install packages
 npm install
 
 # Start development server (with hot reload)
 npm run dev
-\`\`\`
+```
 
 **Expected output:**
-\`\`\`
+```
 [INFO] Server running on port 3000
 [INFO] MongoDB connected successfully
 [INFO] Environment: development
-\`\`\`
+```
 
 ### 3.4 Verify Backend Health
 
-\`\`\`bash
+```bash
 # In another terminal
 curl http://localhost:3000/health
-\`\`\`
+```
 
 **Expected response:**
-\`\`\`json
+```json
 {"status":"healthy","timestamp":"...","environment":"development"}
-\`\`\`
+```
 
 ---
 
@@ -194,16 +194,16 @@ curl http://localhost:3000/health
 
 ### 4.1 Create Environment File
 
-\`\`\`bash
+```bash
 cd materials/frontend
 
 # Copy example config
 cp .env.example .env
-\`\`\`
+```
 
 ### 4.2 Edit \`.env\` with Your Values
 
-\`\`\`bash
+```bash
 # materials/frontend/.env
 
 # Frontend App Registration (for MSAL login)
@@ -213,25 +213,25 @@ VITE_ENTRA_REDIRECT_URI=http://localhost:5173
 
 # Backend API App Registration (for API token audience)
 VITE_API_CLIENT_ID=your-backend-api-client-id-here
-\`\`\`
+```
 
 ### 4.3 Install Dependencies and Start
 
-\`\`\`bash
+```bash
 # Install packages
 npm install
 
 # Start development server (with hot reload)
 npm run dev
-\`\`\`
+```
 
 **Expected output:**
-\`\`\`
+```
   VITE v5.x.x  ready in xxx ms
 
   ➜  Local:   http://localhost:5173/
   ➜  Network: use --host to expose
-\`\`\`
+```
 
 ---
 
@@ -266,7 +266,7 @@ Navigate to: **http://localhost:5173**
 
 ### Start Everything
 
-\`\`\`bash
+```bash
 # Terminal 1: MongoDB
 cd dev-environment && docker-compose up -d
 
@@ -275,30 +275,30 @@ cd materials/backend && npm run dev
 
 # Terminal 3: Frontend
 cd materials/frontend && npm run dev
-\`\`\`
+```
 
 ### Stop Everything
 
-\`\`\`bash
+```bash
 # Stop frontend/backend: Ctrl+C in each terminal
 
 # Stop MongoDB
 cd dev-environment && docker-compose stop
-\`\`\`
+```
 
 ### Reset Database
 
-\`\`\`bash
+```bash
 cd dev-environment
 docker-compose down -v
 docker-compose up -d
 sleep 5
 docker exec -it blogapp-mongo-primary mongosh /scripts/init-replica-set.js
-\`\`\`
+```
 
 ### Reset and Reseed Database
 
-\`\`\`bash
+```bash
 # Reset MongoDB
 cd dev-environment
 docker-compose down -v
@@ -309,7 +309,7 @@ docker exec -it blogapp-mongo-primary mongosh /scripts/init-replica-set.js
 # Reseed sample data
 cd ../materials/backend
 npm run seed
-\`\`\`
+```
 
 ---
 
@@ -334,7 +334,7 @@ npm run seed
 
 ### MongoDB Connection Failed
 
-\`\`\`bash
+```bash
 # Check if container is running
 docker-compose ps
 
@@ -343,11 +343,11 @@ docker-compose logs mongodb-primary
 
 # Restart container
 docker-compose restart mongodb-primary
-\`\`\`
+```
 
 ### Port Already in Use
 
-\`\`\`bash
+```bash
 # Find process using port
 lsof -i :3000  # Backend
 lsof -i :5173  # Frontend
@@ -355,14 +355,14 @@ lsof -i :27017 # MongoDB
 
 # Kill process
 kill -9 <PID>
-\`\`\`
+```
 
 ### CORS Errors
 
 **Check** backend \`.env\`:
-\`\`\`bash
+```bash
 CORS_ORIGINS=http://localhost:5173,http://localhost:3000
-\`\`\`
+```
 
 ---
 
