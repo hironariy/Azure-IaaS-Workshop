@@ -90,6 +90,65 @@ router.get(
 );
 
 /**
+ * GET /api/posts/my
+ * List current user's posts (including drafts)
+ * Only accessible to authenticated users
+ */
+router.get(
+  '/my',
+  authenticate,
+  [
+    query('page').optional().isInt({ min: 1 }).toInt(),
+    query('limit').optional().isInt({ min: 1, max: 50 }).toInt(),
+    query('status').optional().isIn(['draft', 'published', 'all']),
+  ],
+  handleValidation,
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const page = (req.query.page as unknown as number) || 1;
+      const limit = (req.query.limit as unknown as number) || 10;
+      const skip = (page - 1) * limit;
+      const statusFilter = req.query.status as string | undefined;
+
+      // Find user by oid
+      const user = await User.findOne({ oid: req.user!.oid });
+      if (!user) {
+        res.json({ posts: [], total: 0, page, limit, totalPages: 0 });
+        return;
+      }
+
+      // Build query for user's posts
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const filter: Record<string, any> = { author: user._id };
+
+      if (statusFilter && statusFilter !== 'all') {
+        filter.status = statusFilter;
+      }
+
+      const [posts, total] = await Promise.all([
+        Post.find(filter)
+          .sort({ updatedAt: -1 })
+          .skip(skip)
+          .limit(limit)
+          .populate('author', 'displayName username avatarUrl')
+          .lean(),
+        Post.countDocuments(filter),
+      ]);
+
+      res.json({
+        posts,
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
  * GET /api/posts/:slug
  * Get single post by slug
  */
@@ -101,7 +160,7 @@ router.get(
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const post = await Post.findOne({ slug: req.params.slug })
-        .populate('author', 'displayName username avatarUrl bio')
+        .populate('author', 'displayName username avatarUrl bio oid')
         .lean();
 
       if (!post) {
@@ -111,7 +170,8 @@ router.get(
 
       // Only show non-published posts to the author
       if (post.status !== 'published') {
-        if (!req.user || req.user.oid !== (post.author as unknown as { oid?: string })?.oid) {
+        const authorOid = (post.author as unknown as { oid?: string })?.oid;
+        if (!req.user || req.user.oid !== authorOid) {
           next(ApiError.notFound('Post'));
           return;
         }
@@ -161,14 +221,28 @@ router.post(
         });
       }
 
-      // Generate unique slug
-      let slug = generateSlug(req.body.title);
+      // Generate unique slug with username-aware collision handling
+      // 1. Try base slug (from title)
+      // 2. If exists → try {base-slug}-by-{username}
+      // 3. If still exists → try {base-slug}-by-{username}-{counter}
+      const baseSlug = generateSlug(req.body.title);
+      let slug = baseSlug;
       let slugExists = await Post.exists({ slug });
-      let counter = 1;
-      while (slugExists) {
-        slug = `${generateSlug(req.body.title)}-${counter}`;
+
+      if (slugExists) {
+        // Collision - add username
+        slug = `${baseSlug}-by-${user.username}`;
         slugExists = await Post.exists({ slug });
-        counter++;
+
+        if (slugExists) {
+          // Same user has duplicate titles - add counter
+          let counter = 2;
+          while (slugExists) {
+            slug = `${baseSlug}-by-${user.username}-${counter}`;
+            slugExists = await Post.exists({ slug });
+            counter++;
+          }
+        }
       }
 
       const postData = {

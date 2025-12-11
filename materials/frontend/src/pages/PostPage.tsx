@@ -3,14 +3,24 @@
  */
 
 import { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { getPost, Post } from '../services/api';
+import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useMsal } from '@azure/msal-react';
+import { getPost, deletePost, Post } from '../services/api';
 
 function PostPage() {
   const { slug } = useParams<{ slug: string }>();
+  const navigate = useNavigate();
+  const { accounts } = useMsal();
   const [post, setPost] = useState<Post | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  // Get current user's OID from MSAL account
+  const currentUserOid = accounts[0]?.localAccountId;
+
+  // Check if current user is the author
+  const isAuthor = post?.author?.oid && currentUserOid && post.author.oid === currentUserOid;
 
   useEffect(() => {
     async function fetchPost() {
@@ -29,6 +39,24 @@ function PostPage() {
 
     fetchPost();
   }, [slug]);
+
+  const handleDelete = async () => {
+    if (!post || !slug) return;
+    
+    if (!confirm(`Are you sure you want to delete "${post.title}"? This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      setDeleting(true);
+      await deletePost(slug);
+      navigate('/my-posts');
+    } catch (err) {
+      console.error('Failed to delete post:', err);
+      alert('Failed to delete post. Please try again.');
+      setDeleting(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -51,9 +79,36 @@ function PostPage() {
 
   return (
     <article className="mx-auto max-w-3xl">
-      <Link to="/" className="mb-4 inline-block text-azure-600 hover:underline">
-        ← Back to Posts
-      </Link>
+      <div className="mb-4 flex items-center justify-between">
+        <Link to="/" className="text-azure-600 hover:underline">
+          ← Back to Posts
+        </Link>
+        
+        {isAuthor && (
+          <div className="flex items-center gap-2">
+            <Link
+              to={`/posts/${post.slug}/edit`}
+              className="rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200"
+            >
+              Edit
+            </Link>
+            <button
+              onClick={handleDelete}
+              disabled={deleting}
+              className="rounded-lg bg-red-100 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-200 disabled:opacity-50"
+            >
+              {deleting ? 'Deleting...' : 'Delete'}
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Draft indicator */}
+      {post.status === 'draft' && (
+        <div className="mb-4 rounded-lg bg-yellow-50 p-3 text-sm text-yellow-800">
+          <strong>Draft</strong> — This post is not published yet and only visible to you.
+        </div>
+      )}
 
       {post.featuredImageUrl && (
         <img

@@ -13,6 +13,7 @@ import { ApiError } from './error.middleware';
 
 // Extend Express Request to include user info
 declare global {
+  // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Express {
     interface Request {
       user?: AuthenticatedUser;
@@ -80,19 +81,34 @@ async function validateToken(token: string): Promise<AuthenticatedUser> {
   const signingKey = await getSigningKey(decoded.header);
 
   // Verify token
+  // The audience can be either the client ID or the API URI (api://<client-id>)
+  // Accept both v1.0 (sts.windows.net) and v2.0 (login.microsoftonline.com/.../v2.0) issuers
+  // to support different Entra ID app registration configurations
+  const validIssuers: [string, ...string[]] = [
+    `https://login.microsoftonline.com/${config.entraTenantId}/v2.0`,
+    `https://sts.windows.net/${config.entraTenantId}/`,
+  ];
+
   const payload = jwt.verify(token, signingKey, {
     algorithms: ['RS256'],
-    audience: config.entraClientId,
-    issuer: `https://login.microsoftonline.com/${config.entraTenantId}/v2.0`,
+    audience: [config.entraClientId, `api://${config.entraClientId}`],
+    issuer: validIssuers,
   }) as jwt.JwtPayload;
 
   // Extract user info from token
+  // v1.0 tokens use 'upn' and 'unique_name', v2.0 uses 'preferred_username' and 'email'
+  const email = (payload.email as string) 
+    ?? (payload.preferred_username as string) 
+    ?? (payload.upn as string)
+    ?? (payload.unique_name as string)
+    ?? '';
+  
   return {
     oid: payload.oid as string,
     sub: payload.sub as string,
     name: (payload.name as string) ?? 'Unknown',
-    email: (payload.email as string) ?? (payload.preferred_username as string) ?? '',
-    preferredUsername: (payload.preferred_username as string) ?? '',
+    email,
+    preferredUsername: (payload.preferred_username as string) ?? (payload.upn as string) ?? '',
     roles: payload.roles as string[] | undefined,
   };
 }
@@ -168,9 +184,8 @@ export async function optionalAuthenticate(
     }
 
     next();
-  } catch (error) {
-    // Token invalid - continue without user
-    logger.debug('Optional auth failed, continuing without user');
+  } catch {
+    // Token invalid - continue without user for optional authentication
     next();
   }
 }

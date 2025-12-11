@@ -6,36 +6,28 @@
 
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { PublicClientApplication } from '@azure/msal-browser';
 import { MsalProvider } from '@azure/msal-react';
 import { BrowserRouter } from 'react-router-dom';
-import { msalConfig } from './config/authConfig';
+import { msalInstance, msalInitPromise } from './config/msalInstance';
 import App from './App';
 import './index.css';
 
 /**
- * Initialize MSAL instance
- * This is the authentication client for Microsoft Entra ID
+ * Wait for MSAL to initialize before rendering the app
+ * This ensures the authentication state is ready before any components mount
  *
  * For AWS-experienced engineers:
- * - Similar to Amplify.configure() for Cognito
- * - Creates a singleton auth client
+ * - Similar to waiting for Amplify.configure() to complete
+ * - Ensures auth state is available immediately
  */
-const msalInstance = new PublicClientApplication(msalConfig);
-
-// Handle redirect promise (for login redirect flow)
-msalInstance.initialize().then(() => {
-  msalInstance.handleRedirectPromise().catch((error) => {
-    console.error('Redirect error:', error);
-  });
+msalInitPromise.then(() => {
+  ReactDOM.createRoot(document.getElementById('root')!).render(
+    <React.StrictMode>
+      <MsalProvider instance={msalInstance}>
+        <BrowserRouter>
+          <App />
+        </BrowserRouter>
+      </MsalProvider>
+    </React.StrictMode>
+  );
 });
-
-ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <MsalProvider instance={msalInstance}>
-      <BrowserRouter>
-        <App />
-      </BrowserRouter>
-    </MsalProvider>
-  </React.StrictMode>
-);

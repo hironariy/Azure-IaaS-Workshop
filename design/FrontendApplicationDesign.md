@@ -99,6 +99,23 @@ This document defines the frontend application requirements for the Azure IaaS W
   - Revision history (optional)
   - Cancel changes button
 
+#### My Posts Page (`/my-posts`)
+- **Purpose**: Display list of current user's posts (including drafts)
+- **Access**: Authenticated users only
+- **Components**:
+  - Status filter tabs (All / Drafts / Published)
+  - Post list with title, status badge, updated date, view count
+  - Edit button for each post
+  - View button for each post
+  - Delete button with confirmation dialog
+  - Create New Post button
+- **Data Source**: `GET /api/posts/my`
+- **Actions**:
+  - Filter posts by status
+  - Navigate to edit page
+  - Navigate to view page
+  - Delete post (with confirmation)
+
 #### User Profile Page (`/profile`)
 - **Purpose**: Display logged-in user information
 - **Access**: Authenticated users only
@@ -158,6 +175,25 @@ This document defines the frontend application requirements for the Azure IaaS W
 
 #### Microsoft Entra ID OAuth2.0
 
+**Enterprise Pattern (Separate App Registrations)**:
+
+This application uses the recommended enterprise pattern with **two separate Entra ID app registrations**:
+
+| Component | App Registration | Purpose |
+|-----------|-----------------|---------|
+| Frontend (SPA) | Client App | User authentication, redirect handling |
+| Backend (API) | API App | Token validation, defines API permissions |
+
+**Why Two Registrations?**
+- **Security**: Backend validates tokens using its own Client ID as audience
+- **Flexibility**: Can grant different apps access to the same API
+- **Best Practice**: Follows Microsoft's recommended pattern for SPAs calling protected APIs
+
+**Configuration**:
+- Frontend Client ID: Used for MSAL initialization and login
+- Backend API Scope: `api://{backendClientId}/access_as_user`
+- Frontend must request the API scope when acquiring tokens for API calls
+
 **MSAL Configuration**:
 ```typescript
 {
@@ -179,11 +215,17 @@ This document defines the frontend application requirements for the Azure IaaS W
 ```
 
 **Scopes Required**:
-- `User.Read` (read user profile)
+
+*For Login (loginRequest)*:
 - `openid` (OpenID Connect)
 - `profile` (basic profile)
-- `email` (email address)
-- Custom API scope for backend (e.g., `api://{clientId}/access_as_user`)
+- `User.Read` (read user profile from Microsoft Graph)
+- `api://{backendClientId}/access_as_user` (backend API access - include in login to trigger consent)
+
+*For API Calls (apiRequest)*:
+- `api://{backendClientId}/access_as_user` (backend API access)
+
+**Important**: Including the API scope in the login request triggers consent for API access during login, avoiding a separate consent popup when the user first makes an API call.
 
 **Authentication Flow**:
 1. User clicks "Login with Microsoft"
@@ -936,7 +978,8 @@ Students are familiar with AWS, so document differences:
 |---------|------|---------|--------|
 | 1.0 | 2025-12-01 | Initial specification | Workshop Team |
 | 2.0 | 2025-12-03 | Critical updates based on consultant review:<br>- React Query adopted for state management<br>- Token refresh error handling added<br>- MSAL redirect loop prevention added<br>- Workshop feature prioritization added<br>- Auto-save draft requirement added<br>- Network resilience patterns added<br>- Common pitfalls troubleshooting added<br>- Deployment verification checklist added | Frontend Engineer |
+| 2.1 | 2025-12-10 | Authentication and feature updates:<br>- Added enterprise auth pattern documentation (separate app registrations)<br>- Added My Posts page (`/my-posts`) specification<br>- Added API scope consent flow documentation<br>- Added delete post functionality on Post and My Posts pages | Implementation Update |
 
 **Document Status**: Living document - update as requirements evolve  
-**Current Version**: 2.0  
-**Last Updated**: 2025-12-03
+**Current Version**: 2.1  
+**Last Updated**: 2025-12-10

@@ -56,17 +56,27 @@ export const msalConfig: Configuration = {
 };
 
 /**
- * Scopes for API access
- * Add your backend API scope here after configuring app registration
+ * API scopes for calling the backend
+ *
+ * Enterprise pattern: Frontend and Backend have separate app registrations
+ * - Frontend (VITE_ENTRA_CLIENT_ID): SPA that acquires tokens
+ * - Backend (VITE_API_CLIENT_ID): API that validates tokens
+ *
+ * The frontend requests tokens with the backend's API scope as the audience
  */
-export const loginRequest = {
-  scopes: ['openid', 'profile', 'email'],
+export const apiRequest = {
+  scopes: [`api://${import.meta.env.VITE_API_CLIENT_ID}/access_as_user`],
 };
 
 /**
- * API scopes for calling the backend
- * Replace with your actual API scope after app registration
+ * Scopes for login - includes API scope to get consent upfront
+ * This prevents InteractionRequiredAuthError when calling APIs later
  */
-export const apiRequest = {
-  scopes: [`api://${import.meta.env.VITE_ENTRA_CLIENT_ID}/access_as_user`],
+export const loginRequest = {
+  scopes: [
+    'openid',
+    'profile',
+    'email',
+    `api://${import.meta.env.VITE_API_CLIENT_ID}/access_as_user`,
+  ],
 };

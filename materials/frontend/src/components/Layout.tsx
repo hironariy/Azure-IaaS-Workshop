@@ -53,6 +53,9 @@ function Layout({ children }: LayoutProps) {
 
             {isAuthenticated ? (
               <>
+                <Link to="/my-posts" className="text-gray-600 hover:text-azure-600">
+                  My Posts
+                </Link>
                 <Link to="/create" className="text-gray-600 hover:text-azure-600">
                   Write Post
                 </Link>

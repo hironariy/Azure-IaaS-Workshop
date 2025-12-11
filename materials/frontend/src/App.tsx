@@ -10,8 +10,10 @@ import Layout from './components/Layout';
 import HomePage from './pages/HomePage';
 import PostPage from './pages/PostPage';
 import CreatePostPage from './pages/CreatePostPage';
+import EditPostPage from './pages/EditPostPage';
 import ProfilePage from './pages/ProfilePage';
 import LoginPage from './pages/LoginPage';
+import MyPostsPage from './pages/MyPostsPage';
 
 /**
  * App Component
@@ -31,6 +33,8 @@ function App() {
         {isAuthenticated && (
           <>
             <Route path="/create" element={<CreatePostPage />} />
+            <Route path="/posts/:slug/edit" element={<EditPostPage />} />
+            <Route path="/my-posts" element={<MyPostsPage />} />
             <Route path="/profile" element={<ProfilePage />} />
           </>
         )}

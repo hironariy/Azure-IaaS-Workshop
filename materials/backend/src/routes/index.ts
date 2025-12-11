@@ -6,6 +6,8 @@
 import { Router } from 'express';
 import healthRoutes from './health.routes';
 import postsRoutes from './posts.routes';
+import usersRoutes from './users.routes';
+import commentsRoutes from './comments.routes';
 
 const router = Router();
 
@@ -14,9 +16,7 @@ router.use('/', healthRoutes);
 
 // API routes
 router.use('/api/posts', postsRoutes);
-
-// TODO: Add more routes as needed
-// router.use('/api/users', usersRoutes);
-// router.use('/api/comments', commentsRoutes);
+router.use('/api/users', usersRoutes);
+router.use('/api', commentsRoutes); // Comments have mixed paths
 
 export default router;

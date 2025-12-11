@@ -2,15 +2,34 @@
  * API Service
  * HTTP client for backend API communication
  * Reference: /design/FrontendApplicationDesign.md
+ * Auth Requirements: /design/BackendApplicationDesign.md - API Authentication Requirements
  */
 
-import axios, { AxiosInstance } from 'axios';
-import { PublicClientApplication } from '@azure/msal-browser';
-import { msalConfig, apiRequest } from '../config/authConfig';
+import axios, { AxiosInstance, InternalAxiosRequestConfig } from 'axios';
+import { msalInstance, msalInitPromise } from '../config/msalInstance';
+import { apiRequest } from '../config/authConfig';
+
+/**
+ * Authentication mode for API requests
+ * Reference: /AIdocs/recommendations/auth-flow-revision-strategy.md
+ *
+ * - 'required': Must have valid token, throws error if unavailable
+ * - 'optional': Include token if available, continue without if not
+ * - 'none': Don't attempt token acquisition (public endpoints)
+ */
+type AuthMode = 'required' | 'optional' | 'none';
+
+// Extend axios config to include our custom authMode property
+declare module 'axios' {
+  interface AxiosRequestConfig {
+    authMode?: AuthMode;
+  }
+}
 
 // Types
 export interface Author {
   _id: string;
+  oid?: string;
   displayName: string;
   username: string;
   avatarUrl?: string;
@@ -50,37 +69,68 @@ export interface CreatePostData {
   featuredImageUrl?: string;
 }
 
-// MSAL instance for acquiring tokens
-let msalInstance: PublicClientApplication | null = null;
-
-function getMsalInstance(): PublicClientApplication {
-  if (!msalInstance) {
-    msalInstance = new PublicClientApplication(msalConfig);
-  }
-  return msalInstance;
-}
-
 /**
  * Get access token for API calls
- * Uses MSAL to acquire token silently or via redirect
+ * Uses the shared MSAL instance to acquire token silently
+ *
+ * @param mode - Authentication mode (required, optional, none)
+ * @returns Access token or null
+ * @throws Error if mode is 'required' and no token available
+ *
+ * For AWS-experienced engineers:
+ * - Similar to Auth.currentSession() in Amplify
+ * - MSAL handles token caching and refresh automatically
  */
-async function getAccessToken(): Promise<string | null> {
-  try {
-    const msal = getMsalInstance();
-    const accounts = msal.getAllAccounts();
+async function getAccessToken(mode: AuthMode = 'optional'): Promise<string | null> {
+  // Skip token acquisition for public endpoints
+  if (mode === 'none') {
+    return null;
+  }
 
-    if (accounts.length === 0) {
+  try {
+    // Wait for MSAL to be initialized before attempting token acquisition
+    await msalInitPromise;
+
+    const accounts = msalInstance.getAllAccounts();
+    const activeAccount = msalInstance.getActiveAccount() || accounts[0];
+
+    if (!activeAccount) {
+      // User not logged in
+      if (mode === 'required') {
+        throw new Error('Authentication required - please log in');
+      }
       return null;
     }
 
-    const response = await msal.acquireTokenSilent({
-      ...apiRequest,
-      account: accounts[0],
-    });
-
-    return response.accessToken;
+    try {
+      const response = await msalInstance.acquireTokenSilent({
+        ...apiRequest,
+        account: activeAccount,
+      });
+      return response.accessToken;
+    } catch (silentError) {
+      // Handle InteractionRequiredAuthError - need user consent or re-auth
+      if (
+        silentError instanceof Error &&
+        (silentError.name === 'InteractionRequiredAuthError' ||
+          silentError.message.includes('AADSTS65001') ||
+          silentError.message.includes('interaction_required'))
+      ) {
+        // Trigger interactive popup for consent
+        const response = await msalInstance.acquireTokenPopup({
+          ...apiRequest,
+          account: activeAccount,
+        });
+        return response.accessToken;
+      }
+      throw silentError;
+    }
   } catch (error) {
-    console.error('Failed to acquire token:', error);
+    if (mode === 'required') {
+      // Re-throw if authentication was required - let the caller handle the error
+      throw error;
+    }
+    // For optional auth, silently continue without token
     return null;
   }
 }
@@ -97,10 +147,11 @@ function createApiClient(): AxiosInstance {
     },
   });
 
-  // Request interceptor to add auth token
+  // Request interceptor to add auth token based on authMode
   client.interceptors.request.use(
-    async (config) => {
-      const token = await getAccessToken();
+    async (config: InternalAxiosRequestConfig) => {
+      const authMode = config.authMode || 'optional';
+      const token = await getAccessToken(authMode);
       if (token) {
         config.headers.Authorization = `Bearer ${token}`;
       }
@@ -126,10 +177,14 @@ function createApiClient(): AxiosInstance {
 
 const api = createApiClient();
 
+// ============================================================================
 // API Functions
+// Auth requirements based on /design/BackendApplicationDesign.md
+// ============================================================================
 
 /**
  * Get list of published posts
+ * Auth: Optional - works without auth, includes token if available
  */
 export async function getPosts(
   page = 1,
@@ -145,37 +200,73 @@ export async function getPosts(
   if (tag) params.append('tag', tag);
   if (author) params.append('author', author);
 
-  const response = await api.get<PostsResponse>(`/api/posts?${params}`);
+  const response = await api.get<PostsResponse>(`/api/posts?${params}`, {
+    authMode: 'optional',
+  });
+  return response.data;
+}
+
+/**
+ * Get current user's posts (including drafts)
+ * Auth: Required - must be authenticated
+ */
+export async function getMyPosts(
+  page = 1,
+  limit = 10,
+  status?: 'draft' | 'published' | 'all'
+): Promise<PostsResponse> {
+  const params = new URLSearchParams({
+    page: String(page),
+    limit: String(limit),
+  });
+
+  if (status) params.append('status', status);
+
+  const response = await api.get<PostsResponse>(`/api/posts/my?${params}`, {
+    authMode: 'required',
+  });
   return response.data;
 }
 
 /**
  * Get single post by slug
+ * Auth: Optional - works without auth for published posts, requires auth for drafts
  */
 export async function getPost(slug: string): Promise<Post> {
-  const response = await api.get<Post>(`/api/posts/${slug}`);
+  const response = await api.get<Post>(`/api/posts/${slug}`, {
+    authMode: 'optional',
+  });
   return response.data;
 }
 
 /**
- * Create a new post (requires authentication)
+ * Create a new post
+ * Auth: Required - must be authenticated
  */
 export async function createPost(data: CreatePostData): Promise<Post> {
-  const response = await api.post<Post>('/api/posts', data);
+  const response = await api.post<Post>('/api/posts', data, {
+    authMode: 'required',
+  });
   return response.data;
 }
 
 /**
- * Update a post (requires authentication, author only)
+ * Update a post
+ * Auth: Required - must be authenticated and post author
  */
 export async function updatePost(slug: string, data: Partial<CreatePostData>): Promise<Post> {
-  const response = await api.put<Post>(`/api/posts/${slug}`, data);
+  const response = await api.put<Post>(`/api/posts/${slug}`, data, {
+    authMode: 'required',
+  });
   return response.data;
 }
 
 /**
- * Delete a post (requires authentication, author only)
+ * Delete a post
+ * Auth: Required - must be authenticated and post author
  */
 export async function deletePost(slug: string): Promise<void> {
-  await api.delete(`/api/posts/${slug}`);
+  await api.delete(`/api/posts/${slug}`, {
+    authMode: 'required',
+  });
 }

@@ -154,6 +154,96 @@ backend/
 
 ---
 
+## API Authentication Requirements
+
+This section provides a consolidated view of authentication requirements for all API endpoints. Understanding when authentication is required vs optional is critical for both security and user experience.
+
+### Authentication Middleware Types
+
+| Middleware | Behavior | Use Case |
+|------------|----------|----------|
+| `authenticate` | **Required auth** - Returns 401 if no valid token | Endpoints that modify data or access private resources |
+| `optionalAuthenticate` | **Optional auth** - Continues without user if no token, attaches user if valid token | Public read endpoints that may show extra info for authenticated users |
+| None | **Public** - No token processing | Health checks, static endpoints |
+
+### Endpoint Authentication Matrix
+
+#### Health & System Endpoints
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| GET | `/health` | None | Load balancer health check |
+| GET | `/health/ready` | None | Readiness probe |
+
+#### User Endpoints
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| GET | `/api/users/me` | **Required** | Get current user profile (creates if first login) |
+| PUT | `/api/users/me` | **Required** | Update current user profile |
+| GET | `/api/users/:username` | None | Get public user profile by username |
+
+#### Post Endpoints
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| GET | `/api/posts` | Optional | List published posts |
+| GET | `/api/posts/my` | **Required** | List current user's posts (including drafts) |
+| GET | `/api/posts/:slug` | Optional | Get single post (draft requires auth + ownership) |
+| POST | `/api/posts` | **Required** | Create new post |
+| PUT | `/api/posts/:slug` | **Required** | Update post (author only) |
+| DELETE | `/api/posts/:slug` | **Required** | Delete post (author only) |
+
+#### Comment Endpoints
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| GET | `/api/posts/:slug/comments` | Optional | List comments for a post |
+| POST | `/api/posts/:slug/comments` | **Required** | Add comment to post |
+| PUT | `/api/posts/:slug/comments/:id` | **Required** | Edit comment (author only) |
+| DELETE | `/api/posts/:slug/comments/:id` | **Required** | Delete comment (author or post owner) |
+
+### Authentication Flow Details
+
+#### Required Authentication (`authenticate` middleware)
+
+1. Check for `Authorization: Bearer <token>` header
+2. If missing → Return `401 Unauthorized`
+3. Validate JWT signature against Entra ID JWKS
+4. Validate `aud` (audience) claim matches backend Client ID
+5. Validate `iss` (issuer) claim matches tenant
+6. Extract user info from claims (`oid`, `name`, `email`)
+7. Attach user to `req.user`
+8. Continue to route handler
+
+#### Optional Authentication (`optionalAuthenticate` middleware)
+
+1. Check for `Authorization: Bearer <token>` header
+2. If missing → Continue without `req.user` (anonymous access)
+3. If present → Validate token (same as above)
+4. If valid → Attach user to `req.user`
+5. If invalid → Log warning, continue without `req.user` (graceful degradation)
+6. Continue to route handler
+
+### Frontend Token Handling
+
+The frontend MUST only attempt to acquire tokens when:
+1. User is authenticated (logged in via MSAL)
+2. Making requests to endpoints that benefit from authentication
+
+For public endpoints (GET /api/posts, GET /api/posts/:slug), the frontend SHOULD:
+- Make requests without the Authorization header when user is not logged in
+- Include the Authorization header when user is logged in (enables author-specific features)
+
+### Security Considerations
+
+1. **Never expose draft posts to non-authors**: Even with `optionalAuthenticate`, business logic must verify ownership for draft content
+2. **Rate limiting**: Apply stricter limits to authenticated users to prevent abuse
+3. **Audit logging**: Log all authenticated write operations with user OID
+4. **Token validation**: Always validate both signature and claims (aud, iss, exp)
+
+---
+
 ## API Endpoints Specification
 
 ### Base URL
@@ -373,6 +463,52 @@ GET /api/posts?sort=viewCount&order=desc
 
 ---
 
+#### GET /api/posts/my
+
+**Purpose**: Get all posts by the authenticated user (including drafts)
+
+**Authentication**: Required
+
+**Query Parameters**:
+- `page` (number): Page number (default: 1)
+- `limit` (number): Items per page (default: 10, max: 50)
+- `status` (string): Filter by status (`all` | `draft` | `published`, default: `all`)
+
+**Response** (200 OK):
+```typescript
+{
+  "posts": [
+    {
+      "_id": "507f...",
+      "title": "My Draft Post",
+      "slug": "my-draft-post",
+      "status": "draft",
+      "author": {
+        "_id": "507f...",
+        "displayName": "John Doe",
+        "username": "johndoe"
+      },
+      "createdAt": "2025-12-01T10:00:00Z",
+      "updatedAt": "2025-12-01T14:00:00Z",
+      "viewCount": 0
+    }
+  ],
+  "total": 5,
+  "page": 1,
+  "limit": 10
+}
+```
+
+**Business Rules**:
+- Returns ALL posts by the authenticated user (drafts + published)
+- Uses user's OID from JWT token to filter
+- Sorted by `updatedAt` descending (most recent first)
+
+**Error Responses**:
+- `401 Unauthorized`: Not authenticated
+
+---
+
 #### GET /api/posts/:slug
 
 **Purpose**: Get single post by slug (with comments)
@@ -481,17 +617,51 @@ GET /api/posts?sort=viewCount&order=desc
 **Business Logic**:
 1. Validate request body
 2. Extract author info from JWT token
-3. Generate slug from title (ensure uniqueness)
+3. Generate slug from title using username-aware collision handling (see below)
 4. Calculate excerpt (first 150 characters, strip markdown)
 5. Calculate reading time (word count / 200 WPM)
 6. Set `publishedAt` if status is `published`
 7. Save to MongoDB
 8. Return created post
 
+**Slug Generation Algorithm**:
+
+Slugs are generated from the post title with intelligent collision handling:
+
+| Scenario | Generated Slug |
+|----------|---------------|
+| No collision | `my-first-post` |
+| Same title, different user | `my-first-post-by-johndoe` |
+| Same title, same user again | `my-first-post-by-johndoe-2` |
+
+**Implementation Pattern**:
+```typescript
+async function generateUniqueSlug(title: string, username: string): Promise<string> {
+  const baseSlug = slugify(title, { lower: true, strict: true });
+  
+  // Check if base slug exists
+  const existingPost = await Post.findOne({ slug: baseSlug });
+  if (!existingPost) return baseSlug;
+  
+  // If same author owns the existing slug, add counter
+  if (existingPost.author.username === username) {
+    // Find highest counter for this author's slug
+    return findNextAvailableSlug(baseSlug, username);
+  }
+  
+  // Different author - add username suffix
+  const userSlug = `${baseSlug}-by-${username}`;
+  const existingUserSlug = await Post.findOne({ slug: userSlug });
+  if (!existingUserSlug) return userSlug;
+  
+  // User slug exists, add counter
+  return findNextAvailableSlug(userSlug, username);
+}
+```
+
 **Error Responses**:
 - `400 Bad Request`: Validation errors
 - `401 Unauthorized`: Missing or invalid token
-- `409 Conflict`: Slug already exists
 
 ---
 
@@ -747,6 +917,42 @@ GET /api/posts?sort=viewCount&order=desc
 - `preferred_username`: User's email
 - `name`: Display name
 - `email`: Email address
+
+### Token Version Compatibility (v1.0 vs v2.0)
+
+**IMPORTANT**: Microsoft Entra ID can issue both v1.0 and v2.0 tokens depending on the application registration configuration. The backend MUST support both versions for maximum compatibility.
+
+**v1.0 vs v2.0 Differences**:
+
+| Aspect | v1.0 Token | v2.0 Token |
+|--------|-----------|-----------|
+| Issuer | `https://sts.windows.net/{tenantId}/` | `https://login.microsoftonline.com/{tenantId}/v2.0` |
+| Email claim | `upn` or `unique_name` | `email` or `preferred_username` |
+| Version claim | `ver: "1.0"` | `ver: "2.0"` |
+
+**Implementation Requirements**:
+1. Accept both issuer formats in token validation
+2. Extract email from multiple possible claims (fallback pattern)
+3. Use `oid` claim as the primary user identifier (consistent across versions)
+
+**Email Extraction Fallback Pattern**:
+```typescript
+// Support both v1.0 and v2.0 token claim names
+const email = payload.email 
+  || payload.preferred_username 
+  || payload.upn 
+  || payload.unique_name 
+  || '';
+```
+
+**Issuer Validation Pattern**:
+```typescript
+const validIssuers = [
+  `https://login.microsoftonline.com/${tenantId}/v2.0`, // v2.0
+  `https://sts.windows.net/${tenantId}/`,               // v1.0
+];
+const isValidIssuer = validIssuers.includes(payload.iss);
+```
 
 ### JWT Validation Strategy
 
@@ -6444,6 +6650,7 @@ mongosh "mongodb://10.0.3.4:27018,10.0.3.5:27018/?replicaSet=blogapp-rs0"
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0 | 2025-12-01 | Backend Engineer Agent | Complete backend application design specification |
+| 1.1 | 2025-12-10 | Implementation Update | Added: GET /api/posts/my endpoint for user's posts (including drafts), v1.0/v2.0 token compatibility documentation, username-aware slug generation algorithm |
 
 ---
 
