@@ -10,6 +10,7 @@ import { authenticate, optionalAuthenticate } from '../middleware/auth.middlewar
 import { ApiError } from '../middleware/error.middleware';
 import { Post, generateSlug, User } from '../models';
 import { logger } from '../utils/logger';
+import { sanitizeHtml, sanitizePlain, sanitizeTagValue } from '../utils/sanitize';
 
 const router = Router();
 
@@ -246,13 +247,13 @@ router.post(
       }
 
       const postData = {
-        title: req.body.title,
+        title: sanitizePlain(req.body.title),
         slug,
-        content: req.body.content,
-        excerpt: req.body.excerpt,
+        content: sanitizeHtml(req.body.content),
+        excerpt: sanitizePlain(req.body.excerpt),
         author: user._id,
         status: req.body.status ?? 'draft',
-        tags: req.body.tags?.map((t: string) => t.toLowerCase()) ?? [],
+        tags: req.body.tags?.map((t: string) => sanitizeTagValue(t)) ?? [],
         featuredImageUrl: req.body.featuredImageUrl,
         publishedAt: req.body.status === 'published' ? new Date() : undefined,
       };
@@ -305,10 +306,10 @@ router.put(
       }
 
       // Update fields
-      if (req.body.title) post.title = req.body.title;
-      if (req.body.content) post.content = req.body.content;
-      if (req.body.excerpt !== undefined) post.excerpt = req.body.excerpt;
-      if (req.body.tags) post.tags = req.body.tags.map((t: string) => t.toLowerCase());
+      if (req.body.title) post.title = sanitizePlain(req.body.title);
+      if (req.body.content) post.content = sanitizeHtml(req.body.content);
+      if (req.body.excerpt !== undefined) post.excerpt = sanitizePlain(req.body.excerpt);
+      if (req.body.tags) post.tags = req.body.tags.map((t: string) => sanitizeTagValue(t));
       if (req.body.featuredImageUrl !== undefined) post.featuredImageUrl = req.body.featuredImageUrl;
       if (req.body.status) {
         post.status = req.body.status;

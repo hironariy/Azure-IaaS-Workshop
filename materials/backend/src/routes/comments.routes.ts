@@ -10,6 +10,7 @@ import { authenticate, optionalAuthenticate } from '../middleware/auth.middlewar
 import { ApiError } from '../middleware/error.middleware';
 import { Comment, Post, User } from '../models';
 import { logger } from '../utils/logger';
+import { sanitizeHtml } from '../utils/sanitize';
 
 const router = Router();
 
@@ -121,12 +122,12 @@ router.post(
         }
       }
 
-      const comment = await Comment.create({
-        post: post._id,
-        author: user._id,
-        content: req.body.content,
-        parentComment: req.body.parentCommentId || null,
-      });
+        const comment = await Comment.create({
+          post: post._id,
+          author: user._id,
+          content: sanitizeHtml(req.body.content),
+          parentComment: req.body.parentCommentId || null,
+        });
 
       const populatedComment = await Comment.findById(comment._id)
         .populate('author', 'displayName username avatarUrl')
@@ -169,7 +170,7 @@ router.put(
         return;
       }
 
-      comment.content = req.body.content;
+      comment.content = sanitizeHtml(req.body.content);
       comment.isEdited = true;
       await comment.save();
 

@@ -10,6 +10,7 @@ import { authenticate } from '../middleware/auth.middleware';
 import { ApiError } from '../middleware/error.middleware';
 import { User } from '../models';
 import { logger, sanitizeEmail } from '../utils/logger';
+import { sanitizePlain } from '../utils/sanitize';
 
 const router = Router();
 
@@ -41,7 +42,7 @@ router.get(
         const newUser = await User.create({
           oid: req.user!.oid,
           email: req.user!.email,
-          displayName: req.user!.name,
+          displayName: sanitizePlain(req.user!.name),
           username: req.user!.email.split('@')[0].toLowerCase().replace(/[^a-z0-9_-]/g, ''),
           lastLoginAt: new Date(),
         });
@@ -105,8 +106,8 @@ router.put(
     try {
       const updates: Record<string, unknown> = {};
 
-      if (req.body.displayName) updates.displayName = req.body.displayName;
-      if (req.body.bio !== undefined) updates.bio = req.body.bio;
+      if (req.body.displayName) updates.displayName = sanitizePlain(req.body.displayName);
+      if (req.body.bio !== undefined) updates.bio = sanitizePlain(req.body.bio);
       if (req.body.avatarUrl !== undefined) updates.avatarUrl = req.body.avatarUrl;
 
       const user = await User.findOneAndUpdate(

@@ -81,7 +81,7 @@ async function validateToken(token: string): Promise<AuthenticatedUser> {
   const signingKey = await getSigningKey(decoded.header);
 
   // Verify token
-  // The audience can be either the client ID or the API URI (api://<client-id>)
+  // Require the API resource URI as audience to avoid accepting SPA ID tokens
   // Accept both v1.0 (sts.windows.net) and v2.0 (login.microsoftonline.com/.../v2.0) issuers
   // to support different Entra ID app registration configurations
   const validIssuers: [string, ...string[]] = [
@@ -91,7 +91,7 @@ async function validateToken(token: string): Promise<AuthenticatedUser> {
 
   const payload = jwt.verify(token, signingKey, {
     algorithms: ['RS256'],
-    audience: [config.entraClientId, `api://${config.entraClientId}`],
+    audience: `api://${config.entraClientId}`,
     issuer: validIssuers,
   }) as jwt.JwtPayload;
 
