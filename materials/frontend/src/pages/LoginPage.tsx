@@ -3,22 +3,37 @@
  * Handles Microsoft Entra ID authentication
  */
 
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useMsal, useIsAuthenticated } from '@azure/msal-react';
 import { useEffect } from 'react';
 import { loginRequest } from '../config/authConfig';
+
+/**
+ * Location state interface for redirect-back functionality
+ * When ProtectedRoute redirects here, it passes the original location
+ */
+interface LocationState {
+  from?: {
+    pathname: string;
+  };
+}
 
 function LoginPage() {
   const { instance } = useMsal();
   const isAuthenticated = useIsAuthenticated();
   const navigate = useNavigate();
+  const location = useLocation();
 
-  // Redirect to home if already authenticated
+  // Get the original destination from state (set by ProtectedRoute)
+  const state = location.state as LocationState | null;
+  const from = state?.from?.pathname || '/';
+
+  // Redirect to original destination (or home) if already authenticated
   useEffect(() => {
     if (isAuthenticated) {
-      navigate('/');
+      navigate(from, { replace: true });
     }
-  }, [isAuthenticated, navigate]);
+  }, [isAuthenticated, navigate, from]);
 
   const handleLogin = () => {
     instance.loginRedirect(loginRequest);
@@ -30,6 +45,13 @@ function LoginPage() {
       <p className="mb-8 text-gray-600">
         Sign in with your Microsoft account to create and manage blog posts.
       </p>
+
+      {/* Show message if redirected from a protected route */}
+      {state?.from && (
+        <div className="mb-6 rounded-lg bg-azure-50 p-4 text-left text-sm text-azure-700">
+          Please sign in to access <code className="font-mono">{from}</code>
+        </div>
+      )}
 
       <button onClick={handleLogin} className="btn-primary w-full">
         <svg className="mr-2 h-5 w-5" viewBox="0 0 21 21" fill="currentColor">
