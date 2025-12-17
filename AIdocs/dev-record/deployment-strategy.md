@@ -143,7 +143,7 @@ az ad app list --display-name "blogapp" --query "[].{name:displayName, appId:app
 # Create resource group
 az group create --name rg-workshop-3 --location japaneast
 
-# Deploy infrastructure
+# Deploy infrastructure (initial deployment)
 az deployment group create \
   --resource-group rg-workshop-3 \
   --template-file materials/bicep/main.bicep \
@@ -151,6 +151,61 @@ az deployment group create \
 
 # Wait for deployment (15-30 minutes)
 ```
+
+### 0.1.1 Re-run CustomScript on Existing VMs (Optional)
+
+If you need to re-run CustomScript extensions on specific tiers (e.g., update NGINX config), use the **tier-specific force update tags** along with **skipVmCreation** to avoid the SSH key change error:
+
+```bash
+# Force re-run on Web tier only (e.g., NGINX config update)
+# skipVmCreationWeb=true prevents "SSH key change not allowed" error
+az deployment group create \
+  --resource-group rg-workshop-3 \
+  --template-file materials/bicep/main.bicep \
+  --parameters materials/bicep/main.local.bicepparam \
+  --parameters skipVmCreationWeb=true \
+               forceUpdateTagWeb="$(date +%Y%m%d%H%M%S)"
+
+# Force re-run on App tier only (e.g., Node.js env update)
+az deployment group create \
+  --resource-group rg-workshop-3 \
+  --template-file materials/bicep/main.bicep \
+  --parameters materials/bicep/main.local.bicepparam \
+  --parameters skipVmCreationApp=true \
+               forceUpdateTagApp="$(date +%Y%m%d%H%M%S)"
+
+# Force re-run on DB tier only (rarely needed)
+az deployment group create \
+  --resource-group rg-workshop-3 \
+  --template-file materials/bicep/main.bicep \
+  --parameters materials/bicep/main.local.bicepparam \
+  --parameters skipVmCreationDb=true \
+               forceUpdateTagDb="$(date +%Y%m%d%H%M%S)"
+
+# Force re-run on ALL tiers (use with caution)
+TIMESTAMP=$(date +%Y%m%d%H%M%S)
+az deployment group create \
+  --resource-group rg-workshop-3 \
+  --template-file materials/bicep/main.bicep \
+  --parameters materials/bicep/main.local.bicepparam \
+  --parameters skipVmCreationWeb=true skipVmCreationApp=true skipVmCreationDb=true \
+               forceUpdateTagWeb="$TIMESTAMP" \
+               forceUpdateTagApp="$TIMESTAMP" \
+               forceUpdateTagDb="$TIMESTAMP"
+```
+
+| Parameter | Purpose |
+|-----------|---------|
+| `skipVmCreationWeb/App/Db` | **Required for re-deployment**. Skips VM resource update, only updates extensions. Avoids "SSH key change not allowed" error. |
+| `forceUpdateTagWeb/App/Db` | Changes to this value force CustomScript extension to re-run |
+
+| Tier | forceUpdateTag | skipVmCreation | When to Use |
+|------|----------------|----------------|-------------|
+| Web (NGINX) | `forceUpdateTagWeb` | `skipVmCreationWeb` | Updated NGINX config, security headers |
+| App (Node.js) | `forceUpdateTagApp` | `skipVmCreationApp` | Updated env vars, Node.js version |
+| DB (MongoDB) | `forceUpdateTagDb` | `skipVmCreationDb` | Rarely needed (one-time setup) |
+
+> **Important:** When VMs already exist, you MUST set `skipVmCreation*=true` for the corresponding tier. Otherwise, Azure will fail with "Changing property 'linuxConfiguration.ssh.publicKeys' is not allowed" error.
 
 ### 0.2 Prepare Post-Deployment Script
 
@@ -558,9 +613,35 @@ sudo cp /tmp/config.json.bak /var/www/html/config.json
 sudo chown -R www-data:www-data /var/www/html/
 ```
 
-### 3.4 Update NGINX Configuration
+### 3.4 Verify NGINX Configuration (AUTOMATED)
 
-**Replace `/etc/nginx/sites-available/default`:**
+> **Note:** NGINX is now **fully configured by Bicep** with:
+> - Internal Load Balancer proxy (`10.0.2.10:3000`)
+> - Security headers (X-Frame-Options, X-Content-Type-Options, etc.)
+> - Gzip compression
+> - Static asset caching
+> - SPA routing
+>
+> **No manual configuration needed!**
+
+**Verify the configuration:**
+
+```bash
+# Check that API proxy is using Internal Load Balancer
+grep "proxy_pass" /etc/nginx/sites-available/default
+# Expected: proxy_pass http://10.0.2.10:3000;
+
+# Test NGINX configuration syntax
+sudo nginx -t
+
+# Reload if needed (only if you made changes)
+sudo systemctl reload nginx
+```
+
+<details>
+<summary>📋 Full NGINX configuration (for reference)</summary>
+
+This is automatically created by Bicep. You should NOT need to modify it.
 
 ```nginx
 server {
@@ -589,7 +670,12 @@ server {
         add_header Content-Type text/plain;
     }
 
-    # API proxy to Internal Load Balancer
+    # Serve static files (React frontend) with SPA routing
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # API proxy to Internal Load Balancer (10.0.2.10)
     location /api/ {
         proxy_pass http://10.0.2.10:3000;
         proxy_http_version 1.1;
@@ -602,11 +688,6 @@ server {
         proxy_read_timeout 30s;
     }
 
-    # SPA routing - serve index.html for all non-file routes
-    location / {
-        try_files $uri $uri/ /index.html;
-    }
-
     # Cache static assets
     location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
         expires 1y;
@@ -615,11 +696,7 @@ server {
 }
 ```
 
-```bash
-# Test and reload NGINX
-sudo nginx -t
-sudo systemctl reload nginx
-```
+</details>
 
 ### 3.5 Verification
 
