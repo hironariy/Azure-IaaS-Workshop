@@ -55,6 +55,12 @@ param logAnalyticsWorkspaceId string = ''
 @description('Resource ID of Data Collection Rule')
 param dataCollectionRuleId string = ''
 
+@description('Force update tag to trigger CustomScript re-execution (change value to re-run)')
+param forceUpdateTag string = ''
+
+@description('Skip VM creation and only update extensions (for re-deployment)')
+param skipVmCreation bool = false
+
 @description('Tags to apply to all resources')
 param tags object = {}
 
@@ -133,6 +139,8 @@ module vmAz1 'vm.bicep' = {
     logAnalyticsWorkspaceId: logAnalyticsWorkspaceId
     dataCollectionRuleId: dataCollectionRuleId
     customScriptContent: base64(nginxInstallScript)
+    forceUpdateTag: forceUpdateTag
+    skipVmCreation: skipVmCreation
     tags: allTags
   }
 }
@@ -155,6 +163,8 @@ module vmAz2 'vm.bicep' = {
     logAnalyticsWorkspaceId: logAnalyticsWorkspaceId
     dataCollectionRuleId: dataCollectionRuleId
     customScriptContent: base64(nginxInstallScript)
+    forceUpdateTag: forceUpdateTag
+    skipVmCreation: skipVmCreation
     tags: allTags
   }
 }

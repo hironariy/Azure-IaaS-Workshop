@@ -59,6 +59,12 @@ param loadBalancerBackendPoolId string = ''
 @description('Tags to apply to all resources')
 param tags object = {}
 
+@description('Force update tag - changing this value forces CustomScript to re-run')
+param forceUpdateTag string = ''
+
+@description('Skip VM creation and only update extensions (for re-deployment)')
+param skipVmCreation bool = false
+
 // =============================================================================
 // Microsoft Entra ID Parameters (for Backend API Authentication)
 // =============================================================================
@@ -136,6 +142,8 @@ module vmAz1 'vm.bicep' = {
     logAnalyticsWorkspaceId: logAnalyticsWorkspaceId
     dataCollectionRuleId: dataCollectionRuleId
     customScriptContent: base64(nodeInstallScript)
+    forceUpdateTag: forceUpdateTag
+    skipVmCreation: skipVmCreation
     tags: allTags
   }
 }
@@ -158,6 +166,8 @@ module vmAz2 'vm.bicep' = {
     logAnalyticsWorkspaceId: logAnalyticsWorkspaceId
     dataCollectionRuleId: dataCollectionRuleId
     customScriptContent: base64(nodeInstallScript)
+    forceUpdateTag: forceUpdateTag
+    skipVmCreation: skipVmCreation
     tags: allTags
   }
 }

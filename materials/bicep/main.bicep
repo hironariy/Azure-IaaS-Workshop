@@ -82,6 +82,39 @@ param dbDataDiskSizeGB int = 128
 param tags object = {}
 
 // =============================================================================
+// Force Update Tags (CustomScript Re-execution Control)
+// =============================================================================
+// Change these values to force CustomScript extensions to re-run on specific tiers.
+// Use timestamp or version string. Empty string = no forced re-run.
+// Example: forceUpdateTagWeb='20251217120000' to update only Web tier NGINX config
+// =============================================================================
+
+@description('Force update tag for Web tier - changes force NGINX script to re-run')
+param forceUpdateTagWeb string = ''
+
+@description('Force update tag for App tier - changes force Node.js script to re-run')
+param forceUpdateTagApp string = ''
+
+@description('Force update tag for DB tier - changes force MongoDB script to re-run (rarely needed)')
+param forceUpdateTagDb string = ''
+
+// =============================================================================
+// Skip VM Creation (Extension-Only Updates)
+// =============================================================================
+// Set to true when VMs already exist and you only want to update extensions.
+// This avoids the "Changing SSH keys not allowed" error on re-deployment.
+// =============================================================================
+
+@description('Skip Web tier VM creation - only update extensions on existing VMs')
+param skipVmCreationWeb bool = false
+
+@description('Skip App tier VM creation - only update extensions on existing VMs')
+param skipVmCreationApp bool = false
+
+@description('Skip DB tier VM creation - only update extensions on existing VMs')
+param skipVmCreationDb bool = false
+
+// =============================================================================
 // Microsoft Entra ID Parameters (Authentication Configuration)
 // =============================================================================
 // These are injected into VMs by CustomScript Extension:
@@ -344,6 +377,8 @@ module webTier 'modules/compute/web-tier.bicep' = {
     entraTenantId: entraTenantId
     entraClientId: entraClientId
     entraFrontendClientId: entraFrontendClientId
+    forceUpdateTag: forceUpdateTagWeb
+    skipVmCreation: skipVmCreationWeb
     tags: allTags
   }
 }
@@ -371,6 +406,8 @@ module appTier 'modules/compute/app-tier.bicep' = {
     dataCollectionRuleId: dataCollectionRule.?outputs.?dcrId ?? ''      // Safe-dereference for conditional module
     entraTenantId: entraTenantId
     entraClientId: entraClientId
+    forceUpdateTag: forceUpdateTagApp
+    skipVmCreation: skipVmCreationApp
     tags: allTags
   }
 }
@@ -402,6 +439,8 @@ module dbTier 'modules/compute/db-tier.bicep' = {
     enableMonitoring: deployMonitoring
     logAnalyticsWorkspaceId: logAnalytics.?outputs.?workspaceId ?? ''  // Safe-dereference for conditional module
     dataCollectionRuleId: dataCollectionRule.?outputs.?dcrId ?? ''      // Safe-dereference for conditional module
+    forceUpdateTag: forceUpdateTagDb
+    skipVmCreation: skipVmCreationDb
     tags: allTags
   }
 }

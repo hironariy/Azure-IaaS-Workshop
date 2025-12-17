@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.39.26.7824",
-      "templateHash": "6881452283133085263"
+      "templateHash": "17750527540264374016"
     }
   },
   "parameters": {
@@ -59,6 +59,13 @@
       "defaultValue": true,
       "metadata": {
         "description": "Deploy Azure Bastion (set to false to reduce costs during development)"
+      }
+    },
+    "deployNatGateway": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Deploy NAT Gateway for DB tier outbound connectivity"
       }
     },
     "deployMonitoring": {
@@ -115,6 +122,66 @@
       "defaultValue": {},
       "metadata": {
         "description": "Tags to apply to all resources"
+      }
+    },
+    "forceUpdateTagWeb": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Force update tag for Web tier - changes force NGINX script to re-run"
+      }
+    },
+    "forceUpdateTagApp": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Force update tag for App tier - changes force Node.js script to re-run"
+      }
+    },
+    "forceUpdateTagDb": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Force update tag for DB tier - changes force MongoDB script to re-run (rarely needed)"
+      }
+    },
+    "skipVmCreationWeb": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Skip Web tier VM creation - only update extensions on existing VMs"
+      }
+    },
+    "skipVmCreationApp": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Skip App tier VM creation - only update extensions on existing VMs"
+      }
+    },
+    "skipVmCreationDb": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Skip DB tier VM creation - only update extensions on existing VMs"
+      }
+    },
+    "entraTenantId": {
+      "type": "string",
+      "metadata": {
+        "description": "Microsoft Entra tenant ID for authentication"
+      }
+    },
+    "entraClientId": {
+      "type": "string",
+      "metadata": {
+        "description": "Microsoft Entra client ID for backend API (registered app)"
+      }
+    },
+    "entraFrontendClientId": {
+      "type": "string",
+      "metadata": {
+        "description": "Microsoft Entra client ID for frontend SPA (registered app)"
       }
     }
   },
@@ -303,7 +370,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.39.26.7824",
-              "templateHash": "10683752925150389331"
+              "templateHash": "2853483368337662336"
             }
           },
           "parameters": {
@@ -431,9 +498,7 @@
                     ],
                     "destinations": [
                       "logAnalyticsDestination"
-                    ],
-                    "transformKql": "source",
-                    "outputStream": "Microsoft-Syslog"
+                    ]
                   },
                   {
                     "streams": [
@@ -441,9 +506,7 @@
                     ],
                     "destinations": [
                       "logAnalyticsDestination"
-                    ],
-                    "transformKql": "source",
-                    "outputStream": "Microsoft-Perf"
+                    ]
                   }
                 ]
               }
@@ -1345,6 +1408,168 @@
       }
     },
     {
+      "condition": "[parameters('deployNatGateway')]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "deploy-nat-gateway",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "environment": {
+            "value": "[parameters('environment')]"
+          },
+          "workloadName": {
+            "value": "[parameters('workloadName')]"
+          },
+          "idleTimeoutInMinutes": {
+            "value": 10
+          },
+          "tags": {
+            "value": "[variables('allTags')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.39.26.7824",
+              "templateHash": "6560198560547204469"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region for all resources"
+              }
+            },
+            "environment": {
+              "type": "string",
+              "defaultValue": "prod",
+              "allowedValues": [
+                "prod",
+                "dev",
+                "test"
+              ],
+              "metadata": {
+                "description": "Environment name (prod, dev, test)"
+              }
+            },
+            "workloadName": {
+              "type": "string",
+              "defaultValue": "blogapp",
+              "metadata": {
+                "description": "Workload name for naming convention"
+              }
+            },
+            "idleTimeoutInMinutes": {
+              "type": "int",
+              "defaultValue": 10,
+              "minValue": 4,
+              "maxValue": 120,
+              "metadata": {
+                "description": "Idle timeout in minutes (4-120)"
+              }
+            },
+            "tags": {
+              "type": "object",
+              "defaultValue": {},
+              "metadata": {
+                "description": "Tags to apply to all resources"
+              }
+            }
+          },
+          "variables": {
+            "natGatewayName": "[format('nat-{0}-{1}', parameters('workloadName'), parameters('environment'))]",
+            "publicIpName": "[format('pip-nat-{0}-{1}', parameters('workloadName'), parameters('environment'))]",
+            "defaultTags": {
+              "Environment": "[parameters('environment')]",
+              "Workload": "[parameters('workloadName')]",
+              "Component": "nat-gateway",
+              "ManagedBy": "Bicep"
+            },
+            "allTags": "[union(variables('defaultTags'), parameters('tags'))]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Network/publicIPAddresses",
+              "apiVersion": "2024-01-01",
+              "name": "[variables('publicIpName')]",
+              "location": "[parameters('location')]",
+              "tags": "[variables('allTags')]",
+              "sku": {
+                "name": "StandardV2"
+              },
+              "properties": {
+                "publicIPAllocationMethod": "Static",
+                "publicIPAddressVersion": "IPv4",
+                "idleTimeoutInMinutes": "[parameters('idleTimeoutInMinutes')]"
+              }
+            },
+            {
+              "type": "Microsoft.Network/natGateways",
+              "apiVersion": "2024-01-01",
+              "name": "[variables('natGatewayName')]",
+              "location": "[parameters('location')]",
+              "tags": "[variables('allTags')]",
+              "sku": {
+                "name": "StandardV2"
+              },
+              "properties": {
+                "idleTimeoutInMinutes": "[parameters('idleTimeoutInMinutes')]",
+                "publicIpAddresses": [
+                  {
+                    "id": "[resourceId('Microsoft.Network/publicIPAddresses', variables('publicIpName'))]"
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/publicIPAddresses', variables('publicIpName'))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "natGatewayId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the NAT Gateway"
+              },
+              "value": "[resourceId('Microsoft.Network/natGateways', variables('natGatewayName'))]"
+            },
+            "natGatewayName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the NAT Gateway"
+              },
+              "value": "[variables('natGatewayName')]"
+            },
+            "publicIpId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the NAT Gateway Public IP"
+              },
+              "value": "[resourceId('Microsoft.Network/publicIPAddresses', variables('publicIpName'))]"
+            },
+            "publicIpAddress": {
+              "type": "string",
+              "metadata": {
+                "description": "Public IP address of the NAT Gateway"
+              },
+              "value": "[reference(resourceId('Microsoft.Network/publicIPAddresses', variables('publicIpName')), '2024-01-01').ipAddress]"
+            }
+          }
+        }
+      }
+    },
+    {
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
       "name": "deploy-vnet",
@@ -1387,6 +1612,12 @@
           "dbNsgId": {
             "value": "[reference(resourceId('Microsoft.Resources/deployments', 'deploy-nsg-db'), '2025-04-01').outputs.nsgId.value]"
           },
+          "appNatGatewayId": {
+            "value": "[coalesce(tryGet(tryGet(tryGet(if(parameters('deployNatGateway'), reference(resourceId('Microsoft.Resources/deployments', 'deploy-nat-gateway'), '2025-04-01'), null()), 'outputs'), 'natGatewayId'), 'value'), '')]"
+          },
+          "dbNatGatewayId": {
+            "value": "[coalesce(tryGet(tryGet(tryGet(if(parameters('deployNatGateway'), reference(resourceId('Microsoft.Resources/deployments', 'deploy-nat-gateway'), '2025-04-01'), null()), 'outputs'), 'natGatewayId'), 'value'), '')]"
+          },
           "tags": {
             "value": "[variables('allTags')]"
           }
@@ -1398,7 +1629,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.39.26.7824",
-              "templateHash": "8469709004672643051"
+              "templateHash": "6594491599254406494"
             }
           },
           "parameters": {
@@ -1480,6 +1711,20 @@
                 "description": "Resource ID of NSG for DB tier subnet"
               }
             },
+            "appNatGatewayId": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Resource ID of NAT Gateway for App tier outbound connectivity (optional)"
+              }
+            },
+            "dbNatGatewayId": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Resource ID of NAT Gateway for DB tier outbound connectivity (optional)"
+              }
+            },
             "tags": {
               "type": "object",
               "defaultValue": {},
@@ -1540,6 +1785,7 @@
                       "networkSecurityGroup": {
                         "id": "[parameters('appNsgId')]"
                       },
+                      "natGateway": "[if(not(empty(parameters('appNatGatewayId'))), createObject('id', parameters('appNatGatewayId')), null())]",
                       "serviceEndpoints": [
                         {
                           "service": "Microsoft.Storage"
@@ -1558,6 +1804,7 @@
                       "networkSecurityGroup": {
                         "id": "[parameters('dbNsgId')]"
                       },
+                      "natGateway": "[if(not(empty(parameters('dbNatGatewayId'))), createObject('id', parameters('dbNatGatewayId')), null())]",
                       "serviceEndpoints": [
                         {
                           "service": "Microsoft.Storage"
@@ -1668,6 +1915,7 @@
         }
       },
       "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', 'deploy-nat-gateway')]",
         "[resourceId('Microsoft.Resources/deployments', 'deploy-nsg-app')]",
         "[resourceId('Microsoft.Resources/deployments', 'deploy-nsg-db')]",
         "[resourceId('Microsoft.Resources/deployments', 'deploy-nsg-web')]"
@@ -1697,7 +1945,7 @@
             "value": "[reference(resourceId('Microsoft.Resources/deployments', 'deploy-vnet'), '2025-04-01').outputs.bastionSubnetId.value]"
           },
           "bastionSku": {
-            "value": "Basic"
+            "value": "Standard"
           },
           "tags": {
             "value": "[variables('allTags')]"
@@ -2637,6 +2885,21 @@
           "dataCollectionRuleId": {
             "value": "[coalesce(tryGet(tryGet(tryGet(if(parameters('deployMonitoring'), reference(resourceId('Microsoft.Resources/deployments', 'deploy-dcr'), '2025-04-01'), null()), 'outputs'), 'dcrId'), 'value'), '')]"
           },
+          "entraTenantId": {
+            "value": "[parameters('entraTenantId')]"
+          },
+          "entraClientId": {
+            "value": "[parameters('entraClientId')]"
+          },
+          "entraFrontendClientId": {
+            "value": "[parameters('entraFrontendClientId')]"
+          },
+          "forceUpdateTag": {
+            "value": "[parameters('forceUpdateTagWeb')]"
+          },
+          "skipVmCreation": {
+            "value": "[parameters('skipVmCreationWeb')]"
+          },
           "tags": {
             "value": "[variables('allTags')]"
           }
@@ -2648,7 +2911,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.39.26.7824",
-              "templateHash": "8966518944081658841"
+              "templateHash": "11426911099967267729"
             }
           },
           "parameters": {
@@ -2730,11 +2993,43 @@
                 "description": "Resource ID of Data Collection Rule"
               }
             },
+            "forceUpdateTag": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Force update tag to trigger CustomScript re-execution (change value to re-run)"
+              }
+            },
+            "skipVmCreation": {
+              "type": "bool",
+              "defaultValue": false,
+              "metadata": {
+                "description": "Skip VM creation and only update extensions (for re-deployment)"
+              }
+            },
             "tags": {
               "type": "object",
               "defaultValue": {},
               "metadata": {
                 "description": "Tags to apply to all resources"
+              }
+            },
+            "entraTenantId": {
+              "type": "string",
+              "metadata": {
+                "description": "Microsoft Entra tenant ID"
+              }
+            },
+            "entraClientId": {
+              "type": "string",
+              "metadata": {
+                "description": "Microsoft Entra client ID for backend API"
+              }
+            },
+            "entraFrontendClientId": {
+              "type": "string",
+              "metadata": {
+                "description": "Microsoft Entra client ID for frontend SPA"
               }
             }
           },
@@ -2746,7 +3041,8 @@
               "ManagedBy": "Bicep"
             },
             "allTags": "[union(variables('defaultTags'), parameters('tags'))]",
-            "nginxInstallScript": "#!/bin/bash\nset -e\n\n# ==========================================================\n# Wait for dpkg/apt locks to be released\n# ==========================================================\n# Azure Linux Agent may be running unattended-upgrades on first boot\n# This can hold dpkg lock for 1-5 minutes\n# We wait up to 5 minutes for the lock to be released\n# ==========================================================\n\nwait_for_apt_lock() {\n  local timeout=300\n  local interval=10\n  local elapsed=0\n  \n  echo \"Checking for dpkg/apt locks...\"\n  \n  while true; do\n    # Check if any apt/dpkg processes are running\n    if ! fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 && \\\n       ! fuser /var/lib/apt/lists/lock >/dev/null 2>&1 && \\\n       ! fuser /var/cache/apt/archives/lock >/dev/null 2>&1; then\n      echo \"All apt/dpkg locks are free, proceeding...\"\n      return 0\n    fi\n    \n    if [ $elapsed -ge $timeout ]; then\n      echo \"ERROR: Timeout waiting for apt/dpkg locks after ${timeout}s\"\n      return 1\n    fi\n    \n    echo \"apt/dpkg lock is held, waiting ${interval}s... (${elapsed}s elapsed)\"\n    sleep $interval\n    elapsed=$((elapsed + interval))\n  done\n}\n\n# Set non-interactive mode to prevent prompts during package installation\nexport DEBIAN_FRONTEND=noninteractive\n\n# Execute wait function (initial check to reduce log spam)\nwait_for_apt_lock\n\n# Update packages with lock timeout (backup protection against race conditions)\n# DPkg::Lock::Timeout waits up to 120 seconds if another process holds the lock\napt-get -o DPkg::Lock::Timeout=120 update\napt-get -o DPkg::Lock::Timeout=120 -y upgrade\n\n# Install NGINX\napt-get -o DPkg::Lock::Timeout=120 -y install nginx\n\n# Create health check endpoint\nmkdir -p /var/www/html\necho 'OK' > /var/www/html/health\n\n# Basic NGINX configuration for reverse proxy\n# Note: Full configuration will be deployed with application\ncat > /etc/nginx/sites-available/default << 'EOF'\nserver {\n    listen 80 default_server;\n    listen [::]:80 default_server;\n\n    root /var/www/html;\n    index index.html;\n\n    # Health check endpoint for Load Balancer\n    location /health {\n        access_log off;\n        return 200 'OK';\n        add_header Content-Type text/plain;\n    }\n\n    # Serve static files (React frontend)\n    location / {\n        try_files $uri $uri/ /index.html;\n    }\n\n    # Proxy API requests to App tier\n    # Note: Update APP_TIER_IP after deployment\n    location /api/ {\n        # Placeholder - update with actual App tier IP\n        proxy_pass http://10.0.2.4:3000/api/;\n        proxy_http_version 1.1;\n        proxy_set_header Upgrade $http_upgrade;\n        proxy_set_header Connection 'upgrade';\n        proxy_set_header Host $host;\n        proxy_set_header X-Real-IP $remote_addr;\n        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n        proxy_set_header X-Forwarded-Proto $scheme;\n        proxy_cache_bypass $http_upgrade;\n    }\n}\nEOF\n\n# Enable and restart NGINX\nsystemctl enable nginx\nsystemctl restart nginx\n\necho \"NGINX installation completed successfully\"\n"
+            "nginxInstallScriptRaw": "#!/bin/bash\nset -e\n\n# ==========================================================\n# Wait for dpkg/apt locks to be released\n# ==========================================================\n# Azure Linux Agent may be running unattended-upgrades on first boot\n# This can hold dpkg lock for 1-5 minutes\n# We wait up to 5 minutes for the lock to be released\n# ==========================================================\n\nwait_for_apt_lock() {\n  local timeout=300\n  local interval=10\n  local elapsed=0\n  \n  echo \"Checking for dpkg/apt locks...\"\n  \n  while true; do\n    # Check if any apt/dpkg processes are running\n    if ! fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 && \\\n       ! fuser /var/lib/apt/lists/lock >/dev/null 2>&1 && \\\n       ! fuser /var/cache/apt/archives/lock >/dev/null 2>&1; then\n      echo \"All apt/dpkg locks are free, proceeding...\"\n      return 0\n    fi\n    \n    if [ $elapsed -ge $timeout ]; then\n      echo \"ERROR: Timeout waiting for apt/dpkg locks after ${timeout}s\"\n      return 1\n    fi\n    \n    echo \"apt/dpkg lock is held, waiting ${interval}s... (${elapsed}s elapsed)\"\n    sleep $interval\n    elapsed=$((elapsed + interval))\n  done\n}\n\n# Set non-interactive mode to prevent prompts during package installation\nexport DEBIAN_FRONTEND=noninteractive\n\n# Execute wait function (initial check to reduce log spam)\nwait_for_apt_lock\n\n# Update packages with lock timeout (backup protection against race conditions)\n# DPkg::Lock::Timeout waits up to 120 seconds if another process holds the lock\napt-get -o DPkg::Lock::Timeout=120 update\napt-get -o DPkg::Lock::Timeout=120 -y upgrade\n\n# Install NGINX\napt-get -o DPkg::Lock::Timeout=120 -y install nginx\n\n# Create health check endpoint\nmkdir -p /var/www/html\necho 'OK' > /var/www/html/health\n\n# Basic NGINX configuration for reverse proxy\n# Configured to use Internal Load Balancer for high availability\ncat > /etc/nginx/sites-available/default << 'EOF'\nserver {\n    listen 80 default_server;\n    listen [::]:80 default_server;\n\n    root /var/www/html;\n    index index.html;\n\n    # Security Headers\n    add_header X-Frame-Options \"SAMEORIGIN\" always;\n    add_header X-Content-Type-Options \"nosniff\" always;\n    add_header X-XSS-Protection \"1; mode=block\" always;\n    add_header Referrer-Policy \"strict-origin-when-cross-origin\" always;\n\n    # Gzip compression\n    gzip on;\n    gzip_vary on;\n    gzip_min_length 1024;\n    gzip_types text/plain text/css text/xml text/javascript application/javascript application/json application/xml;\n\n    # Health check endpoint for Load Balancer\n    location /health {\n        access_log off;\n        return 200 'healthy\\n';\n        add_header Content-Type text/plain;\n    }\n\n    # Serve static files (React frontend) with SPA routing\n    location / {\n        try_files $uri $uri/ /index.html;\n    }\n\n    # API proxy to Internal Load Balancer (10.0.2.10)\n    # This provides high availability across both App tier VMs\n    location /api/ {\n        proxy_pass http://10.0.2.10:3000;\n        proxy_http_version 1.1;\n        proxy_set_header Host $host;\n        proxy_set_header X-Real-IP $remote_addr;\n        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n        proxy_set_header X-Forwarded-Proto $scheme;\n        proxy_connect_timeout 30s;\n        proxy_send_timeout 30s;\n        proxy_read_timeout 30s;\n    }\n\n    # Cache static assets\n    location ~* \\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {\n        expires 1y;\n        add_header Cache-Control \"public, immutable\";\n    }\n}\nEOF\n\n# Enable and restart NGINX\nsystemctl enable nginx\nsystemctl restart nginx\n\n# ==========================================================\n# Create Frontend Runtime Configuration\n# ==========================================================\n# /config.json is fetched by the frontend at runtime\n# This allows Bicep to inject Entra IDs without rebuilding the frontend\n# Reference: /design/FrontendApplicationDesign.md - Runtime Config Pattern\n# ==========================================================\n\necho \"Creating frontend runtime configuration...\"\n\ncat > /var/www/html/config.json << CONFIGEOF\n{\n  \"ENTRA_TENANT_ID\": \"__ENTRA_TENANT_ID__\",\n  \"ENTRA_FRONTEND_CLIENT_ID\": \"__ENTRA_FRONTEND_CLIENT_ID__\",\n  \"ENTRA_BACKEND_CLIENT_ID\": \"__ENTRA_BACKEND_CLIENT_ID__\",\n  \"API_BASE_URL\": \"/api\"\n}\nCONFIGEOF\n\n# Set proper permissions\nchmod 644 /var/www/html/config.json\n\necho \"Frontend runtime configuration created at /var/www/html/config.json\"\necho \"NGINX installation completed successfully\"\n",
+            "nginxInstallScript": "[replace(replace(replace(variables('nginxInstallScriptRaw'), '__ENTRA_TENANT_ID__', parameters('entraTenantId')), '__ENTRA_FRONTEND_CLIENT_ID__', parameters('entraFrontendClientId')), '__ENTRA_BACKEND_CLIENT_ID__', parameters('entraClientId'))]"
           },
           "resources": [
             {
@@ -2801,6 +3097,12 @@
                   "customScriptContent": {
                     "value": "[base64(variables('nginxInstallScript'))]"
                   },
+                  "forceUpdateTag": {
+                    "value": "[parameters('forceUpdateTag')]"
+                  },
+                  "skipVmCreation": {
+                    "value": "[parameters('skipVmCreation')]"
+                  },
                   "tags": {
                     "value": "[variables('allTags')]"
                   }
@@ -2812,7 +3114,7 @@
                     "_generator": {
                       "name": "bicep",
                       "version": "0.39.26.7824",
-                      "templateHash": "17168036913246087060"
+                      "templateHash": "13423450180752322404"
                     }
                   },
                   "parameters": {
@@ -2924,6 +3226,20 @@
                         "description": "Custom script to run on VM startup (base64 encoded)"
                       }
                     },
+                    "forceUpdateTag": {
+                      "type": "string",
+                      "defaultValue": "",
+                      "metadata": {
+                        "description": "Force update tag to trigger script re-execution (change value to re-run script)"
+                      }
+                    },
+                    "skipVmCreation": {
+                      "type": "bool",
+                      "defaultValue": false,
+                      "metadata": {
+                        "description": "Skip VM creation and only update extensions on existing VM"
+                      }
+                    },
                     "tags": {
                       "type": "object",
                       "defaultValue": {},
@@ -2947,6 +3263,7 @@
                   },
                   "resources": [
                     {
+                      "condition": "[not(parameters('skipVmCreation'))]",
                       "type": "Microsoft.Network/networkInterfaces",
                       "apiVersion": "2023-11-01",
                       "name": "[variables('nicName')]",
@@ -2969,6 +3286,7 @@
                       }
                     },
                     {
+                      "condition": "[not(parameters('skipVmCreation'))]",
                       "type": "Microsoft.Compute/virtualMachines",
                       "apiVersion": "2023-09-01",
                       "name": "[parameters('vmName')]",
@@ -3064,7 +3382,7 @@
                       ]
                     },
                     {
-                      "condition": "[and(parameters('enableMonitoring'), not(empty(parameters('logAnalyticsWorkspaceId'))))]",
+                      "condition": "[and(and(not(parameters('skipVmCreation')), parameters('enableMonitoring')), not(empty(parameters('logAnalyticsWorkspaceId'))))]",
                       "type": "Microsoft.Compute/virtualMachines/extensions",
                       "apiVersion": "2023-09-01",
                       "name": "[format('{0}/{1}', parameters('vmName'), 'AzureMonitorLinuxAgent')]",
@@ -3090,7 +3408,30 @@
                       ]
                     },
                     {
-                      "condition": "[and(parameters('enableMonitoring'), not(empty(parameters('dataCollectionRuleId'))))]",
+                      "condition": "[and(and(parameters('skipVmCreation'), parameters('enableMonitoring')), not(empty(parameters('logAnalyticsWorkspaceId'))))]",
+                      "type": "Microsoft.Compute/virtualMachines/extensions",
+                      "apiVersion": "2023-09-01",
+                      "name": "[format('{0}/{1}', parameters('vmName'), 'AzureMonitorLinuxAgent')]",
+                      "location": "[parameters('location')]",
+                      "tags": "[variables('allTags')]",
+                      "properties": {
+                        "publisher": "Microsoft.Azure.Monitor",
+                        "type": "AzureMonitorLinuxAgent",
+                        "typeHandlerVersion": "1.0",
+                        "autoUpgradeMinorVersion": true,
+                        "enableAutomaticUpgrade": true,
+                        "settings": {
+                          "authentication": {
+                            "managedIdentity": {
+                              "identifier-name": "mi_res_id",
+                              "identifier-value": "[resourceId('Microsoft.Compute/virtualMachines', parameters('vmName'))]"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "condition": "[and(and(not(parameters('skipVmCreation')), parameters('enableMonitoring')), not(empty(parameters('dataCollectionRuleId'))))]",
                       "type": "Microsoft.Insights/dataCollectionRuleAssociations",
                       "apiVersion": "2022-06-01",
                       "scope": "[format('Microsoft.Compute/virtualMachines/{0}', parameters('vmName'))]",
@@ -3104,7 +3445,20 @@
                       ]
                     },
                     {
-                      "condition": "[not(empty(parameters('customScriptContent')))]",
+                      "condition": "[and(and(parameters('skipVmCreation'), parameters('enableMonitoring')), not(empty(parameters('dataCollectionRuleId'))))]",
+                      "type": "Microsoft.Insights/dataCollectionRuleAssociations",
+                      "apiVersion": "2022-06-01",
+                      "scope": "[format('Microsoft.Compute/virtualMachines/{0}', parameters('vmName'))]",
+                      "name": "configurationAccessEndpoint",
+                      "properties": {
+                        "dataCollectionRuleId": "[parameters('dataCollectionRuleId')]"
+                      },
+                      "dependsOn": [
+                        "[resourceId('Microsoft.Compute/virtualMachines/extensions', parameters('vmName'), 'AzureMonitorLinuxAgent')]"
+                      ]
+                    },
+                    {
+                      "condition": "[and(not(parameters('skipVmCreation')), not(empty(parameters('customScriptContent'))))]",
                       "type": "Microsoft.Compute/virtualMachines/extensions",
                       "apiVersion": "2023-09-01",
                       "name": "[format('{0}/{1}', parameters('vmName'), 'CustomScript')]",
@@ -3115,6 +3469,7 @@
                         "type": "CustomScript",
                         "typeHandlerVersion": "2.1",
                         "autoUpgradeMinorVersion": true,
+                        "forceUpdateTag": "[if(not(empty(parameters('forceUpdateTag'))), parameters('forceUpdateTag'), null())]",
                         "settings": {
                           "script": "[parameters('customScriptContent')]"
                         }
@@ -3122,6 +3477,27 @@
                       "dependsOn": [
                         "[resourceId('Microsoft.Compute/virtualMachines/extensions', parameters('vmName'), 'AzureMonitorLinuxAgent')]",
                         "[resourceId('Microsoft.Compute/virtualMachines', parameters('vmName'))]"
+                      ]
+                    },
+                    {
+                      "condition": "[and(parameters('skipVmCreation'), not(empty(parameters('customScriptContent'))))]",
+                      "type": "Microsoft.Compute/virtualMachines/extensions",
+                      "apiVersion": "2023-09-01",
+                      "name": "[format('{0}/{1}', parameters('vmName'), 'CustomScript')]",
+                      "location": "[parameters('location')]",
+                      "tags": "[variables('allTags')]",
+                      "properties": {
+                        "publisher": "Microsoft.Azure.Extensions",
+                        "type": "CustomScript",
+                        "typeHandlerVersion": "2.1",
+                        "autoUpgradeMinorVersion": true,
+                        "forceUpdateTag": "[if(not(empty(parameters('forceUpdateTag'))), parameters('forceUpdateTag'), null())]",
+                        "settings": {
+                          "script": "[parameters('customScriptContent')]"
+                        }
+                      },
+                      "dependsOn": [
+                        "[resourceId('Microsoft.Compute/virtualMachines/extensions', parameters('vmName'), 'AzureMonitorLinuxAgent')]"
                       ]
                     }
                   ],
@@ -3131,35 +3507,35 @@
                       "metadata": {
                         "description": "Resource ID of the Virtual Machine"
                       },
-                      "value": "[resourceId('Microsoft.Compute/virtualMachines', parameters('vmName'))]"
+                      "value": "[if(parameters('skipVmCreation'), resourceId('Microsoft.Compute/virtualMachines', parameters('vmName')), resourceId('Microsoft.Compute/virtualMachines', parameters('vmName')))]"
                     },
                     "vmName": {
                       "type": "string",
                       "metadata": {
                         "description": "Name of the Virtual Machine"
                       },
-                      "value": "[parameters('vmName')]"
+                      "value": "[if(parameters('skipVmCreation'), parameters('vmName'), parameters('vmName'))]"
                     },
                     "privateIpAddress": {
                       "type": "string",
                       "metadata": {
                         "description": "Private IP address of the VM"
                       },
-                      "value": "[reference(resourceId('Microsoft.Network/networkInterfaces', variables('nicName')), '2023-11-01').ipConfigurations[0].properties.privateIPAddress]"
+                      "value": "[if(parameters('skipVmCreation'), reference(resourceId('Microsoft.Network/networkInterfaces', variables('nicName')), '2023-11-01').ipConfigurations[0].properties.privateIPAddress, reference(resourceId('Microsoft.Network/networkInterfaces', variables('nicName')), '2023-11-01').ipConfigurations[0].properties.privateIPAddress)]"
                     },
                     "principalId": {
                       "type": "string",
                       "metadata": {
                         "description": "Principal ID of the VM managed identity (for RBAC assignments)"
                       },
-                      "value": "[reference(resourceId('Microsoft.Compute/virtualMachines', parameters('vmName')), '2023-09-01', 'full').identity.principalId]"
+                      "value": "[if(parameters('skipVmCreation'), reference(resourceId('Microsoft.Compute/virtualMachines', parameters('vmName')), '2023-09-01', 'full').identity.principalId, reference(resourceId('Microsoft.Compute/virtualMachines', parameters('vmName')), '2023-09-01', 'full').identity.principalId)]"
                     },
                     "nicId": {
                       "type": "string",
                       "metadata": {
                         "description": "Resource ID of the Network Interface"
                       },
-                      "value": "[resourceId('Microsoft.Network/networkInterfaces', variables('nicName'))]"
+                      "value": "[if(parameters('skipVmCreation'), resourceId('Microsoft.Network/networkInterfaces', variables('nicName')), resourceId('Microsoft.Network/networkInterfaces', variables('nicName')))]"
                     },
                     "zone": {
                       "type": "string",
@@ -3224,6 +3600,12 @@
                   "customScriptContent": {
                     "value": "[base64(variables('nginxInstallScript'))]"
                   },
+                  "forceUpdateTag": {
+                    "value": "[parameters('forceUpdateTag')]"
+                  },
+                  "skipVmCreation": {
+                    "value": "[parameters('skipVmCreation')]"
+                  },
                   "tags": {
                     "value": "[variables('allTags')]"
                   }
@@ -3235,7 +3617,7 @@
                     "_generator": {
                       "name": "bicep",
                       "version": "0.39.26.7824",
-                      "templateHash": "17168036913246087060"
+                      "templateHash": "13423450180752322404"
                     }
                   },
                   "parameters": {
@@ -3347,6 +3729,20 @@
                         "description": "Custom script to run on VM startup (base64 encoded)"
                       }
                     },
+                    "forceUpdateTag": {
+                      "type": "string",
+                      "defaultValue": "",
+                      "metadata": {
+                        "description": "Force update tag to trigger script re-execution (change value to re-run script)"
+                      }
+                    },
+                    "skipVmCreation": {
+                      "type": "bool",
+                      "defaultValue": false,
+                      "metadata": {
+                        "description": "Skip VM creation and only update extensions on existing VM"
+                      }
+                    },
                     "tags": {
                       "type": "object",
                       "defaultValue": {},
@@ -3370,6 +3766,7 @@
                   },
                   "resources": [
                     {
+                      "condition": "[not(parameters('skipVmCreation'))]",
                       "type": "Microsoft.Network/networkInterfaces",
                       "apiVersion": "2023-11-01",
                       "name": "[variables('nicName')]",
@@ -3392,6 +3789,7 @@
                       }
                     },
                     {
+                      "condition": "[not(parameters('skipVmCreation'))]",
                       "type": "Microsoft.Compute/virtualMachines",
                       "apiVersion": "2023-09-01",
                       "name": "[parameters('vmName')]",
@@ -3487,7 +3885,7 @@
                       ]
                     },
                     {
-                      "condition": "[and(parameters('enableMonitoring'), not(empty(parameters('logAnalyticsWorkspaceId'))))]",
+                      "condition": "[and(and(not(parameters('skipVmCreation')), parameters('enableMonitoring')), not(empty(parameters('logAnalyticsWorkspaceId'))))]",
                       "type": "Microsoft.Compute/virtualMachines/extensions",
                       "apiVersion": "2023-09-01",
                       "name": "[format('{0}/{1}', parameters('vmName'), 'AzureMonitorLinuxAgent')]",
@@ -3513,7 +3911,30 @@
                       ]
                     },
                     {
-                      "condition": "[and(parameters('enableMonitoring'), not(empty(parameters('dataCollectionRuleId'))))]",
+                      "condition": "[and(and(parameters('skipVmCreation'), parameters('enableMonitoring')), not(empty(parameters('logAnalyticsWorkspaceId'))))]",
+                      "type": "Microsoft.Compute/virtualMachines/extensions",
+                      "apiVersion": "2023-09-01",
+                      "name": "[format('{0}/{1}', parameters('vmName'), 'AzureMonitorLinuxAgent')]",
+                      "location": "[parameters('location')]",
+                      "tags": "[variables('allTags')]",
+                      "properties": {
+                        "publisher": "Microsoft.Azure.Monitor",
+                        "type": "AzureMonitorLinuxAgent",
+                        "typeHandlerVersion": "1.0",
+                        "autoUpgradeMinorVersion": true,
+                        "enableAutomaticUpgrade": true,
+                        "settings": {
+                          "authentication": {
+                            "managedIdentity": {
+                              "identifier-name": "mi_res_id",
+                              "identifier-value": "[resourceId('Microsoft.Compute/virtualMachines', parameters('vmName'))]"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "condition": "[and(and(not(parameters('skipVmCreation')), parameters('enableMonitoring')), not(empty(parameters('dataCollectionRuleId'))))]",
                       "type": "Microsoft.Insights/dataCollectionRuleAssociations",
                       "apiVersion": "2022-06-01",
                       "scope": "[format('Microsoft.Compute/virtualMachines/{0}', parameters('vmName'))]",
@@ -3527,7 +3948,20 @@
                       ]
                     },
                     {
-                      "condition": "[not(empty(parameters('customScriptContent')))]",
+                      "condition": "[and(and(parameters('skipVmCreation'), parameters('enableMonitoring')), not(empty(parameters('dataCollectionRuleId'))))]",
+                      "type": "Microsoft.Insights/dataCollectionRuleAssociations",
+                      "apiVersion": "2022-06-01",
+                      "scope": "[format('Microsoft.Compute/virtualMachines/{0}', parameters('vmName'))]",
+                      "name": "configurationAccessEndpoint",
+                      "properties": {
+                        "dataCollectionRuleId": "[parameters('dataCollectionRuleId')]"
+                      },
+                      "dependsOn": [
+                        "[resourceId('Microsoft.Compute/virtualMachines/extensions', parameters('vmName'), 'AzureMonitorLinuxAgent')]"
+                      ]
+                    },
+                    {
+                      "condition": "[and(not(parameters('skipVmCreation')), not(empty(parameters('customScriptContent'))))]",
                       "type": "Microsoft.Compute/virtualMachines/extensions",
                       "apiVersion": "2023-09-01",
                       "name": "[format('{0}/{1}', parameters('vmName'), 'CustomScript')]",
@@ -3538,6 +3972,7 @@
                         "type": "CustomScript",
                         "typeHandlerVersion": "2.1",
                         "autoUpgradeMinorVersion": true,
+                        "forceUpdateTag": "[if(not(empty(parameters('forceUpdateTag'))), parameters('forceUpdateTag'), null())]",
                         "settings": {
                           "script": "[parameters('customScriptContent')]"
                         }
@@ -3545,6 +3980,27 @@
                       "dependsOn": [
                         "[resourceId('Microsoft.Compute/virtualMachines/extensions', parameters('vmName'), 'AzureMonitorLinuxAgent')]",
                         "[resourceId('Microsoft.Compute/virtualMachines', parameters('vmName'))]"
+                      ]
+                    },
+                    {
+                      "condition": "[and(parameters('skipVmCreation'), not(empty(parameters('customScriptContent'))))]",
+                      "type": "Microsoft.Compute/virtualMachines/extensions",
+                      "apiVersion": "2023-09-01",
+                      "name": "[format('{0}/{1}', parameters('vmName'), 'CustomScript')]",
+                      "location": "[parameters('location')]",
+                      "tags": "[variables('allTags')]",
+                      "properties": {
+                        "publisher": "Microsoft.Azure.Extensions",
+                        "type": "CustomScript",
+                        "typeHandlerVersion": "2.1",
+                        "autoUpgradeMinorVersion": true,
+                        "forceUpdateTag": "[if(not(empty(parameters('forceUpdateTag'))), parameters('forceUpdateTag'), null())]",
+                        "settings": {
+                          "script": "[parameters('customScriptContent')]"
+                        }
+                      },
+                      "dependsOn": [
+                        "[resourceId('Microsoft.Compute/virtualMachines/extensions', parameters('vmName'), 'AzureMonitorLinuxAgent')]"
                       ]
                     }
                   ],
@@ -3554,35 +4010,35 @@
                       "metadata": {
                         "description": "Resource ID of the Virtual Machine"
                       },
-                      "value": "[resourceId('Microsoft.Compute/virtualMachines', parameters('vmName'))]"
+                      "value": "[if(parameters('skipVmCreation'), resourceId('Microsoft.Compute/virtualMachines', parameters('vmName')), resourceId('Microsoft.Compute/virtualMachines', parameters('vmName')))]"
                     },
                     "vmName": {
                       "type": "string",
                       "metadata": {
                         "description": "Name of the Virtual Machine"
                       },
-                      "value": "[parameters('vmName')]"
+                      "value": "[if(parameters('skipVmCreation'), parameters('vmName'), parameters('vmName'))]"
                     },
                     "privateIpAddress": {
                       "type": "string",
                       "metadata": {
                         "description": "Private IP address of the VM"
                       },
-                      "value": "[reference(resourceId('Microsoft.Network/networkInterfaces', variables('nicName')), '2023-11-01').ipConfigurations[0].properties.privateIPAddress]"
+                      "value": "[if(parameters('skipVmCreation'), reference(resourceId('Microsoft.Network/networkInterfaces', variables('nicName')), '2023-11-01').ipConfigurations[0].properties.privateIPAddress, reference(resourceId('Microsoft.Network/networkInterfaces', variables('nicName')), '2023-11-01').ipConfigurations[0].properties.privateIPAddress)]"
                     },
                     "principalId": {
                       "type": "string",
                       "metadata": {
                         "description": "Principal ID of the VM managed identity (for RBAC assignments)"
                       },
-                      "value": "[reference(resourceId('Microsoft.Compute/virtualMachines', parameters('vmName')), '2023-09-01', 'full').identity.principalId]"
+                      "value": "[if(parameters('skipVmCreation'), reference(resourceId('Microsoft.Compute/virtualMachines', parameters('vmName')), '2023-09-01', 'full').identity.principalId, reference(resourceId('Microsoft.Compute/virtualMachines', parameters('vmName')), '2023-09-01', 'full').identity.principalId)]"
                     },
                     "nicId": {
                       "type": "string",
                       "metadata": {
                         "description": "Resource ID of the Network Interface"
                       },
-                      "value": "[resourceId('Microsoft.Network/networkInterfaces', variables('nicName'))]"
+                      "value": "[if(parameters('skipVmCreation'), resourceId('Microsoft.Network/networkInterfaces', variables('nicName')), resourceId('Microsoft.Network/networkInterfaces', variables('nicName')))]"
                     },
                     "zone": {
                       "type": "string",
@@ -3690,6 +4146,18 @@
           "dataCollectionRuleId": {
             "value": "[coalesce(tryGet(tryGet(tryGet(if(parameters('deployMonitoring'), reference(resourceId('Microsoft.Resources/deployments', 'deploy-dcr'), '2025-04-01'), null()), 'outputs'), 'dcrId'), 'value'), '')]"
           },
+          "entraTenantId": {
+            "value": "[parameters('entraTenantId')]"
+          },
+          "entraClientId": {
+            "value": "[parameters('entraClientId')]"
+          },
+          "forceUpdateTag": {
+            "value": "[parameters('forceUpdateTagApp')]"
+          },
+          "skipVmCreation": {
+            "value": "[parameters('skipVmCreationApp')]"
+          },
           "tags": {
             "value": "[variables('allTags')]"
           }
@@ -3701,7 +4169,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.39.26.7824",
-              "templateHash": "16206794767696343521"
+              "templateHash": "5546385792752731217"
             }
           },
           "parameters": {
@@ -3790,6 +4258,32 @@
               "metadata": {
                 "description": "Tags to apply to all resources"
               }
+            },
+            "forceUpdateTag": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Force update tag - changing this value forces CustomScript to re-run"
+              }
+            },
+            "skipVmCreation": {
+              "type": "bool",
+              "defaultValue": false,
+              "metadata": {
+                "description": "Skip VM creation and only update extensions (for re-deployment)"
+              }
+            },
+            "entraTenantId": {
+              "type": "string",
+              "metadata": {
+                "description": "Microsoft Entra tenant ID for backend API authentication"
+              }
+            },
+            "entraClientId": {
+              "type": "string",
+              "metadata": {
+                "description": "Microsoft Entra client ID for backend API (registered app)"
+              }
             }
           },
           "variables": {
@@ -3800,7 +4294,9 @@
               "ManagedBy": "Bicep"
             },
             "allTags": "[union(variables('defaultTags'), parameters('tags'))]",
-            "nodeInstallScript": "#!/bin/bash\nset -e\n\n# ==========================================================\n# Wait for dpkg/apt locks to be released\n# ==========================================================\n# Azure Linux Agent may be running unattended-upgrades on first boot\n# This can hold dpkg lock for 1-5 minutes\n# We wait up to 5 minutes for the lock to be released\n# ==========================================================\n\nwait_for_apt_lock() {\n  local timeout=300\n  local interval=10\n  local elapsed=0\n  \n  echo \"Checking for dpkg/apt locks...\"\n  \n  while true; do\n    # Check if any apt/dpkg processes are running\n    if ! fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 && \\\n       ! fuser /var/lib/apt/lists/lock >/dev/null 2>&1 && \\\n       ! fuser /var/cache/apt/archives/lock >/dev/null 2>&1; then\n      echo \"All apt/dpkg locks are free, proceeding...\"\n      return 0\n    fi\n    \n    if [ $elapsed -ge $timeout ]; then\n      echo \"ERROR: Timeout waiting for apt/dpkg locks after ${timeout}s\"\n      return 1\n    fi\n    \n    echo \"apt/dpkg lock is held, waiting ${interval}s... (${elapsed}s elapsed)\"\n    sleep $interval\n    elapsed=$((elapsed + interval))\n  done\n}\n\n# Set non-interactive mode to prevent prompts during package installation\nexport DEBIAN_FRONTEND=noninteractive\n\n# Execute wait function (initial check to reduce log spam)\nwait_for_apt_lock\n\n# Update packages with lock timeout (backup protection against race conditions)\n# DPkg::Lock::Timeout waits up to 120 seconds if another process holds the lock\napt-get -o DPkg::Lock::Timeout=120 update\napt-get -o DPkg::Lock::Timeout=120 -y upgrade\n\n# Install prerequisites\napt-get -o DPkg::Lock::Timeout=120 -y install ca-certificates curl gnupg\n\n# Add NodeSource repository for Node.js 20 LTS\nmkdir -p /etc/apt/keyrings\n\n# Use --batch flag for non-interactive GPG operation (no TTY available in CustomScript)\n# Check if keyring already exists to make script idempotent (re-runnable)\nif [ ! -f /etc/apt/keyrings/nodesource.gpg ]; then\n  echo \"Downloading NodeSource GPG key...\"\n  curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --batch --dearmor -o /etc/apt/keyrings/nodesource.gpg\nelse\n  echo \"NodeSource GPG key already exists, skipping download\"\nfi\n\n# Add repository if not already present\nif [ ! -f /etc/apt/sources.list.d/nodesource.list ]; then\n  echo \"deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main\" | tee /etc/apt/sources.list.d/nodesource.list\nfi\n\n# Install Node.js 20 LTS\napt-get -o DPkg::Lock::Timeout=120 update\napt-get -o DPkg::Lock::Timeout=120 -y install nodejs\n\n# Verify installation\nnode --version\nnpm --version\n\n# Install PM2 globally (process manager for Node.js)\nnpm install -g pm2\n\n# Create application directory\nmkdir -p /opt/blogapp\nchown -R azureuser:azureuser /opt/blogapp\n\n# Create systemd service for PM2\npm2 startup systemd -u azureuser --hp /home/azureuser\n\n# Create a placeholder health check server\ncat > /opt/blogapp/health-server.js << 'EOF'\nconst http = require('http');\n\nconst server = http.createServer((req, res) => {\n  if (req.url === '/api/health' || req.url === '/health') {\n    res.writeHead(200, { 'Content-Type': 'application/json' });\n    res.end(JSON.stringify({ status: 'healthy', timestamp: new Date().toISOString() }));\n  } else {\n    res.writeHead(404);\n    res.end('Not Found');\n  }\n});\n\nconst PORT = process.env.PORT || 3000;\nserver.listen(PORT, () => {\n  console.log(`Health check server running on port ${PORT}`);\n});\nEOF\n\n# Start health check server with PM2 (temporary until app is deployed)\ncd /opt/blogapp\nsudo -u azureuser pm2 start health-server.js --name blogapp-health\nsudo -u azureuser pm2 save\n\necho \"Node.js installation completed successfully\"\n"
+            "mongoDbUri": "mongodb://blogapp:BlogAppUser2024@10.0.3.4:27017,10.0.3.5:27017/blogapp?replicaSet=blogapp-rs0&authSource=blogapp",
+            "nodeInstallScriptRaw": "#!/bin/bash\nset -e\n\n# ==========================================================\n# Wait for dpkg/apt locks to be released\n# ==========================================================\n# Azure Linux Agent may be running unattended-upgrades on first boot\n# This can hold dpkg lock for 1-5 minutes\n# We wait up to 5 minutes for the lock to be released\n# ==========================================================\n\nwait_for_apt_lock() {\n  local timeout=300\n  local interval=10\n  local elapsed=0\n  \n  echo \"Checking for dpkg/apt locks...\"\n  \n  while true; do\n    # Check if any apt/dpkg processes are running\n    if ! fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 && \\\n       ! fuser /var/lib/apt/lists/lock >/dev/null 2>&1 && \\\n       ! fuser /var/cache/apt/archives/lock >/dev/null 2>&1; then\n      echo \"All apt/dpkg locks are free, proceeding...\"\n      return 0\n    fi\n    \n    if [ $elapsed -ge $timeout ]; then\n      echo \"ERROR: Timeout waiting for apt/dpkg locks after ${timeout}s\"\n      return 1\n    fi\n    \n    echo \"apt/dpkg lock is held, waiting ${interval}s... (${elapsed}s elapsed)\"\n    sleep $interval\n    elapsed=$((elapsed + interval))\n  done\n}\n\n# Set non-interactive mode to prevent prompts during package installation\nexport DEBIAN_FRONTEND=noninteractive\n\n# Execute wait function (initial check to reduce log spam)\nwait_for_apt_lock\n\n# Update packages with lock timeout (backup protection against race conditions)\n# DPkg::Lock::Timeout waits up to 120 seconds if another process holds the lock\napt-get -o DPkg::Lock::Timeout=120 update\napt-get -o DPkg::Lock::Timeout=120 -y upgrade\n\n# Install prerequisites\napt-get -o DPkg::Lock::Timeout=120 -y install ca-certificates curl gnupg\n\n# Add NodeSource repository for Node.js 20 LTS\nmkdir -p /etc/apt/keyrings\n\n# Use --batch flag for non-interactive GPG operation (no TTY available in CustomScript)\n# Check if keyring already exists to make script idempotent (re-runnable)\nif [ ! -f /etc/apt/keyrings/nodesource.gpg ]; then\n  echo \"Downloading NodeSource GPG key...\"\n  curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --batch --dearmor -o /etc/apt/keyrings/nodesource.gpg\nelse\n  echo \"NodeSource GPG key already exists, skipping download\"\nfi\n\n# Add repository if not already present\nif [ ! -f /etc/apt/sources.list.d/nodesource.list ]; then\n  echo \"deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main\" | tee /etc/apt/sources.list.d/nodesource.list\nfi\n\n# Install Node.js 20 LTS\napt-get -o DPkg::Lock::Timeout=120 update\napt-get -o DPkg::Lock::Timeout=120 -y install nodejs\n\n# Verify installation\nnode --version\nnpm --version\n\n# Install PM2 globally (process manager for Node.js)\nnpm install -g pm2\n\n# Create application directory\nmkdir -p /opt/blogapp\nchown -R azureuser:azureuser /opt/blogapp\n\n# Create systemd service for PM2\npm2 startup systemd -u azureuser --hp /home/azureuser\n\n# Create a placeholder health check server\ncat > /opt/blogapp/health-server.js << 'EOF'\nconst http = require('http');\n\nconst server = http.createServer((req, res) => {\n  if (req.url === '/api/health' || req.url === '/health') {\n    res.writeHead(200, { 'Content-Type': 'application/json' });\n    res.end(JSON.stringify({ status: 'healthy', timestamp: new Date().toISOString() }));\n  } else {\n    res.writeHead(404);\n    res.end('Not Found');\n  }\n});\n\nconst PORT = process.env.PORT || 3000;\nserver.listen(PORT, () => {\n  console.log(`Health check server running on port ${PORT}`);\n});\nEOF\n\n# Start health check server with PM2 (temporary until app is deployed)\ncd /opt/blogapp\nsudo -u azureuser pm2 start health-server.js --name blogapp-health\nsudo -u azureuser pm2 save\n\n# ==========================================================\n# Inject Production Environment Variables\n# ==========================================================\n# These environment variables are loaded by Node.js process.env\n# /etc/environment makes them available to all users and services\n# Reference: /design/BackendApplicationDesign.md - Environment-Aware Configuration\n# ==========================================================\n\necho \"Configuring production environment variables...\"\n\ncat >> /etc/environment << ENVEOF\n# ==========================================================\n# Backend Application Environment Variables\n# Injected by Bicep CustomScript Extension\n# DO NOT EDIT MANUALLY - regenerated on VM provisioning\n# ==========================================================\nNODE_ENV=production\nPORT=3000\nLOG_LEVEL=info\nMONGODB_URI=__MONGODB_URI__\nENTRA_TENANT_ID=__ENTRA_TENANT_ID__\nENTRA_CLIENT_ID=__ENTRA_CLIENT_ID__\nENVEOF\n\n# Make environment variables available immediately for current session\nexport NODE_ENV=production\nexport PORT=3000\nexport LOG_LEVEL=info\nexport MONGODB_URI=\"__MONGODB_URI__\"\nexport ENTRA_TENANT_ID=\"__ENTRA_TENANT_ID__\"\nexport ENTRA_CLIENT_ID=\"__ENTRA_CLIENT_ID__\"\n\n# Also create /opt/blogapp/.env for PM2 and direct Node.js execution\ncat > /opt/blogapp/.env << DOTENVEOF\n# Production environment configuration\n# Injected by Bicep CustomScript Extension\nNODE_ENV=production\nPORT=3000\nLOG_LEVEL=info\nMONGODB_URI=__MONGODB_URI__\nENTRA_TENANT_ID=__ENTRA_TENANT_ID__\nENTRA_CLIENT_ID=__ENTRA_CLIENT_ID__\nDOTENVEOF\n\nchown azureuser:azureuser /opt/blogapp/.env\nchmod 600 /opt/blogapp/.env\n\necho \"Environment variables configured successfully\"\necho \"Node.js installation completed successfully\"\n",
+            "nodeInstallScript": "[replace(replace(replace(variables('nodeInstallScriptRaw'), '__MONGODB_URI__', variables('mongoDbUri')), '__ENTRA_TENANT_ID__', parameters('entraTenantId')), '__ENTRA_CLIENT_ID__', parameters('entraClientId'))]"
           },
           "resources": [
             {
@@ -3855,6 +4351,12 @@
                   "customScriptContent": {
                     "value": "[base64(variables('nodeInstallScript'))]"
                   },
+                  "forceUpdateTag": {
+                    "value": "[parameters('forceUpdateTag')]"
+                  },
+                  "skipVmCreation": {
+                    "value": "[parameters('skipVmCreation')]"
+                  },
                   "tags": {
                     "value": "[variables('allTags')]"
                   }
@@ -3866,7 +4368,7 @@
                     "_generator": {
                       "name": "bicep",
                       "version": "0.39.26.7824",
-                      "templateHash": "17168036913246087060"
+                      "templateHash": "13423450180752322404"
                     }
                   },
                   "parameters": {
@@ -3978,6 +4480,20 @@
                         "description": "Custom script to run on VM startup (base64 encoded)"
                       }
                     },
+                    "forceUpdateTag": {
+                      "type": "string",
+                      "defaultValue": "",
+                      "metadata": {
+                        "description": "Force update tag to trigger script re-execution (change value to re-run script)"
+                      }
+                    },
+                    "skipVmCreation": {
+                      "type": "bool",
+                      "defaultValue": false,
+                      "metadata": {
+                        "description": "Skip VM creation and only update extensions on existing VM"
+                      }
+                    },
                     "tags": {
                       "type": "object",
                       "defaultValue": {},
@@ -4001,6 +4517,7 @@
                   },
                   "resources": [
                     {
+                      "condition": "[not(parameters('skipVmCreation'))]",
                       "type": "Microsoft.Network/networkInterfaces",
                       "apiVersion": "2023-11-01",
                       "name": "[variables('nicName')]",
@@ -4023,6 +4540,7 @@
                       }
                     },
                     {
+                      "condition": "[not(parameters('skipVmCreation'))]",
                       "type": "Microsoft.Compute/virtualMachines",
                       "apiVersion": "2023-09-01",
                       "name": "[parameters('vmName')]",
@@ -4118,7 +4636,7 @@
                       ]
                     },
                     {
-                      "condition": "[and(parameters('enableMonitoring'), not(empty(parameters('logAnalyticsWorkspaceId'))))]",
+                      "condition": "[and(and(not(parameters('skipVmCreation')), parameters('enableMonitoring')), not(empty(parameters('logAnalyticsWorkspaceId'))))]",
                       "type": "Microsoft.Compute/virtualMachines/extensions",
                       "apiVersion": "2023-09-01",
                       "name": "[format('{0}/{1}', parameters('vmName'), 'AzureMonitorLinuxAgent')]",
@@ -4144,7 +4662,30 @@
                       ]
                     },
                     {
-                      "condition": "[and(parameters('enableMonitoring'), not(empty(parameters('dataCollectionRuleId'))))]",
+                      "condition": "[and(and(parameters('skipVmCreation'), parameters('enableMonitoring')), not(empty(parameters('logAnalyticsWorkspaceId'))))]",
+                      "type": "Microsoft.Compute/virtualMachines/extensions",
+                      "apiVersion": "2023-09-01",
+                      "name": "[format('{0}/{1}', parameters('vmName'), 'AzureMonitorLinuxAgent')]",
+                      "location": "[parameters('location')]",
+                      "tags": "[variables('allTags')]",
+                      "properties": {
+                        "publisher": "Microsoft.Azure.Monitor",
+                        "type": "AzureMonitorLinuxAgent",
+                        "typeHandlerVersion": "1.0",
+                        "autoUpgradeMinorVersion": true,
+                        "enableAutomaticUpgrade": true,
+                        "settings": {
+                          "authentication": {
+                            "managedIdentity": {
+                              "identifier-name": "mi_res_id",
+                              "identifier-value": "[resourceId('Microsoft.Compute/virtualMachines', parameters('vmName'))]"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "condition": "[and(and(not(parameters('skipVmCreation')), parameters('enableMonitoring')), not(empty(parameters('dataCollectionRuleId'))))]",
                       "type": "Microsoft.Insights/dataCollectionRuleAssociations",
                       "apiVersion": "2022-06-01",
                       "scope": "[format('Microsoft.Compute/virtualMachines/{0}', parameters('vmName'))]",
@@ -4158,7 +4699,20 @@
                       ]
                     },
                     {
-                      "condition": "[not(empty(parameters('customScriptContent')))]",
+                      "condition": "[and(and(parameters('skipVmCreation'), parameters('enableMonitoring')), not(empty(parameters('dataCollectionRuleId'))))]",
+                      "type": "Microsoft.Insights/dataCollectionRuleAssociations",
+                      "apiVersion": "2022-06-01",
+                      "scope": "[format('Microsoft.Compute/virtualMachines/{0}', parameters('vmName'))]",
+                      "name": "configurationAccessEndpoint",
+                      "properties": {
+                        "dataCollectionRuleId": "[parameters('dataCollectionRuleId')]"
+                      },
+                      "dependsOn": [
+                        "[resourceId('Microsoft.Compute/virtualMachines/extensions', parameters('vmName'), 'AzureMonitorLinuxAgent')]"
+                      ]
+                    },
+                    {
+                      "condition": "[and(not(parameters('skipVmCreation')), not(empty(parameters('customScriptContent'))))]",
                       "type": "Microsoft.Compute/virtualMachines/extensions",
                       "apiVersion": "2023-09-01",
                       "name": "[format('{0}/{1}', parameters('vmName'), 'CustomScript')]",
@@ -4169,6 +4723,7 @@
                         "type": "CustomScript",
                         "typeHandlerVersion": "2.1",
                         "autoUpgradeMinorVersion": true,
+                        "forceUpdateTag": "[if(not(empty(parameters('forceUpdateTag'))), parameters('forceUpdateTag'), null())]",
                         "settings": {
                           "script": "[parameters('customScriptContent')]"
                         }
@@ -4176,6 +4731,27 @@
                       "dependsOn": [
                         "[resourceId('Microsoft.Compute/virtualMachines/extensions', parameters('vmName'), 'AzureMonitorLinuxAgent')]",
                         "[resourceId('Microsoft.Compute/virtualMachines', parameters('vmName'))]"
+                      ]
+                    },
+                    {
+                      "condition": "[and(parameters('skipVmCreation'), not(empty(parameters('customScriptContent'))))]",
+                      "type": "Microsoft.Compute/virtualMachines/extensions",
+                      "apiVersion": "2023-09-01",
+                      "name": "[format('{0}/{1}', parameters('vmName'), 'CustomScript')]",
+                      "location": "[parameters('location')]",
+                      "tags": "[variables('allTags')]",
+                      "properties": {
+                        "publisher": "Microsoft.Azure.Extensions",
+                        "type": "CustomScript",
+                        "typeHandlerVersion": "2.1",
+                        "autoUpgradeMinorVersion": true,
+                        "forceUpdateTag": "[if(not(empty(parameters('forceUpdateTag'))), parameters('forceUpdateTag'), null())]",
+                        "settings": {
+                          "script": "[parameters('customScriptContent')]"
+                        }
+                      },
+                      "dependsOn": [
+                        "[resourceId('Microsoft.Compute/virtualMachines/extensions', parameters('vmName'), 'AzureMonitorLinuxAgent')]"
                       ]
                     }
                   ],
@@ -4185,35 +4761,35 @@
                       "metadata": {
                         "description": "Resource ID of the Virtual Machine"
                       },
-                      "value": "[resourceId('Microsoft.Compute/virtualMachines', parameters('vmName'))]"
+                      "value": "[if(parameters('skipVmCreation'), resourceId('Microsoft.Compute/virtualMachines', parameters('vmName')), resourceId('Microsoft.Compute/virtualMachines', parameters('vmName')))]"
                     },
                     "vmName": {
                       "type": "string",
                       "metadata": {
                         "description": "Name of the Virtual Machine"
                       },
-                      "value": "[parameters('vmName')]"
+                      "value": "[if(parameters('skipVmCreation'), parameters('vmName'), parameters('vmName'))]"
                     },
                     "privateIpAddress": {
                       "type": "string",
                       "metadata": {
                         "description": "Private IP address of the VM"
                       },
-                      "value": "[reference(resourceId('Microsoft.Network/networkInterfaces', variables('nicName')), '2023-11-01').ipConfigurations[0].properties.privateIPAddress]"
+                      "value": "[if(parameters('skipVmCreation'), reference(resourceId('Microsoft.Network/networkInterfaces', variables('nicName')), '2023-11-01').ipConfigurations[0].properties.privateIPAddress, reference(resourceId('Microsoft.Network/networkInterfaces', variables('nicName')), '2023-11-01').ipConfigurations[0].properties.privateIPAddress)]"
                     },
                     "principalId": {
                       "type": "string",
                       "metadata": {
                         "description": "Principal ID of the VM managed identity (for RBAC assignments)"
                       },
-                      "value": "[reference(resourceId('Microsoft.Compute/virtualMachines', parameters('vmName')), '2023-09-01', 'full').identity.principalId]"
+                      "value": "[if(parameters('skipVmCreation'), reference(resourceId('Microsoft.Compute/virtualMachines', parameters('vmName')), '2023-09-01', 'full').identity.principalId, reference(resourceId('Microsoft.Compute/virtualMachines', parameters('vmName')), '2023-09-01', 'full').identity.principalId)]"
                     },
                     "nicId": {
                       "type": "string",
                       "metadata": {
                         "description": "Resource ID of the Network Interface"
                       },
-                      "value": "[resourceId('Microsoft.Network/networkInterfaces', variables('nicName'))]"
+                      "value": "[if(parameters('skipVmCreation'), resourceId('Microsoft.Network/networkInterfaces', variables('nicName')), resourceId('Microsoft.Network/networkInterfaces', variables('nicName')))]"
                     },
                     "zone": {
                       "type": "string",
@@ -4278,6 +4854,12 @@
                   "customScriptContent": {
                     "value": "[base64(variables('nodeInstallScript'))]"
                   },
+                  "forceUpdateTag": {
+                    "value": "[parameters('forceUpdateTag')]"
+                  },
+                  "skipVmCreation": {
+                    "value": "[parameters('skipVmCreation')]"
+                  },
                   "tags": {
                     "value": "[variables('allTags')]"
                   }
@@ -4289,7 +4871,7 @@
                     "_generator": {
                       "name": "bicep",
                       "version": "0.39.26.7824",
-                      "templateHash": "17168036913246087060"
+                      "templateHash": "13423450180752322404"
                     }
                   },
                   "parameters": {
@@ -4401,6 +4983,20 @@
                         "description": "Custom script to run on VM startup (base64 encoded)"
                       }
                     },
+                    "forceUpdateTag": {
+                      "type": "string",
+                      "defaultValue": "",
+                      "metadata": {
+                        "description": "Force update tag to trigger script re-execution (change value to re-run script)"
+                      }
+                    },
+                    "skipVmCreation": {
+                      "type": "bool",
+                      "defaultValue": false,
+                      "metadata": {
+                        "description": "Skip VM creation and only update extensions on existing VM"
+                      }
+                    },
                     "tags": {
                       "type": "object",
                       "defaultValue": {},
@@ -4424,6 +5020,7 @@
                   },
                   "resources": [
                     {
+                      "condition": "[not(parameters('skipVmCreation'))]",
                       "type": "Microsoft.Network/networkInterfaces",
                       "apiVersion": "2023-11-01",
                       "name": "[variables('nicName')]",
@@ -4446,6 +5043,7 @@
                       }
                     },
                     {
+                      "condition": "[not(parameters('skipVmCreation'))]",
                       "type": "Microsoft.Compute/virtualMachines",
                       "apiVersion": "2023-09-01",
                       "name": "[parameters('vmName')]",
@@ -4541,7 +5139,7 @@
                       ]
                     },
                     {
-                      "condition": "[and(parameters('enableMonitoring'), not(empty(parameters('logAnalyticsWorkspaceId'))))]",
+                      "condition": "[and(and(not(parameters('skipVmCreation')), parameters('enableMonitoring')), not(empty(parameters('logAnalyticsWorkspaceId'))))]",
                       "type": "Microsoft.Compute/virtualMachines/extensions",
                       "apiVersion": "2023-09-01",
                       "name": "[format('{0}/{1}', parameters('vmName'), 'AzureMonitorLinuxAgent')]",
@@ -4567,7 +5165,30 @@
                       ]
                     },
                     {
-                      "condition": "[and(parameters('enableMonitoring'), not(empty(parameters('dataCollectionRuleId'))))]",
+                      "condition": "[and(and(parameters('skipVmCreation'), parameters('enableMonitoring')), not(empty(parameters('logAnalyticsWorkspaceId'))))]",
+                      "type": "Microsoft.Compute/virtualMachines/extensions",
+                      "apiVersion": "2023-09-01",
+                      "name": "[format('{0}/{1}', parameters('vmName'), 'AzureMonitorLinuxAgent')]",
+                      "location": "[parameters('location')]",
+                      "tags": "[variables('allTags')]",
+                      "properties": {
+                        "publisher": "Microsoft.Azure.Monitor",
+                        "type": "AzureMonitorLinuxAgent",
+                        "typeHandlerVersion": "1.0",
+                        "autoUpgradeMinorVersion": true,
+                        "enableAutomaticUpgrade": true,
+                        "settings": {
+                          "authentication": {
+                            "managedIdentity": {
+                              "identifier-name": "mi_res_id",
+                              "identifier-value": "[resourceId('Microsoft.Compute/virtualMachines', parameters('vmName'))]"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "condition": "[and(and(not(parameters('skipVmCreation')), parameters('enableMonitoring')), not(empty(parameters('dataCollectionRuleId'))))]",
                       "type": "Microsoft.Insights/dataCollectionRuleAssociations",
                       "apiVersion": "2022-06-01",
                       "scope": "[format('Microsoft.Compute/virtualMachines/{0}', parameters('vmName'))]",
@@ -4581,7 +5202,20 @@
                       ]
                     },
                     {
-                      "condition": "[not(empty(parameters('customScriptContent')))]",
+                      "condition": "[and(and(parameters('skipVmCreation'), parameters('enableMonitoring')), not(empty(parameters('dataCollectionRuleId'))))]",
+                      "type": "Microsoft.Insights/dataCollectionRuleAssociations",
+                      "apiVersion": "2022-06-01",
+                      "scope": "[format('Microsoft.Compute/virtualMachines/{0}', parameters('vmName'))]",
+                      "name": "configurationAccessEndpoint",
+                      "properties": {
+                        "dataCollectionRuleId": "[parameters('dataCollectionRuleId')]"
+                      },
+                      "dependsOn": [
+                        "[resourceId('Microsoft.Compute/virtualMachines/extensions', parameters('vmName'), 'AzureMonitorLinuxAgent')]"
+                      ]
+                    },
+                    {
+                      "condition": "[and(not(parameters('skipVmCreation')), not(empty(parameters('customScriptContent'))))]",
                       "type": "Microsoft.Compute/virtualMachines/extensions",
                       "apiVersion": "2023-09-01",
                       "name": "[format('{0}/{1}', parameters('vmName'), 'CustomScript')]",
@@ -4592,6 +5226,7 @@
                         "type": "CustomScript",
                         "typeHandlerVersion": "2.1",
                         "autoUpgradeMinorVersion": true,
+                        "forceUpdateTag": "[if(not(empty(parameters('forceUpdateTag'))), parameters('forceUpdateTag'), null())]",
                         "settings": {
                           "script": "[parameters('customScriptContent')]"
                         }
@@ -4599,6 +5234,27 @@
                       "dependsOn": [
                         "[resourceId('Microsoft.Compute/virtualMachines/extensions', parameters('vmName'), 'AzureMonitorLinuxAgent')]",
                         "[resourceId('Microsoft.Compute/virtualMachines', parameters('vmName'))]"
+                      ]
+                    },
+                    {
+                      "condition": "[and(parameters('skipVmCreation'), not(empty(parameters('customScriptContent'))))]",
+                      "type": "Microsoft.Compute/virtualMachines/extensions",
+                      "apiVersion": "2023-09-01",
+                      "name": "[format('{0}/{1}', parameters('vmName'), 'CustomScript')]",
+                      "location": "[parameters('location')]",
+                      "tags": "[variables('allTags')]",
+                      "properties": {
+                        "publisher": "Microsoft.Azure.Extensions",
+                        "type": "CustomScript",
+                        "typeHandlerVersion": "2.1",
+                        "autoUpgradeMinorVersion": true,
+                        "forceUpdateTag": "[if(not(empty(parameters('forceUpdateTag'))), parameters('forceUpdateTag'), null())]",
+                        "settings": {
+                          "script": "[parameters('customScriptContent')]"
+                        }
+                      },
+                      "dependsOn": [
+                        "[resourceId('Microsoft.Compute/virtualMachines/extensions', parameters('vmName'), 'AzureMonitorLinuxAgent')]"
                       ]
                     }
                   ],
@@ -4608,35 +5264,35 @@
                       "metadata": {
                         "description": "Resource ID of the Virtual Machine"
                       },
-                      "value": "[resourceId('Microsoft.Compute/virtualMachines', parameters('vmName'))]"
+                      "value": "[if(parameters('skipVmCreation'), resourceId('Microsoft.Compute/virtualMachines', parameters('vmName')), resourceId('Microsoft.Compute/virtualMachines', parameters('vmName')))]"
                     },
                     "vmName": {
                       "type": "string",
                       "metadata": {
                         "description": "Name of the Virtual Machine"
                       },
-                      "value": "[parameters('vmName')]"
+                      "value": "[if(parameters('skipVmCreation'), parameters('vmName'), parameters('vmName'))]"
                     },
                     "privateIpAddress": {
                       "type": "string",
                       "metadata": {
                         "description": "Private IP address of the VM"
                       },
-                      "value": "[reference(resourceId('Microsoft.Network/networkInterfaces', variables('nicName')), '2023-11-01').ipConfigurations[0].properties.privateIPAddress]"
+                      "value": "[if(parameters('skipVmCreation'), reference(resourceId('Microsoft.Network/networkInterfaces', variables('nicName')), '2023-11-01').ipConfigurations[0].properties.privateIPAddress, reference(resourceId('Microsoft.Network/networkInterfaces', variables('nicName')), '2023-11-01').ipConfigurations[0].properties.privateIPAddress)]"
                     },
                     "principalId": {
                       "type": "string",
                       "metadata": {
                         "description": "Principal ID of the VM managed identity (for RBAC assignments)"
                       },
-                      "value": "[reference(resourceId('Microsoft.Compute/virtualMachines', parameters('vmName')), '2023-09-01', 'full').identity.principalId]"
+                      "value": "[if(parameters('skipVmCreation'), reference(resourceId('Microsoft.Compute/virtualMachines', parameters('vmName')), '2023-09-01', 'full').identity.principalId, reference(resourceId('Microsoft.Compute/virtualMachines', parameters('vmName')), '2023-09-01', 'full').identity.principalId)]"
                     },
                     "nicId": {
                       "type": "string",
                       "metadata": {
                         "description": "Resource ID of the Network Interface"
                       },
-                      "value": "[resourceId('Microsoft.Network/networkInterfaces', variables('nicName'))]"
+                      "value": "[if(parameters('skipVmCreation'), resourceId('Microsoft.Network/networkInterfaces', variables('nicName')), resourceId('Microsoft.Network/networkInterfaces', variables('nicName')))]"
                     },
                     "zone": {
                       "type": "string",
@@ -4744,6 +5400,12 @@
           "dataCollectionRuleId": {
             "value": "[coalesce(tryGet(tryGet(tryGet(if(parameters('deployMonitoring'), reference(resourceId('Microsoft.Resources/deployments', 'deploy-dcr'), '2025-04-01'), null()), 'outputs'), 'dcrId'), 'value'), '')]"
           },
+          "forceUpdateTag": {
+            "value": "[parameters('forceUpdateTagDb')]"
+          },
+          "skipVmCreation": {
+            "value": "[parameters('skipVmCreationDb')]"
+          },
           "tags": {
             "value": "[variables('allTags')]"
           }
@@ -4755,7 +5417,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.39.26.7824",
-              "templateHash": "15994855274954313366"
+              "templateHash": "1399129892186052133"
             }
           },
           "parameters": {
@@ -4844,6 +5506,20 @@
               "metadata": {
                 "description": "Tags to apply to all resources"
               }
+            },
+            "forceUpdateTag": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Force update tag - changing this value forces CustomScript to re-run"
+              }
+            },
+            "skipVmCreation": {
+              "type": "bool",
+              "defaultValue": false,
+              "metadata": {
+                "description": "Skip VM creation and only update extensions (for re-deployment)"
+              }
             }
           },
           "variables": {
@@ -4861,7 +5537,7 @@
                 "caching": "None"
               }
             ],
-            "mongoInstallScript": "#!/bin/bash\nset -e\n\n# ==========================================================\n# Wait for dpkg/apt locks to be released\n# ==========================================================\n# Azure Linux Agent may be running unattended-upgrades on first boot\n# This can hold dpkg lock for 1-5 minutes\n# We wait up to 5 minutes for the lock to be released\n# ==========================================================\n\nwait_for_apt_lock() {\n  local timeout=300\n  local interval=10\n  local elapsed=0\n  \n  echo \"Checking for dpkg/apt locks...\"\n  \n  while true; do\n    # Check if any apt/dpkg processes are running\n    if ! fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 && \\\n       ! fuser /var/lib/apt/lists/lock >/dev/null 2>&1 && \\\n       ! fuser /var/cache/apt/archives/lock >/dev/null 2>&1; then\n      echo \"All apt/dpkg locks are free, proceeding...\"\n      return 0\n    fi\n    \n    if [ $elapsed -ge $timeout ]; then\n      echo \"ERROR: Timeout waiting for apt/dpkg locks after ${timeout}s\"\n      return 1\n    fi\n    \n    echo \"apt/dpkg lock is held, waiting ${interval}s... (${elapsed}s elapsed)\"\n    sleep $interval\n    elapsed=$((elapsed + interval))\n  done\n}\n\n# Set non-interactive mode to prevent prompts during package installation\nexport DEBIAN_FRONTEND=noninteractive\n\n# Execute wait function (initial check to reduce log spam)\nwait_for_apt_lock\n\n# Update packages with lock timeout (backup protection against race conditions)\n# DPkg::Lock::Timeout waits up to 120 seconds if another process holds the lock\napt-get -o DPkg::Lock::Timeout=120 update\napt-get -o DPkg::Lock::Timeout=120 -y upgrade\n\n# ==========================================================\n# Mount Data Disk\n# ==========================================================\n# Azure disk device names are NOT guaranteed (/dev/sdc may not always be the data disk)\n# The resource/temp disk is often /dev/sdc and is already mounted to /mnt\n# We need to find our Premium SSD data disk by:\n#   1. Looking for disks of the expected size\n#   2. Checking if already mounted at our target location (idempotent)\n# Our data disk is 128GB Premium SSD attached at LUN 0\n# ==========================================================\n\nMOUNT_POINT=\"/data/mongodb\"\nDATA_DISK=\"\"\nEXPECTED_SIZE_GB=128  # Must match dataDiskSizeGB parameter in Bicep\nALREADY_MOUNTED=false\n\necho \"=== Identifying data disk ===\"\necho \"Looking for ${EXPECTED_SIZE_GB}GB disk...\"\n\n# First, check if something is already mounted at our mount point\nif mountpoint -q \"$MOUNT_POINT\"; then\n  echo \"$MOUNT_POINT is already mounted!\"\n  # Find which device is mounted there\n  DATA_DISK=$(findmnt -n -o SOURCE \"$MOUNT_POINT\" | sed 's/[0-9]*$//' | head -1)\n  if [ -n \"$DATA_DISK\" ] && [ -b \"$DATA_DISK\" ]; then\n    echo \"Data disk $DATA_DISK is already mounted at $MOUNT_POINT - SUCCESS (idempotent)\"\n    ALREADY_MOUNTED=true\n  fi\nfi\n\n# If not already mounted, find the data disk by size\nif [ \"$ALREADY_MOUNTED\" = \"false\" ]; then\n  # List all disks for debugging\n  lsblk -d -o NAME,SIZE,TYPE,MOUNTPOINT\n  \n  # Find the data disk by size\n  for disk in /dev/sd?; do\n    if [ -b \"$disk\" ]; then\n      DISK_NAME=$(basename \"$disk\")\n      # Get size in bytes\n      DISK_SIZE_BYTES=$(blockdev --getsize64 \"$disk\" 2>/dev/null || echo \"0\")\n      DISK_SIZE_GB=$((DISK_SIZE_BYTES / 1024 / 1024 / 1024))\n      \n      echo \"Checking $disk: ${DISK_SIZE_GB}GB\"\n      \n      # Check if this is approximately our expected size (within 10GB tolerance)\n      if [ $DISK_SIZE_GB -ge $((EXPECTED_SIZE_GB - 10)) ] && [ $DISK_SIZE_GB -le $((EXPECTED_SIZE_GB + 10)) ]; then\n        # Check where this disk (or its partitions) is mounted\n        DISK_MOUNT=$(lsblk -n -o MOUNTPOINT \"$disk\" 2>/dev/null | grep -v \"^$\" | head -1)\n        PART_MOUNT=$(lsblk -n -o MOUNTPOINT \"${disk}\"* 2>/dev/null | grep -v \"^$\" | head -1)\n        \n        # If mounted at our target, we're good\n        if [ \"$DISK_MOUNT\" = \"$MOUNT_POINT\" ] || [ \"$PART_MOUNT\" = \"$MOUNT_POINT\" ]; then\n          DATA_DISK=\"$disk\"\n          ALREADY_MOUNTED=true\n          echo \"Found data disk $DATA_DISK already mounted at $MOUNT_POINT\"\n          break\n        # If not mounted anywhere useful, use it\n        elif [ -z \"$DISK_MOUNT\" ] && [ -z \"$PART_MOUNT\" ]; then\n          DATA_DISK=\"$disk\"\n          echo \"Found unmounted data disk: $DATA_DISK (${DISK_SIZE_GB}GB)\"\n          break\n        # If mounted at /mnt, it's the temp disk - skip\n        elif [ \"$PART_MOUNT\" = \"/mnt\" ] || [ \"$DISK_MOUNT\" = \"/mnt\" ]; then\n          echo \"Disk $disk is the temp disk (mounted at /mnt), skipping\"\n        else\n          echo \"Disk $disk is mounted elsewhere ($DISK_MOUNT $PART_MOUNT), skipping\"\n        fi\n      fi\n    fi\n  done\nfi\n\n# Fallback: If still not found, try to find any unpartitioned/unused large disk\nif [ -z \"$DATA_DISK\" ]; then\n  echo \"Data disk not found by size, trying to find unused disk...\"\n  for disk in /dev/sdd /dev/sde /dev/sdf; do\n    if [ -b \"$disk\" ]; then\n      MOUNTED=$(lsblk -n -o MOUNTPOINT \"$disk\" 2>/dev/null | grep -v \"^$\" | head -1)\n      DISK_SIZE_GB=$(($(blockdev --getsize64 \"$disk\" 2>/dev/null || echo \"0\") / 1024 / 1024 / 1024))\n      if [ -z \"$MOUNTED\" ] && [ $DISK_SIZE_GB -gt 50 ]; then\n        DATA_DISK=\"$disk\"\n        echo \"Found unused disk: $DATA_DISK (${DISK_SIZE_GB}GB)\"\n        break\n      fi\n    fi\n  done\nfi\n\nif [ -z \"$DATA_DISK\" ]; then\n  echo \"ERROR: Could not identify the data disk\"\n  echo \"=== All block devices ===\"\n  lsblk\n  exit 1\nfi\n\necho \"Using data disk: $DATA_DISK (already_mounted=$ALREADY_MOUNTED)\"\n\n# ==========================================================\n# Format and Mount (skip if already mounted at target)\n# ==========================================================\nif [ \"$ALREADY_MOUNTED\" = \"true\" ]; then\n  echo \"Disk is already mounted at $MOUNT_POINT, skipping format and mount steps\"\nelse\n  # Create filesystem if not exists\n  if ! blkid \"$DATA_DISK\" | grep -q \"TYPE=\"; then\n    echo \"Creating ext4 filesystem on $DATA_DISK\"\n    mkfs.ext4 -F \"$DATA_DISK\"\n  fi\n\n  # Create mount point\n  mkdir -p \"$MOUNT_POINT\"\n\n  # Add to fstab for persistent mount (but don't trigger systemd mount yet)\n  if ! grep -q \"$DATA_DISK\" /etc/fstab; then\n    echo \"$DATA_DISK $MOUNT_POINT ext4 defaults,nofail 0 2\" >> /etc/fstab\n    # Reload systemd to recognize new fstab entry\n    systemctl daemon-reload\n  fi\n\n  # Wait a moment for any systemd mount activity to settle\n  sleep 3\n\n  # Mount the disk with comprehensive checks and retries\n  mount_with_retry() {\n    local max_attempts=5\n    local attempt=1\n    \n    while [ $attempt -le $max_attempts ]; do\n      echo \"Mount attempt $attempt of $max_attempts...\"\n      \n      # Check if mount point is already mounted\n      if mountpoint -q \"$MOUNT_POINT\"; then\n        echo \"$MOUNT_POINT is already mounted\"\n        return 0\n      fi\n      \n      # Check if the disk is already mounted somewhere\n      if mount | grep -q \"^$DATA_DISK \"; then\n        CURRENT_MOUNT=$(mount | grep \"^$DATA_DISK \" | awk '{print $3}')\n        echo \"$DATA_DISK is already mounted at $CURRENT_MOUNT\"\n        if [ \"$CURRENT_MOUNT\" = \"$MOUNT_POINT\" ]; then\n          return 0\n        else\n          echo \"WARNING: Disk mounted at unexpected location, unmounting...\"\n          umount \"$DATA_DISK\" 2>/dev/null || true\n          sleep 2\n        fi\n      fi\n      \n      # Try to mount\n      echo \"Attempting to mount $DATA_DISK to $MOUNT_POINT\"\n      if mount \"$DATA_DISK\" \"$MOUNT_POINT\" 2>/dev/null; then\n        echo \"Mount successful\"\n        return 0\n      fi\n      \n      # Mount failed - check if systemd mounted it in the meantime\n      if mountpoint -q \"$MOUNT_POINT\"; then\n        echo \"Mount point became active (systemd mount succeeded)\"\n      return 0\n    fi\n    \n    echo \"Mount attempt $attempt failed, waiting before retry...\"\n    sleep 5\n    attempt=$((attempt + 1))\n  done\n  \n  echo \"ERROR: Failed to mount $DATA_DISK after $max_attempts attempts\"\n  return 1\n}\n\n# Execute mount with retry logic\nif ! mount_with_retry; then\n  echo \"=== Debug: Current mounts ===\"\n  mount | grep -E \"(sdc|mongodb)\" || echo \"No relevant mounts found\"\n  echo \"=== Debug: fstab content ===\"\n  grep -E \"(sdc|mongodb)\" /etc/fstab || echo \"No relevant fstab entries\"\n  echo \"=== Debug: Block devices ===\"\n  lsblk\n  exit 1\nfi\n\n# Verify mount succeeded\nif mountpoint -q \"$MOUNT_POINT\"; then\n  echo \"Verified: $MOUNT_POINT is mounted successfully\"\n  df -h \"$MOUNT_POINT\"\nelse\n  echo \"ERROR: $MOUNT_POINT is not mounted after all attempts\"\n  exit 1\nfi\n\nfi # End of ALREADY_MOUNTED check\n\n# Set ownership for mongodb user (will be created by package)\n# Done after mongodb installation\n\n# ==========================================================\n# Install MongoDB 7.0\n# ==========================================================\n# Import MongoDB public GPG key\napt-get -o DPkg::Lock::Timeout=120 -y install gnupg curl\n\n# Use --batch flag for non-interactive GPG operation (no TTY available in CustomScript)\n# Check if keyring already exists to make script idempotent (re-runnable)\nif [ ! -f /usr/share/keyrings/mongodb-server-7.0.gpg ]; then\n  echo \"Downloading MongoDB GPG key...\"\n  curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc | \\\n    gpg --batch -o /usr/share/keyrings/mongodb-server-7.0.gpg --dearmor\nelse\n  echo \"MongoDB GPG key already exists, skipping download\"\nfi\n\n# Add MongoDB repository if not already present\nif [ ! -f /etc/apt/sources.list.d/mongodb-org-7.0.list ]; then\n  echo \"deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse\" | \\\n    tee /etc/apt/sources.list.d/mongodb-org-7.0.list\nfi\n\n# Create MongoDB data and log directories on data disk BEFORE installing MongoDB\n# This ensures the directories exist when the mongod service first starts\nmkdir -p /data/mongodb/db\nmkdir -p /data/mongodb/log\n\n# Update and install MongoDB\napt-get -o DPkg::Lock::Timeout=120 update\napt-get -o DPkg::Lock::Timeout=120 -y install mongodb-org\n\n# ==========================================================\n# Configure MongoDB for Replica Set\n# ==========================================================\n# Backup original config\ncp /etc/mongod.conf /etc/mongod.conf.bak\n\n# Set ownership (mongodb user created by package installation)\nchown -R mongodb:mongodb /data/mongodb\n\n# Configure MongoDB\n# Note: MongoDB 7.0+ no longer uses storage.journal.enabled (journaling is always on)\ncat > /etc/mongod.conf << 'EOF'\n# MongoDB 7.0 configuration file\n# Reference: https://www.mongodb.com/docs/manual/reference/configuration-options/\n\n# Where and how to store data\nstorage:\n  dbPath: /data/mongodb/db\n  wiredTiger:\n    engineConfig:\n      cacheSizeGB: 8  # Use 50% of RAM (16GB VM)\n\n# Where to write logging data\nsystemLog:\n  destination: file\n  logAppend: true\n  path: /data/mongodb/log/mongod.log\n\n# Network interfaces\nnet:\n  port: 27017\n  bindIp: 0.0.0.0  # Listen on all interfaces (NSG controls access)\n\n# Process management\nprocessManagement:\n  timeZoneInfo: /usr/share/zoneinfo\n\n# Security (enable after replica set is initialized)\n# security:\n#   authorization: enabled\n#   keyFile: /etc/mongodb/keyfile\n\n# Replica set configuration\nreplication:\n  replSetName: blogapp-rs0\nEOF\n\n# Stop MongoDB if it was auto-started with default config\nsystemctl stop mongod 2>/dev/null || true\n\n# Ensure correct ownership after config change\nchown -R mongodb:mongodb /data/mongodb\n\n# Enable and start MongoDB with new configuration\nsystemctl daemon-reload\nsystemctl enable mongod\nsystemctl start mongod\n\n# Wait for MongoDB to start (give it more time on first boot)\necho \"Waiting for MongoDB to start...\"\nsleep 15\n\n# Verify MongoDB is running with retries\nfor i in 1 2 3; do\n  if systemctl is-active --quiet mongod; then\n    echo \"MongoDB installation completed successfully\"\n    # Show MongoDB version for verification\n    mongod --version | head -1\n    exit 0\n  fi\n  echo \"MongoDB not ready yet, waiting... (attempt $i/3)\"\n  sleep 10\ndone\n\n# If we get here, MongoDB failed to start\necho \"MongoDB failed to start after 3 attempts\"\necho \"=== MongoDB service status ===\"\nsystemctl status mongod --no-pager || true\necho \"=== Last 50 lines of MongoDB log ===\"\ntail -50 /data/mongodb/log/mongod.log 2>/dev/null || echo \"No log file found\"\nexit 1\n\n# ==========================================================\n# Post-Installation Notes\n# ==========================================================\n# To initialize the replica set, run the following on the PRIMARY node:\n#\n# mongosh --eval \"rs.initiate({\n#   _id: 'blogapp-rs0',\n#   members: [\n#     { _id: 0, host: 'vm-db-az1-prod:27017', priority: 2 },\n#     { _id: 1, host: 'vm-db-az2-prod:27017', priority: 1 }\n#   ]\n# })\"\n#\n# Check replica set status:\n# mongosh --eval \"rs.status()\"\n"
+            "mongoInstallScript": "#!/bin/bash\nset -e\n\n# ==========================================================\n# Wait for dpkg/apt locks to be released\n# ==========================================================\n# Azure Linux Agent may be running unattended-upgrades on first boot\n# This can hold dpkg lock for 1-5 minutes\n# We wait up to 5 minutes for the lock to be released\n# ==========================================================\n\nwait_for_apt_lock() {\n  local timeout=300\n  local interval=10\n  local elapsed=0\n  \n  echo \"Checking for dpkg/apt locks...\"\n  \n  while true; do\n    # Check if any apt/dpkg processes are running\n    if ! fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 && \\\n       ! fuser /var/lib/apt/lists/lock >/dev/null 2>&1 && \\\n       ! fuser /var/cache/apt/archives/lock >/dev/null 2>&1; then\n      echo \"All apt/dpkg locks are free, proceeding...\"\n      return 0\n    fi\n    \n    if [ $elapsed -ge $timeout ]; then\n      echo \"ERROR: Timeout waiting for apt/dpkg locks after ${timeout}s\"\n      return 1\n    fi\n    \n    echo \"apt/dpkg lock is held, waiting ${interval}s... (${elapsed}s elapsed)\"\n    sleep $interval\n    elapsed=$((elapsed + interval))\n  done\n}\n\n# Set non-interactive mode to prevent prompts during package installation\nexport DEBIAN_FRONTEND=noninteractive\n\n# Execute wait function (initial check to reduce log spam)\nwait_for_apt_lock\n\n# Update packages with lock timeout (backup protection against race conditions)\n# DPkg::Lock::Timeout waits up to 120 seconds if another process holds the lock\napt-get -o DPkg::Lock::Timeout=120 update\napt-get -o DPkg::Lock::Timeout=120 -y upgrade\n\n# ==========================================================\n# Mount Data Disk\n# ==========================================================\n# Azure disk device names are NOT guaranteed (/dev/sdc may not always be the data disk)\n# The resource/temp disk is often /dev/sdc and is already mounted to /mnt\n# We need to find our Premium SSD data disk by:\n#   1. Looking for disks of the expected size\n#   2. Checking if already mounted at our target location (idempotent)\n# Our data disk is 128GB Premium SSD attached at LUN 0\n# ==========================================================\n\nMOUNT_POINT=\"/data/mongodb\"\nDATA_DISK=\"\"\nEXPECTED_SIZE_GB=128  # Must match dataDiskSizeGB parameter in Bicep\nALREADY_MOUNTED=false\n\necho \"=== Identifying data disk ===\"\necho \"Looking for ${EXPECTED_SIZE_GB}GB disk...\"\n\n# First, check if something is already mounted at our mount point\nif mountpoint -q \"$MOUNT_POINT\"; then\n  echo \"$MOUNT_POINT is already mounted!\"\n  # Find which device is mounted there\n  DATA_DISK=$(findmnt -n -o SOURCE \"$MOUNT_POINT\" | sed 's/[0-9]*$//' | head -1)\n  if [ -n \"$DATA_DISK\" ] && [ -b \"$DATA_DISK\" ]; then\n    echo \"Data disk $DATA_DISK is already mounted at $MOUNT_POINT - SUCCESS (idempotent)\"\n    ALREADY_MOUNTED=true\n  fi\nfi\n\n# If not already mounted, find the data disk by size\nif [ \"$ALREADY_MOUNTED\" = \"false\" ]; then\n  # List all disks for debugging\n  lsblk -d -o NAME,SIZE,TYPE,MOUNTPOINT\n  \n  # Find the data disk by size\n  for disk in /dev/sd?; do\n    if [ -b \"$disk\" ]; then\n      DISK_NAME=$(basename \"$disk\")\n      # Get size in bytes\n      DISK_SIZE_BYTES=$(blockdev --getsize64 \"$disk\" 2>/dev/null || echo \"0\")\n      DISK_SIZE_GB=$((DISK_SIZE_BYTES / 1024 / 1024 / 1024))\n      \n      echo \"Checking $disk: ${DISK_SIZE_GB}GB\"\n      \n      # Check if this is approximately our expected size (within 10GB tolerance)\n      if [ $DISK_SIZE_GB -ge $((EXPECTED_SIZE_GB - 10)) ] && [ $DISK_SIZE_GB -le $((EXPECTED_SIZE_GB + 10)) ]; then\n        # Check where this disk (or its partitions) is mounted\n        DISK_MOUNT=$(lsblk -n -o MOUNTPOINT \"$disk\" 2>/dev/null | grep -v \"^$\" | head -1)\n        PART_MOUNT=$(lsblk -n -o MOUNTPOINT \"${disk}\"* 2>/dev/null | grep -v \"^$\" | head -1)\n        \n        # If mounted at our target, we're good\n        if [ \"$DISK_MOUNT\" = \"$MOUNT_POINT\" ] || [ \"$PART_MOUNT\" = \"$MOUNT_POINT\" ]; then\n          DATA_DISK=\"$disk\"\n          ALREADY_MOUNTED=true\n          echo \"Found data disk $DATA_DISK already mounted at $MOUNT_POINT\"\n          break\n        # If not mounted anywhere useful, use it\n        elif [ -z \"$DISK_MOUNT\" ] && [ -z \"$PART_MOUNT\" ]; then\n          DATA_DISK=\"$disk\"\n          echo \"Found unmounted data disk: $DATA_DISK (${DISK_SIZE_GB}GB)\"\n          break\n        # If mounted at /mnt, it's the temp disk - skip\n        elif [ \"$PART_MOUNT\" = \"/mnt\" ] || [ \"$DISK_MOUNT\" = \"/mnt\" ]; then\n          echo \"Disk $disk is the temp disk (mounted at /mnt), skipping\"\n        else\n          echo \"Disk $disk is mounted elsewhere ($DISK_MOUNT $PART_MOUNT), skipping\"\n        fi\n      fi\n    fi\n  done\nfi\n\n# Fallback: If still not found, try to find any unpartitioned/unused large disk\nif [ -z \"$DATA_DISK\" ]; then\n  echo \"Data disk not found by size, trying to find unused disk...\"\n  for disk in /dev/sdd /dev/sde /dev/sdf; do\n    if [ -b \"$disk\" ]; then\n      MOUNTED=$(lsblk -n -o MOUNTPOINT \"$disk\" 2>/dev/null | grep -v \"^$\" | head -1)\n      DISK_SIZE_GB=$(($(blockdev --getsize64 \"$disk\" 2>/dev/null || echo \"0\") / 1024 / 1024 / 1024))\n      if [ -z \"$MOUNTED\" ] && [ $DISK_SIZE_GB -gt 50 ]; then\n        DATA_DISK=\"$disk\"\n        echo \"Found unused disk: $DATA_DISK (${DISK_SIZE_GB}GB)\"\n        break\n      fi\n    fi\n  done\nfi\n\nif [ -z \"$DATA_DISK\" ]; then\n  echo \"ERROR: Could not identify the data disk\"\n  echo \"=== All block devices ===\"\n  lsblk\n  exit 1\nfi\n\necho \"Using data disk: $DATA_DISK (already_mounted=$ALREADY_MOUNTED)\"\n\n# ==========================================================\n# Format and Mount (skip if already mounted at target)\n# ==========================================================\nif [ \"$ALREADY_MOUNTED\" = \"true\" ]; then\n  echo \"Disk is already mounted at $MOUNT_POINT, skipping format and mount steps\"\nelse\n  # Create filesystem if not exists\n  if ! blkid \"$DATA_DISK\" | grep -q \"TYPE=\"; then\n    echo \"Creating ext4 filesystem on $DATA_DISK\"\n    mkfs.ext4 -F \"$DATA_DISK\"\n  fi\n\n  # Create mount point\n  mkdir -p \"$MOUNT_POINT\"\n\n  # Get UUID for persistent mount (device names like /dev/sdc are NOT stable across reboots in Azure)\n  # Azure may reassign device letters after reboot, causing mount failures\n  DISK_UUID=$(blkid -s UUID -o value \"$DATA_DISK\")\n  if [ -z \"$DISK_UUID\" ]; then\n    echo \"ERROR: Could not get UUID for $DATA_DISK\"\n    exit 1\n  fi\n  echo \"Disk UUID: $DISK_UUID\"\n\n  # Add to fstab using UUID for persistent mount (but don't trigger systemd mount yet)\n  # CRITICAL: Use UUID instead of device name to survive reboots\n  if ! grep -q \"$DISK_UUID\" /etc/fstab; then\n    echo \"UUID=$DISK_UUID $MOUNT_POINT ext4 defaults,nofail 0 2\" >> /etc/fstab\n    # Reload systemd to recognize new fstab entry\n    systemctl daemon-reload\n  fi\n\n  # Wait a moment for any systemd mount activity to settle\n  sleep 3\n\n  # Mount the disk with comprehensive checks and retries\n  mount_with_retry() {\n    local max_attempts=5\n    local attempt=1\n    \n    while [ $attempt -le $max_attempts ]; do\n      echo \"Mount attempt $attempt of $max_attempts...\"\n      \n      # Check if mount point is already mounted\n      if mountpoint -q \"$MOUNT_POINT\"; then\n        echo \"$MOUNT_POINT is already mounted\"\n        return 0\n      fi\n      \n      # Check if the disk is already mounted somewhere (by UUID)\n      MOUNTED_AT=$(findmnt -n -o TARGET --source \"UUID=$DISK_UUID\" 2>/dev/null || true)\n      if [ -n \"$MOUNTED_AT\" ]; then\n        echo \"Disk (UUID=$DISK_UUID) is already mounted at $MOUNTED_AT\"\n        if [ \"$MOUNTED_AT\" = \"$MOUNT_POINT\" ]; then\n          return 0\n        else\n          echo \"WARNING: Disk mounted at unexpected location, unmounting...\"\n          umount \"UUID=$DISK_UUID\" 2>/dev/null || true\n          sleep 2\n        fi\n      fi\n      \n      # Try to mount using UUID\n      echo \"Attempting to mount UUID=$DISK_UUID to $MOUNT_POINT\"\n      if mount \"UUID=$DISK_UUID\" \"$MOUNT_POINT\" 2>/dev/null; then\n        echo \"Mount successful\"\n        return 0\n      fi\n      \n      # Mount failed - check if systemd mounted it in the meantime\n      if mountpoint -q \"$MOUNT_POINT\"; then\n        echo \"Mount point became active (systemd mount succeeded)\"\n      return 0\n    fi\n    \n    echo \"Mount attempt $attempt failed, waiting before retry...\"\n    sleep 5\n    attempt=$((attempt + 1))\n  done\n  \n  echo \"ERROR: Failed to mount $DATA_DISK after $max_attempts attempts\"\n  return 1\n}\n\n# Execute mount with retry logic\nif ! mount_with_retry; then\n  echo \"=== Debug: Current mounts ===\"\n  mount | grep -E \"(mongodb|$DISK_UUID)\" || echo \"No relevant mounts found\"\n  echo \"=== Debug: fstab content ===\"\n  grep -E \"(mongodb|$DISK_UUID)\" /etc/fstab || echo \"No relevant fstab entries\"\n  echo \"=== Debug: Block devices ===\"\n  lsblk -f\n  exit 1\nfi\n\n# Verify mount succeeded\nif mountpoint -q \"$MOUNT_POINT\"; then\n  echo \"Verified: $MOUNT_POINT is mounted successfully\"\n  df -h \"$MOUNT_POINT\"\nelse\n  echo \"ERROR: $MOUNT_POINT is not mounted after all attempts\"\n  exit 1\nfi\n\nfi # End of ALREADY_MOUNTED check\n\n# Set ownership for mongodb user (will be created by package)\n# Done after mongodb installation\n\n# ==========================================================\n# Install MongoDB 7.0\n# ==========================================================\n# Import MongoDB public GPG key\napt-get -o DPkg::Lock::Timeout=120 -y install gnupg curl\n\n# Use --batch flag for non-interactive GPG operation (no TTY available in CustomScript)\n# Check if keyring already exists to make script idempotent (re-runnable)\nif [ ! -f /usr/share/keyrings/mongodb-server-7.0.gpg ]; then\n  echo \"Downloading MongoDB GPG key...\"\n  curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc | \\\n    gpg --batch -o /usr/share/keyrings/mongodb-server-7.0.gpg --dearmor\nelse\n  echo \"MongoDB GPG key already exists, skipping download\"\nfi\n\n# Add MongoDB repository if not already present\nif [ ! -f /etc/apt/sources.list.d/mongodb-org-7.0.list ]; then\n  echo \"deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse\" | \\\n    tee /etc/apt/sources.list.d/mongodb-org-7.0.list\nfi\n\n# Create MongoDB data and log directories on data disk BEFORE installing MongoDB\n# This ensures the directories exist when the mongod service first starts\nmkdir -p /data/mongodb/db\nmkdir -p /data/mongodb/log\n\n# Update and install MongoDB\napt-get -o DPkg::Lock::Timeout=120 update\napt-get -o DPkg::Lock::Timeout=120 -y install mongodb-org\n\n# ==========================================================\n# Configure MongoDB for Replica Set\n# ==========================================================\n# Backup original config\ncp /etc/mongod.conf /etc/mongod.conf.bak\n\n# Set ownership (mongodb user created by package installation)\nchown -R mongodb:mongodb /data/mongodb\n\n# Configure MongoDB\n# Note: MongoDB 7.0+ no longer uses storage.journal.enabled (journaling is always on)\ncat > /etc/mongod.conf << 'EOF'\n# MongoDB 7.0 configuration file\n# Reference: https://www.mongodb.com/docs/manual/reference/configuration-options/\n\n# Where and how to store data\nstorage:\n  dbPath: /data/mongodb/db\n  wiredTiger:\n    engineConfig:\n      cacheSizeGB: 8  # Use 50% of RAM (16GB VM)\n\n# Where to write logging data\nsystemLog:\n  destination: file\n  logAppend: true\n  path: /data/mongodb/log/mongod.log\n\n# Network interfaces\nnet:\n  port: 27017\n  bindIp: 0.0.0.0  # Listen on all interfaces (NSG controls access)\n\n# Process management\nprocessManagement:\n  timeZoneInfo: /usr/share/zoneinfo\n\n# Security (enable after replica set is initialized)\n# security:\n#   authorization: enabled\n#   keyFile: /etc/mongodb/keyfile\n\n# Replica set configuration\nreplication:\n  replSetName: blogapp-rs0\nEOF\n\n# Stop MongoDB if it was auto-started with default config\nsystemctl stop mongod 2>/dev/null || true\n\n# Ensure correct ownership after config change\nchown -R mongodb:mongodb /data/mongodb\n\n# Enable and start MongoDB with new configuration\nsystemctl daemon-reload\nsystemctl enable mongod\nsystemctl start mongod\n\n# Wait for MongoDB to start (give it more time on first boot)\necho \"Waiting for MongoDB to start...\"\nsleep 15\n\n# Verify MongoDB is running with retries\nfor i in 1 2 3; do\n  if systemctl is-active --quiet mongod; then\n    echo \"MongoDB installation completed successfully\"\n    # Show MongoDB version for verification\n    mongod --version | head -1\n    exit 0\n  fi\n  echo \"MongoDB not ready yet, waiting... (attempt $i/3)\"\n  sleep 10\ndone\n\n# If we get here, MongoDB failed to start\necho \"MongoDB failed to start after 3 attempts\"\necho \"=== MongoDB service status ===\"\nsystemctl status mongod --no-pager || true\necho \"=== Last 50 lines of MongoDB log ===\"\ntail -50 /data/mongodb/log/mongod.log 2>/dev/null || echo \"No log file found\"\nexit 1\n\n# ==========================================================\n# Post-Installation Notes\n# ==========================================================\n# To initialize the replica set, run the following on the PRIMARY node:\n#\n# mongosh --eval \"rs.initiate({\n#   _id: 'blogapp-rs0',\n#   members: [\n#     { _id: 0, host: 'vm-db-az1-prod:27017', priority: 2 },\n#     { _id: 1, host: 'vm-db-az2-prod:27017', priority: 1 }\n#   ]\n# })\"\n#\n# Check replica set status:\n# mongosh --eval \"rs.status()\"\n"
           },
           "resources": [
             {
@@ -4919,6 +5595,12 @@
                   "customScriptContent": {
                     "value": "[base64(variables('mongoInstallScript'))]"
                   },
+                  "forceUpdateTag": {
+                    "value": "[parameters('forceUpdateTag')]"
+                  },
+                  "skipVmCreation": {
+                    "value": "[parameters('skipVmCreation')]"
+                  },
                   "tags": {
                     "value": "[union(variables('allTags'), createObject('Role', 'primary'))]"
                   }
@@ -4930,7 +5612,7 @@
                     "_generator": {
                       "name": "bicep",
                       "version": "0.39.26.7824",
-                      "templateHash": "17168036913246087060"
+                      "templateHash": "13423450180752322404"
                     }
                   },
                   "parameters": {
@@ -5042,6 +5724,20 @@
                         "description": "Custom script to run on VM startup (base64 encoded)"
                       }
                     },
+                    "forceUpdateTag": {
+                      "type": "string",
+                      "defaultValue": "",
+                      "metadata": {
+                        "description": "Force update tag to trigger script re-execution (change value to re-run script)"
+                      }
+                    },
+                    "skipVmCreation": {
+                      "type": "bool",
+                      "defaultValue": false,
+                      "metadata": {
+                        "description": "Skip VM creation and only update extensions on existing VM"
+                      }
+                    },
                     "tags": {
                       "type": "object",
                       "defaultValue": {},
@@ -5065,6 +5761,7 @@
                   },
                   "resources": [
                     {
+                      "condition": "[not(parameters('skipVmCreation'))]",
                       "type": "Microsoft.Network/networkInterfaces",
                       "apiVersion": "2023-11-01",
                       "name": "[variables('nicName')]",
@@ -5087,6 +5784,7 @@
                       }
                     },
                     {
+                      "condition": "[not(parameters('skipVmCreation'))]",
                       "type": "Microsoft.Compute/virtualMachines",
                       "apiVersion": "2023-09-01",
                       "name": "[parameters('vmName')]",
@@ -5182,7 +5880,7 @@
                       ]
                     },
                     {
-                      "condition": "[and(parameters('enableMonitoring'), not(empty(parameters('logAnalyticsWorkspaceId'))))]",
+                      "condition": "[and(and(not(parameters('skipVmCreation')), parameters('enableMonitoring')), not(empty(parameters('logAnalyticsWorkspaceId'))))]",
                       "type": "Microsoft.Compute/virtualMachines/extensions",
                       "apiVersion": "2023-09-01",
                       "name": "[format('{0}/{1}', parameters('vmName'), 'AzureMonitorLinuxAgent')]",
@@ -5208,7 +5906,30 @@
                       ]
                     },
                     {
-                      "condition": "[and(parameters('enableMonitoring'), not(empty(parameters('dataCollectionRuleId'))))]",
+                      "condition": "[and(and(parameters('skipVmCreation'), parameters('enableMonitoring')), not(empty(parameters('logAnalyticsWorkspaceId'))))]",
+                      "type": "Microsoft.Compute/virtualMachines/extensions",
+                      "apiVersion": "2023-09-01",
+                      "name": "[format('{0}/{1}', parameters('vmName'), 'AzureMonitorLinuxAgent')]",
+                      "location": "[parameters('location')]",
+                      "tags": "[variables('allTags')]",
+                      "properties": {
+                        "publisher": "Microsoft.Azure.Monitor",
+                        "type": "AzureMonitorLinuxAgent",
+                        "typeHandlerVersion": "1.0",
+                        "autoUpgradeMinorVersion": true,
+                        "enableAutomaticUpgrade": true,
+                        "settings": {
+                          "authentication": {
+                            "managedIdentity": {
+                              "identifier-name": "mi_res_id",
+                              "identifier-value": "[resourceId('Microsoft.Compute/virtualMachines', parameters('vmName'))]"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "condition": "[and(and(not(parameters('skipVmCreation')), parameters('enableMonitoring')), not(empty(parameters('dataCollectionRuleId'))))]",
                       "type": "Microsoft.Insights/dataCollectionRuleAssociations",
                       "apiVersion": "2022-06-01",
                       "scope": "[format('Microsoft.Compute/virtualMachines/{0}', parameters('vmName'))]",
@@ -5222,7 +5943,20 @@
                       ]
                     },
                     {
-                      "condition": "[not(empty(parameters('customScriptContent')))]",
+                      "condition": "[and(and(parameters('skipVmCreation'), parameters('enableMonitoring')), not(empty(parameters('dataCollectionRuleId'))))]",
+                      "type": "Microsoft.Insights/dataCollectionRuleAssociations",
+                      "apiVersion": "2022-06-01",
+                      "scope": "[format('Microsoft.Compute/virtualMachines/{0}', parameters('vmName'))]",
+                      "name": "configurationAccessEndpoint",
+                      "properties": {
+                        "dataCollectionRuleId": "[parameters('dataCollectionRuleId')]"
+                      },
+                      "dependsOn": [
+                        "[resourceId('Microsoft.Compute/virtualMachines/extensions', parameters('vmName'), 'AzureMonitorLinuxAgent')]"
+                      ]
+                    },
+                    {
+                      "condition": "[and(not(parameters('skipVmCreation')), not(empty(parameters('customScriptContent'))))]",
                       "type": "Microsoft.Compute/virtualMachines/extensions",
                       "apiVersion": "2023-09-01",
                       "name": "[format('{0}/{1}', parameters('vmName'), 'CustomScript')]",
@@ -5233,6 +5967,7 @@
                         "type": "CustomScript",
                         "typeHandlerVersion": "2.1",
                         "autoUpgradeMinorVersion": true,
+                        "forceUpdateTag": "[if(not(empty(parameters('forceUpdateTag'))), parameters('forceUpdateTag'), null())]",
                         "settings": {
                           "script": "[parameters('customScriptContent')]"
                         }
@@ -5240,6 +5975,27 @@
                       "dependsOn": [
                         "[resourceId('Microsoft.Compute/virtualMachines/extensions', parameters('vmName'), 'AzureMonitorLinuxAgent')]",
                         "[resourceId('Microsoft.Compute/virtualMachines', parameters('vmName'))]"
+                      ]
+                    },
+                    {
+                      "condition": "[and(parameters('skipVmCreation'), not(empty(parameters('customScriptContent'))))]",
+                      "type": "Microsoft.Compute/virtualMachines/extensions",
+                      "apiVersion": "2023-09-01",
+                      "name": "[format('{0}/{1}', parameters('vmName'), 'CustomScript')]",
+                      "location": "[parameters('location')]",
+                      "tags": "[variables('allTags')]",
+                      "properties": {
+                        "publisher": "Microsoft.Azure.Extensions",
+                        "type": "CustomScript",
+                        "typeHandlerVersion": "2.1",
+                        "autoUpgradeMinorVersion": true,
+                        "forceUpdateTag": "[if(not(empty(parameters('forceUpdateTag'))), parameters('forceUpdateTag'), null())]",
+                        "settings": {
+                          "script": "[parameters('customScriptContent')]"
+                        }
+                      },
+                      "dependsOn": [
+                        "[resourceId('Microsoft.Compute/virtualMachines/extensions', parameters('vmName'), 'AzureMonitorLinuxAgent')]"
                       ]
                     }
                   ],
@@ -5249,35 +6005,35 @@
                       "metadata": {
                         "description": "Resource ID of the Virtual Machine"
                       },
-                      "value": "[resourceId('Microsoft.Compute/virtualMachines', parameters('vmName'))]"
+                      "value": "[if(parameters('skipVmCreation'), resourceId('Microsoft.Compute/virtualMachines', parameters('vmName')), resourceId('Microsoft.Compute/virtualMachines', parameters('vmName')))]"
                     },
                     "vmName": {
                       "type": "string",
                       "metadata": {
                         "description": "Name of the Virtual Machine"
                       },
-                      "value": "[parameters('vmName')]"
+                      "value": "[if(parameters('skipVmCreation'), parameters('vmName'), parameters('vmName'))]"
                     },
                     "privateIpAddress": {
                       "type": "string",
                       "metadata": {
                         "description": "Private IP address of the VM"
                       },
-                      "value": "[reference(resourceId('Microsoft.Network/networkInterfaces', variables('nicName')), '2023-11-01').ipConfigurations[0].properties.privateIPAddress]"
+                      "value": "[if(parameters('skipVmCreation'), reference(resourceId('Microsoft.Network/networkInterfaces', variables('nicName')), '2023-11-01').ipConfigurations[0].properties.privateIPAddress, reference(resourceId('Microsoft.Network/networkInterfaces', variables('nicName')), '2023-11-01').ipConfigurations[0].properties.privateIPAddress)]"
                     },
                     "principalId": {
                       "type": "string",
                       "metadata": {
                         "description": "Principal ID of the VM managed identity (for RBAC assignments)"
                       },
-                      "value": "[reference(resourceId('Microsoft.Compute/virtualMachines', parameters('vmName')), '2023-09-01', 'full').identity.principalId]"
+                      "value": "[if(parameters('skipVmCreation'), reference(resourceId('Microsoft.Compute/virtualMachines', parameters('vmName')), '2023-09-01', 'full').identity.principalId, reference(resourceId('Microsoft.Compute/virtualMachines', parameters('vmName')), '2023-09-01', 'full').identity.principalId)]"
                     },
                     "nicId": {
                       "type": "string",
                       "metadata": {
                         "description": "Resource ID of the Network Interface"
                       },
-                      "value": "[resourceId('Microsoft.Network/networkInterfaces', variables('nicName'))]"
+                      "value": "[if(parameters('skipVmCreation'), resourceId('Microsoft.Network/networkInterfaces', variables('nicName')), resourceId('Microsoft.Network/networkInterfaces', variables('nicName')))]"
                     },
                     "zone": {
                       "type": "string",
@@ -5345,6 +6101,12 @@
                   "customScriptContent": {
                     "value": "[base64(variables('mongoInstallScript'))]"
                   },
+                  "forceUpdateTag": {
+                    "value": "[parameters('forceUpdateTag')]"
+                  },
+                  "skipVmCreation": {
+                    "value": "[parameters('skipVmCreation')]"
+                  },
                   "tags": {
                     "value": "[union(variables('allTags'), createObject('Role', 'secondary'))]"
                   }
@@ -5356,7 +6118,7 @@
                     "_generator": {
                       "name": "bicep",
                       "version": "0.39.26.7824",
-                      "templateHash": "17168036913246087060"
+                      "templateHash": "13423450180752322404"
                     }
                   },
                   "parameters": {
@@ -5468,6 +6230,20 @@
                         "description": "Custom script to run on VM startup (base64 encoded)"
                       }
                     },
+                    "forceUpdateTag": {
+                      "type": "string",
+                      "defaultValue": "",
+                      "metadata": {
+                        "description": "Force update tag to trigger script re-execution (change value to re-run script)"
+                      }
+                    },
+                    "skipVmCreation": {
+                      "type": "bool",
+                      "defaultValue": false,
+                      "metadata": {
+                        "description": "Skip VM creation and only update extensions on existing VM"
+                      }
+                    },
                     "tags": {
                       "type": "object",
                       "defaultValue": {},
@@ -5491,6 +6267,7 @@
                   },
                   "resources": [
                     {
+                      "condition": "[not(parameters('skipVmCreation'))]",
                       "type": "Microsoft.Network/networkInterfaces",
                       "apiVersion": "2023-11-01",
                       "name": "[variables('nicName')]",
@@ -5513,6 +6290,7 @@
                       }
                     },
                     {
+                      "condition": "[not(parameters('skipVmCreation'))]",
                       "type": "Microsoft.Compute/virtualMachines",
                       "apiVersion": "2023-09-01",
                       "name": "[parameters('vmName')]",
@@ -5608,7 +6386,7 @@
                       ]
                     },
                     {
-                      "condition": "[and(parameters('enableMonitoring'), not(empty(parameters('logAnalyticsWorkspaceId'))))]",
+                      "condition": "[and(and(not(parameters('skipVmCreation')), parameters('enableMonitoring')), not(empty(parameters('logAnalyticsWorkspaceId'))))]",
                       "type": "Microsoft.Compute/virtualMachines/extensions",
                       "apiVersion": "2023-09-01",
                       "name": "[format('{0}/{1}', parameters('vmName'), 'AzureMonitorLinuxAgent')]",
@@ -5634,7 +6412,30 @@
                       ]
                     },
                     {
-                      "condition": "[and(parameters('enableMonitoring'), not(empty(parameters('dataCollectionRuleId'))))]",
+                      "condition": "[and(and(parameters('skipVmCreation'), parameters('enableMonitoring')), not(empty(parameters('logAnalyticsWorkspaceId'))))]",
+                      "type": "Microsoft.Compute/virtualMachines/extensions",
+                      "apiVersion": "2023-09-01",
+                      "name": "[format('{0}/{1}', parameters('vmName'), 'AzureMonitorLinuxAgent')]",
+                      "location": "[parameters('location')]",
+                      "tags": "[variables('allTags')]",
+                      "properties": {
+                        "publisher": "Microsoft.Azure.Monitor",
+                        "type": "AzureMonitorLinuxAgent",
+                        "typeHandlerVersion": "1.0",
+                        "autoUpgradeMinorVersion": true,
+                        "enableAutomaticUpgrade": true,
+                        "settings": {
+                          "authentication": {
+                            "managedIdentity": {
+                              "identifier-name": "mi_res_id",
+                              "identifier-value": "[resourceId('Microsoft.Compute/virtualMachines', parameters('vmName'))]"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "condition": "[and(and(not(parameters('skipVmCreation')), parameters('enableMonitoring')), not(empty(parameters('dataCollectionRuleId'))))]",
                       "type": "Microsoft.Insights/dataCollectionRuleAssociations",
                       "apiVersion": "2022-06-01",
                       "scope": "[format('Microsoft.Compute/virtualMachines/{0}', parameters('vmName'))]",
@@ -5648,7 +6449,20 @@
                       ]
                     },
                     {
-                      "condition": "[not(empty(parameters('customScriptContent')))]",
+                      "condition": "[and(and(parameters('skipVmCreation'), parameters('enableMonitoring')), not(empty(parameters('dataCollectionRuleId'))))]",
+                      "type": "Microsoft.Insights/dataCollectionRuleAssociations",
+                      "apiVersion": "2022-06-01",
+                      "scope": "[format('Microsoft.Compute/virtualMachines/{0}', parameters('vmName'))]",
+                      "name": "configurationAccessEndpoint",
+                      "properties": {
+                        "dataCollectionRuleId": "[parameters('dataCollectionRuleId')]"
+                      },
+                      "dependsOn": [
+                        "[resourceId('Microsoft.Compute/virtualMachines/extensions', parameters('vmName'), 'AzureMonitorLinuxAgent')]"
+                      ]
+                    },
+                    {
+                      "condition": "[and(not(parameters('skipVmCreation')), not(empty(parameters('customScriptContent'))))]",
                       "type": "Microsoft.Compute/virtualMachines/extensions",
                       "apiVersion": "2023-09-01",
                       "name": "[format('{0}/{1}', parameters('vmName'), 'CustomScript')]",
@@ -5659,6 +6473,7 @@
                         "type": "CustomScript",
                         "typeHandlerVersion": "2.1",
                         "autoUpgradeMinorVersion": true,
+                        "forceUpdateTag": "[if(not(empty(parameters('forceUpdateTag'))), parameters('forceUpdateTag'), null())]",
                         "settings": {
                           "script": "[parameters('customScriptContent')]"
                         }
@@ -5666,6 +6481,27 @@
                       "dependsOn": [
                         "[resourceId('Microsoft.Compute/virtualMachines/extensions', parameters('vmName'), 'AzureMonitorLinuxAgent')]",
                         "[resourceId('Microsoft.Compute/virtualMachines', parameters('vmName'))]"
+                      ]
+                    },
+                    {
+                      "condition": "[and(parameters('skipVmCreation'), not(empty(parameters('customScriptContent'))))]",
+                      "type": "Microsoft.Compute/virtualMachines/extensions",
+                      "apiVersion": "2023-09-01",
+                      "name": "[format('{0}/{1}', parameters('vmName'), 'CustomScript')]",
+                      "location": "[parameters('location')]",
+                      "tags": "[variables('allTags')]",
+                      "properties": {
+                        "publisher": "Microsoft.Azure.Extensions",
+                        "type": "CustomScript",
+                        "typeHandlerVersion": "2.1",
+                        "autoUpgradeMinorVersion": true,
+                        "forceUpdateTag": "[if(not(empty(parameters('forceUpdateTag'))), parameters('forceUpdateTag'), null())]",
+                        "settings": {
+                          "script": "[parameters('customScriptContent')]"
+                        }
+                      },
+                      "dependsOn": [
+                        "[resourceId('Microsoft.Compute/virtualMachines/extensions', parameters('vmName'), 'AzureMonitorLinuxAgent')]"
                       ]
                     }
                   ],
@@ -5675,35 +6511,35 @@
                       "metadata": {
                         "description": "Resource ID of the Virtual Machine"
                       },
-                      "value": "[resourceId('Microsoft.Compute/virtualMachines', parameters('vmName'))]"
+                      "value": "[if(parameters('skipVmCreation'), resourceId('Microsoft.Compute/virtualMachines', parameters('vmName')), resourceId('Microsoft.Compute/virtualMachines', parameters('vmName')))]"
                     },
                     "vmName": {
                       "type": "string",
                       "metadata": {
                         "description": "Name of the Virtual Machine"
                       },
-                      "value": "[parameters('vmName')]"
+                      "value": "[if(parameters('skipVmCreation'), parameters('vmName'), parameters('vmName'))]"
                     },
                     "privateIpAddress": {
                       "type": "string",
                       "metadata": {
                         "description": "Private IP address of the VM"
                       },
-                      "value": "[reference(resourceId('Microsoft.Network/networkInterfaces', variables('nicName')), '2023-11-01').ipConfigurations[0].properties.privateIPAddress]"
+                      "value": "[if(parameters('skipVmCreation'), reference(resourceId('Microsoft.Network/networkInterfaces', variables('nicName')), '2023-11-01').ipConfigurations[0].properties.privateIPAddress, reference(resourceId('Microsoft.Network/networkInterfaces', variables('nicName')), '2023-11-01').ipConfigurations[0].properties.privateIPAddress)]"
                     },
                     "principalId": {
                       "type": "string",
                       "metadata": {
                         "description": "Principal ID of the VM managed identity (for RBAC assignments)"
                       },
-                      "value": "[reference(resourceId('Microsoft.Compute/virtualMachines', parameters('vmName')), '2023-09-01', 'full').identity.principalId]"
+                      "value": "[if(parameters('skipVmCreation'), reference(resourceId('Microsoft.Compute/virtualMachines', parameters('vmName')), '2023-09-01', 'full').identity.principalId, reference(resourceId('Microsoft.Compute/virtualMachines', parameters('vmName')), '2023-09-01', 'full').identity.principalId)]"
                     },
                     "nicId": {
                       "type": "string",
                       "metadata": {
                         "description": "Resource ID of the Network Interface"
                       },
-                      "value": "[resourceId('Microsoft.Network/networkInterfaces', variables('nicName'))]"
+                      "value": "[if(parameters('skipVmCreation'), resourceId('Microsoft.Network/networkInterfaces', variables('nicName')), resourceId('Microsoft.Network/networkInterfaces', variables('nicName')))]"
                     },
                     "zone": {
                       "type": "string",
@@ -6074,6 +6910,13 @@
         "description": "Azure Bastion name (for portal access)"
       },
       "value": "[coalesce(tryGet(tryGet(tryGet(if(parameters('deployBastion'), reference(resourceId('Microsoft.Resources/deployments', 'deploy-bastion'), '2025-04-01'), null()), 'outputs'), 'bastionName'), 'value'), '')]"
+    },
+    "natGatewayPublicIp": {
+      "type": "string",
+      "metadata": {
+        "description": "NAT Gateway Public IP (for outbound connectivity)"
+      },
+      "value": "[coalesce(tryGet(tryGet(tryGet(if(parameters('deployNatGateway'), reference(resourceId('Microsoft.Resources/deployments', 'deploy-nat-gateway'), '2025-04-01'), null()), 'outputs'), 'publicIpAddress'), 'value'), '')]"
     }
   }
 }

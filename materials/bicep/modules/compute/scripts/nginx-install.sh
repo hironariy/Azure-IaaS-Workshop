@@ -55,7 +55,7 @@ mkdir -p /var/www/html
 echo 'OK' > /var/www/html/health
 
 # Basic NGINX configuration for reverse proxy
-# Note: Full configuration will be deployed with application
+# Configured to use Internal Load Balancer for high availability
 cat > /etc/nginx/sites-available/default << 'EOF'
 server {
     listen 80 default_server;
@@ -64,31 +64,48 @@ server {
     root /var/www/html;
     index index.html;
 
+    # Security Headers
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    # Gzip compression
+    gzip on;
+    gzip_vary on;
+    gzip_min_length 1024;
+    gzip_types text/plain text/css text/xml text/javascript application/javascript application/json application/xml;
+
     # Health check endpoint for Load Balancer
     location /health {
         access_log off;
-        return 200 'OK';
+        return 200 'healthy\n';
         add_header Content-Type text/plain;
     }
 
-    # Serve static files (React frontend)
+    # Serve static files (React frontend) with SPA routing
     location / {
         try_files $uri $uri/ /index.html;
     }
 
-    # Proxy API requests to App tier
-    # Note: Update APP_TIER_IP after deployment
+    # API proxy to Internal Load Balancer (10.0.2.10)
+    # This provides high availability across both App tier VMs
     location /api/ {
-        # Placeholder - update with actual App tier IP
-        proxy_pass http://10.0.2.4:3000/api/;
+        proxy_pass http://10.0.2.10:3000;
         proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_cache_bypass $http_upgrade;
+        proxy_connect_timeout 30s;
+        proxy_send_timeout 30s;
+        proxy_read_timeout 30s;
+    }
+
+    # Cache static assets
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
     }
 }
 EOF

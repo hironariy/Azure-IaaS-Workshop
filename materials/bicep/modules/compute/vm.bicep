@@ -69,6 +69,12 @@ param dataCollectionRuleId string = ''
 @description('Custom script to run on VM startup (base64 encoded)')
 param customScriptContent string = ''
 
+@description('Force update tag to trigger script re-execution (change value to re-run script)')
+param forceUpdateTag string = ''
+
+@description('Skip VM creation and only update extensions on existing VM')
+param skipVmCreation bool = false
+
 @description('Tags to apply to all resources')
 param tags object = {}
 
@@ -101,7 +107,7 @@ var imageReference = {
 // No public IP assigned (access via Bastion only)
 // =============================================================================
 
-resource nic 'Microsoft.Network/networkInterfaces@2023-11-01' = {
+resource nic 'Microsoft.Network/networkInterfaces@2023-11-01' = if (!skipVmCreation) {
   name: nicName
   location: location
   tags: allTags
@@ -140,7 +146,7 @@ resource nic 'Microsoft.Network/networkInterfaces@2023-11-01' = {
 //   - Managed disks
 // =============================================================================
 
-resource vm 'Microsoft.Compute/virtualMachines@2023-09-01' = {
+resource vm 'Microsoft.Compute/virtualMachines@2023-09-01' = if (!skipVmCreation) {
   name: vmName
   location: location
   tags: allTags
@@ -234,13 +240,28 @@ resource vm 'Microsoft.Compute/virtualMachines@2023-09-01' = {
 }
 
 // =============================================================================
+// Existing VM Reference (when skipVmCreation is true)
+// =============================================================================
+// References an existing VM to allow updating extensions without recreating VM
+// =============================================================================
+
+resource existingVm 'Microsoft.Compute/virtualMachines@2023-09-01' existing = if (skipVmCreation) {
+  name: vmName
+}
+
+resource existingNic 'Microsoft.Network/networkInterfaces@2023-11-01' existing = if (skipVmCreation) {
+  name: nicName
+}
+
+// =============================================================================
 // Azure Monitor Agent Extension
 // =============================================================================
 // Collects logs and metrics, sends to Log Analytics workspace
 // Replaces deprecated OMS/MMA agent
+// Note: Separate resources for new vs existing VMs due to Bicep parent limitations
 // =============================================================================
 
-resource amaExtension 'Microsoft.Compute/virtualMachines/extensions@2023-09-01' = if (enableMonitoring && !empty(logAnalyticsWorkspaceId)) {
+resource amaExtensionNew 'Microsoft.Compute/virtualMachines/extensions@2023-09-01' = if (!skipVmCreation && enableMonitoring && !empty(logAnalyticsWorkspaceId)) {
   parent: vm
   name: 'AzureMonitorLinuxAgent'
   location: location
@@ -252,11 +273,32 @@ resource amaExtension 'Microsoft.Compute/virtualMachines/extensions@2023-09-01' 
     autoUpgradeMinorVersion: true
     enableAutomaticUpgrade: true
     settings: {
-      // Authentication using managed identity
       authentication: {
         managedIdentity: {
           'identifier-name': 'mi_res_id'
           'identifier-value': vm.id
+        }
+      }
+    }
+  }
+}
+
+resource amaExtensionExisting 'Microsoft.Compute/virtualMachines/extensions@2023-09-01' = if (skipVmCreation && enableMonitoring && !empty(logAnalyticsWorkspaceId)) {
+  parent: existingVm
+  name: 'AzureMonitorLinuxAgent'
+  location: location
+  tags: allTags
+  properties: {
+    publisher: 'Microsoft.Azure.Monitor'
+    type: 'AzureMonitorLinuxAgent'
+    typeHandlerVersion: '1.0'
+    autoUpgradeMinorVersion: true
+    enableAutomaticUpgrade: true
+    settings: {
+      authentication: {
+        managedIdentity: {
+          'identifier-name': 'mi_res_id'
+          'identifier-value': existingVm.id
         }
       }
     }
@@ -269,14 +311,25 @@ resource amaExtension 'Microsoft.Compute/virtualMachines/extensions@2023-09-01' 
 // Associates the VM with a Data Collection Rule for log/metric collection
 // =============================================================================
 
-resource dcrAssociation 'Microsoft.Insights/dataCollectionRuleAssociations@2022-06-01' = if (enableMonitoring && !empty(dataCollectionRuleId)) {
+resource dcrAssociationNew 'Microsoft.Insights/dataCollectionRuleAssociations@2022-06-01' = if (!skipVmCreation && enableMonitoring && !empty(dataCollectionRuleId)) {
   name: 'configurationAccessEndpoint'
   scope: vm
   properties: {
     dataCollectionRuleId: dataCollectionRuleId
   }
   dependsOn: [
-    amaExtension
+    amaExtensionNew
+  ]
+}
+
+resource dcrAssociationExisting 'Microsoft.Insights/dataCollectionRuleAssociations@2022-06-01' = if (skipVmCreation && enableMonitoring && !empty(dataCollectionRuleId)) {
+  name: 'configurationAccessEndpoint'
+  scope: existingVm
+  properties: {
+    dataCollectionRuleId: dataCollectionRuleId
+  }
+  dependsOn: [
+    amaExtensionExisting
   ]
 }
 
@@ -286,7 +339,7 @@ resource dcrAssociation 'Microsoft.Insights/dataCollectionRuleAssociations@2022-
 // Runs custom setup script on VM (e.g., install NGINX, Node.js, MongoDB)
 // =============================================================================
 
-resource customScript 'Microsoft.Compute/virtualMachines/extensions@2023-09-01' = if (!empty(customScriptContent)) {
+resource customScriptNew 'Microsoft.Compute/virtualMachines/extensions@2023-09-01' = if (!skipVmCreation && !empty(customScriptContent)) {
   parent: vm
   name: 'CustomScript'
   location: location
@@ -296,13 +349,33 @@ resource customScript 'Microsoft.Compute/virtualMachines/extensions@2023-09-01' 
     type: 'CustomScript'
     typeHandlerVersion: '2.1'
     autoUpgradeMinorVersion: true
+    forceUpdateTag: !empty(forceUpdateTag) ? forceUpdateTag : null
     settings: {
-      // Script is base64 encoded
       script: customScriptContent
     }
   }
   dependsOn: [
-    amaExtension
+    amaExtensionNew
+  ]
+}
+
+resource customScriptExisting 'Microsoft.Compute/virtualMachines/extensions@2023-09-01' = if (skipVmCreation && !empty(customScriptContent)) {
+  parent: existingVm
+  name: 'CustomScript'
+  location: location
+  tags: allTags
+  properties: {
+    publisher: 'Microsoft.Azure.Extensions'
+    type: 'CustomScript'
+    typeHandlerVersion: '2.1'
+    autoUpgradeMinorVersion: true
+    forceUpdateTag: !empty(forceUpdateTag) ? forceUpdateTag : null
+    settings: {
+      script: customScriptContent
+    }
+  }
+  dependsOn: [
+    amaExtensionExisting
   ]
 }
 
@@ -311,19 +384,19 @@ resource customScript 'Microsoft.Compute/virtualMachines/extensions@2023-09-01' 
 // =============================================================================
 
 @description('Resource ID of the Virtual Machine')
-output vmId string = vm.id
+output vmId string = skipVmCreation ? existingVm.id : vm.id
 
 @description('Name of the Virtual Machine')
-output vmName string = vm.name
+output vmName string = skipVmCreation ? existingVm.name : vm.name
 
 @description('Private IP address of the VM')
-output privateIpAddress string = nic.properties.ipConfigurations[0].properties.privateIPAddress
+output privateIpAddress string = skipVmCreation ? existingNic.properties.ipConfigurations[0].properties.privateIPAddress : nic.properties.ipConfigurations[0].properties.privateIPAddress
 
 @description('Principal ID of the VM managed identity (for RBAC assignments)')
-output principalId string = vm.identity.principalId
+output principalId string = skipVmCreation ? existingVm.identity.principalId : vm.identity.principalId
 
 @description('Resource ID of the Network Interface')
-output nicId string = nic.id
+output nicId string = skipVmCreation ? existingNic.id : nic.id
 
 @description('Availability Zone of the VM')
 output zone string = availabilityZone
