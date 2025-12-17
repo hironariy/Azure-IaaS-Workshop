@@ -15,7 +15,7 @@ using 'main.bicep'
 // =============================================================================
 
 // Azure region - use a region with Availability Zone support
-param location = 'eastus'
+param location = 'japanwest'
 
 // Environment
 param environment = 'prod'
@@ -34,6 +34,25 @@ param sshPublicKey = ''  // REQUIRED: Add your SSH public key here
 // Object ID of the admin user for Key Vault access
 // Get with: az ad signed-in-user show --query id -o tsv
 param adminObjectId = ''  // REQUIRED: Add your Azure AD Object ID here
+
+// =============================================================================
+// Microsoft Entra ID - Authentication Configuration
+// =============================================================================
+// These parameters configure authentication for both frontend and backend
+// Reference: /design/AzureArchitectureDesign.md - Bicep Parameter Flow
+// =============================================================================
+
+// Microsoft Entra tenant ID (shared by all apps)
+// Get with: az account show --query tenantId -o tsv
+param entraTenantId = ''  // REQUIRED: Add your Entra tenant ID here
+
+// Microsoft Entra client ID - Backend API (registered app)
+// Get from Azure Portal > App registrations > Backend API > Application (client) ID
+param entraClientId = ''  // REQUIRED: Add your backend API client ID here
+
+// Microsoft Entra client ID - Frontend SPA (registered app)
+// Get from Azure Portal > App registrations > Frontend SPA > Application (client) ID
+param entraFrontendClientId = ''  // REQUIRED: Add your frontend SPA client ID here
 
 // =============================================================================
 // Optional Parameters - Feature Flags

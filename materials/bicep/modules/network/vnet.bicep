@@ -50,6 +50,12 @@ param appNsgId string
 @description('Resource ID of NSG for DB tier subnet')
 param dbNsgId string
 
+@description('Resource ID of NAT Gateway for App tier outbound connectivity (optional)')
+param appNatGatewayId string = ''
+
+@description('Resource ID of NAT Gateway for DB tier outbound connectivity (optional)')
+param dbNatGatewayId string = ''
+
 @description('Tags to apply to all resources')
 param tags object = {}
 
@@ -126,6 +132,11 @@ resource vnet 'Microsoft.Network/virtualNetworks@2023-11-01' = {
           networkSecurityGroup: {
             id: appNsgId
           }
+          // NAT Gateway for outbound internet connectivity
+          // Required for: npm package downloads, Azure Monitor agent
+          natGateway: !empty(appNatGatewayId) ? {
+            id: appNatGatewayId
+          } : null
           serviceEndpoints: [
             {
               service: 'Microsoft.Storage'
@@ -144,6 +155,11 @@ resource vnet 'Microsoft.Network/virtualNetworks@2023-11-01' = {
           networkSecurityGroup: {
             id: dbNsgId
           }
+          // NAT Gateway for outbound internet connectivity
+          // Required for: MongoDB repo access, package updates, Azure Monitor
+          natGateway: !empty(dbNatGatewayId) ? {
+            id: dbNatGatewayId
+          } : null
           serviceEndpoints: [
             {
               service: 'Microsoft.Storage'

@@ -1,1 +1,30 @@
 .ssh/*
+*.key
+*.crt
+*.pem
+AIdocs/agent-instructions/How-to-access-to-Azure-VMs-via-Bastion.md
+
+# =============================================================================
+# Bicep Parameter Files with Personal/Sensitive Values
+# =============================================================================
+# main.bicepparam is the TEMPLATE (committed, empty values)
+# main.local.bicepparam is for YOUR values (gitignored)
+# =============================================================================
+*.local.bicepparam
+materials/bicep/dev.bicepparam
+
+# =============================================================================
+# Environment Files
+# =============================================================================
+.env
+.env.local
+.env.*.local
+
+# =============================================================================
+# Local Scripts with Personal Values
+# =============================================================================
+# Template files (.template.sh, .template.ps1) are committed
+# Local files (.local.sh, .local.ps1) contain your values and are gitignored
+# =============================================================================
+*.local.sh
+*.local.ps1

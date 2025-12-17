@@ -6,10 +6,11 @@
 //
 // Deployment Order (managed by Bicep dependency resolution):
 //   1. Monitoring (Log Analytics, Data Collection Rule)
-//   2. Security (Key Vault)
+//   2. Security (Key Vault - after all VMs)
 //   3. Storage (Storage Account)
-//   4. Network (NSGs → VNet → Bastion, Load Balancer)
+//   4. Network (NSGs → NAT Gateway → VNet → Bastion, Load Balancer)
 //   5. Compute (Web tier → App tier → DB tier)
+//   Note: DB tier explicitly depends on VNet to ensure NAT Gateway is attached
 //
 // Usage:
 //   az deployment group create \
@@ -53,6 +54,9 @@ param adminObjectId string
 @description('Deploy Azure Bastion (set to false to reduce costs during development)')
 param deployBastion bool = true
 
+@description('Deploy NAT Gateway for DB tier outbound connectivity')
+param deployNatGateway bool = true
+
 @description('Deploy Monitoring resources (Log Analytics, DCR)')
 param deployMonitoring bool = true
 
@@ -76,6 +80,24 @@ param dbDataDiskSizeGB int = 128
 
 @description('Tags to apply to all resources')
 param tags object = {}
+
+// =============================================================================
+// Microsoft Entra ID Parameters (Authentication Configuration)
+// =============================================================================
+// These are injected into VMs by CustomScript Extension:
+// - App tier: Environment variables for backend authentication
+// - Web tier: /config.json for frontend runtime configuration
+// Reference: /design/AzureArchitectureDesign.md - Bicep Parameter Flow
+// =============================================================================
+
+@description('Microsoft Entra tenant ID for authentication')
+param entraTenantId string
+
+@description('Microsoft Entra client ID for backend API (registered app)')
+param entraClientId string
+
+@description('Microsoft Entra client ID for frontend SPA (registered app)')
+param entraFrontendClientId string
 
 // =============================================================================
 // Variables
@@ -169,13 +191,37 @@ module nsgDb 'modules/network/nsg-db.bicep' = {
 }
 
 // =============================================================================
+// Module 2b: NAT Gateway (for DB Tier outbound connectivity)
+// =============================================================================
+// NAT Gateway v2 provides zone-redundant outbound internet access
+// Required for: MongoDB installation, package updates, Azure Monitor
+// =============================================================================
+
+module natGateway 'modules/network/nat-gateway.bicep' = if (deployNatGateway) {
+  name: 'deploy-nat-gateway'
+  params: {
+    location: location
+    environment: environment
+    workloadName: workloadName
+    idleTimeoutInMinutes: 10
+    tags: allTags
+  }
+}
+
+// =============================================================================
 // Module 3: Virtual Network
 // =============================================================================
 // VNet with 4 subnets, NSGs attached
+// NAT Gateway attached to DB subnet for outbound connectivity
 // =============================================================================
 
 module vnet 'modules/network/vnet.bicep' = {
   name: 'deploy-vnet'
+  // Explicit dependency: VNet must wait for NAT Gateway to be fully deployed
+  // before creating subnets with NAT Gateway association
+  dependsOn: [
+    natGateway
+  ]
   params: {
     location: location
     environment: environment
@@ -188,6 +234,8 @@ module vnet 'modules/network/vnet.bicep' = {
     webNsgId: nsgWeb.outputs.nsgId
     appNsgId: nsgApp.outputs.nsgId
     dbNsgId: nsgDb.outputs.nsgId
+    appNatGatewayId: natGateway.?outputs.?natGatewayId ?? ''
+    dbNatGatewayId: natGateway.?outputs.?natGatewayId ?? ''
     tags: allTags
   }
 }
@@ -293,6 +341,9 @@ module webTier 'modules/compute/web-tier.bicep' = {
     enableMonitoring: deployMonitoring
     logAnalyticsWorkspaceId: logAnalytics.?outputs.?workspaceId ?? ''  // Safe-dereference for conditional module
     dataCollectionRuleId: dataCollectionRule.?outputs.?dcrId ?? ''      // Safe-dereference for conditional module
+    entraTenantId: entraTenantId
+    entraClientId: entraClientId
+    entraFrontendClientId: entraFrontendClientId
     tags: allTags
   }
 }
@@ -318,6 +369,8 @@ module appTier 'modules/compute/app-tier.bicep' = {
     enableMonitoring: deployMonitoring
     logAnalyticsWorkspaceId: logAnalytics.?outputs.?workspaceId ?? ''  // Safe-dereference for conditional module
     dataCollectionRuleId: dataCollectionRule.?outputs.?dcrId ?? ''      // Safe-dereference for conditional module
+    entraTenantId: entraTenantId
+    entraClientId: entraClientId
     tags: allTags
   }
 }
@@ -330,6 +383,13 @@ module appTier 'modules/compute/app-tier.bicep' = {
 
 module dbTier 'modules/compute/db-tier.bicep' = {
   name: 'deploy-db-tier'
+  // Explicit dependency: DB VMs require internet access during provisioning
+  // to download MongoDB packages. NAT Gateway must be attached to DB subnet first.
+  // The vnet module already depends on natGateway, so this ensures:
+  // NAT Gateway → VNet (with NAT Gateway attached to subnets) → DB VMs
+  dependsOn: [
+    vnet  // Ensures NAT Gateway is attached to DB subnet before VM provisioning
+  ]
   params: {
     location: location
     environment: environment
@@ -412,6 +472,9 @@ output storageBlobEndpoint string = storageAccount.?outputs.?blobEndpoint ?? ''
 
 @description('Azure Bastion name (for portal access)')
 output bastionName string = bastion.?outputs.?bastionName ?? ''
+
+@description('NAT Gateway Public IP (for outbound connectivity)')
+output natGatewayPublicIp string = natGateway.?outputs.?publicIpAddress ?? ''
 
 // =============================================================================
 // Post-Deployment Instructions

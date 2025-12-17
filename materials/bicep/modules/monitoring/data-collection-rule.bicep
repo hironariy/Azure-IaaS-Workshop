@@ -144,7 +144,9 @@ resource dataCollectionRule 'Microsoft.Insights/dataCollectionRules@2023-03-11' 
     }
     
     // Data flows - map sources to destinations
-    // Use 'outputStream' to route to built-in tables (Syslog, Perf)
+    // For built-in streams (Microsoft-Syslog, Microsoft-Perf), the destination
+    // tables are automatically created and managed by Azure Monitor.
+    // Do NOT specify outputStream for built-in streams - they route automatically.
     dataFlows: [
       {
         streams: [
@@ -153,8 +155,8 @@ resource dataCollectionRule 'Microsoft.Insights/dataCollectionRules@2023-03-11' 
         destinations: [
           'logAnalyticsDestination'
         ]
-        transformKql: 'source'  // Pass through without transformation
-        outputStream: 'Microsoft-Syslog'  // Route to built-in Syslog table
+        // Note: No transformKql or outputStream needed for built-in streams
+        // Data automatically routes to the Syslog table
       }
       {
         streams: [
@@ -163,8 +165,8 @@ resource dataCollectionRule 'Microsoft.Insights/dataCollectionRules@2023-03-11' 
         destinations: [
           'logAnalyticsDestination'
         ]
-        transformKql: 'source'  // Pass through without transformation
-        outputStream: 'Microsoft-Perf'  // Route to built-in Perf table
+        // Note: No transformKql or outputStream needed for built-in streams
+        // Data automatically routes to the Perf table
       }
     ]
   }

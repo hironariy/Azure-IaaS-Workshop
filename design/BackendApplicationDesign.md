@@ -1257,40 +1257,126 @@ export const canDeleteComment = async (
 
 ### Environment Variables
 
+#### Environment-Aware Configuration Strategy
+
+The backend application automatically detects and adapts to its runtime environment:
+
+| Environment | Detection | MongoDB Auth | Configuration Source |
+|-------------|-----------|--------------|---------------------|
+| **Development** | `NODE_ENV=development` (from `.env`) | No auth (Docker Compose) | `.env` file |
+| **Production** | `NODE_ENV=production` (from Bicep) | With auth (Azure VMs) | System environment variables |
+
+**How It Works:**
+1. Bicep CustomScript sets `NODE_ENV=production` and `MONGODB_URI` on App VMs
+2. Node.js `dotenv` loads `.env` file, but **system env vars take precedence**
+3. Backend code reads `process.env.MONGODB_URI` - correct value automatically selected
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Backend Application                      │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │  process.env.MONGODB_URI                            │   │
+│  │  (System env overrides .env file)                   │   │
+│  └─────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
+         │                              │
+         ▼                              ▼
+┌─────────────────────┐      ┌─────────────────────────────┐
+│  Local Development  │      │     Azure Production        │
+│  Source: .env file  │      │     Source: Bicep injection │
+│  No auth MongoDB    │      │     Authenticated MongoDB   │
+└─────────────────────┘      └─────────────────────────────┘
+```
+
+#### .env.example (Local Development)
+
 ```bash
-# .env.example
+# =============================================================================
+# Backend Environment Configuration
+# =============================================================================
+# LOCAL DEVELOPMENT: Copy to .env and use as-is (works out of the box)
+# AZURE PRODUCTION: Bicep injects these as system environment variables
+# =============================================================================
 
 # Server Configuration
 NODE_ENV=development
 PORT=3000
-API_BASE_URL=/api
+LOG_LEVEL=debug
 
 # MongoDB Configuration
-MONGODB_URI=mongodb://blogapp_api_user:password@10.0.3.4:27018,10.0.3.5:27018/blogapp?replicaSet=blogapp-rs0&readPreference=primaryPreferred&w=majority
-MONGODB_DATABASE=blogapp
+# Development: Docker Compose replica set (no authentication required)
+MONGODB_URI=mongodb://localhost:27017,localhost:27018/blogapp?replicaSet=blogapp-rs0
+
+# Note: In Azure production, Bicep sets MONGODB_URI with authentication:
+# MONGODB_URI=mongodb://blogapp:<password>@10.0.3.4:27017,10.0.3.5:27017/blogapp?replicaSet=blogapp-rs0&authSource=blogapp
 
 # Microsoft Entra ID Configuration
 ENTRA_TENANT_ID=your-tenant-id-here
 ENTRA_CLIENT_ID=your-api-client-id-here
-# Note: Client secret NOT needed for JWT validation (public key validation only)
 
 # CORS Configuration
-CORS_ORIGIN=http://localhost:5173,http://10.0.1.4,http://10.0.1.5
-# Production: Load balancer public IP
-
-# Logging
-LOG_LEVEL=debug
-LOG_FORMAT=json
+CORS_ORIGINS=http://localhost:5173,http://localhost:3000
+# Production: Bicep sets this to Load Balancer public IP
 
 # Rate Limiting
 RATE_LIMIT_WINDOW_MS=900000
 RATE_LIMIT_MAX_REQUESTS=100
 ```
 
-**Security Note**: 
-- Store secrets in Azure Key Vault or GitHub Secrets
-- Never commit `.env` file to Git
-- Use managed identities where possible (Azure VMs accessing Key Vault)
+#### Azure Production Environment (Bicep Injection)
+
+Bicep CustomScript Extension sets these system environment variables on App VMs:
+
+```bash
+# /etc/environment (set by Bicep CustomScript)
+NODE_ENV=production
+MONGODB_URI=mongodb://blogapp:BlogAppUser2024@10.0.3.4:27017,10.0.3.5:27017/blogapp?replicaSet=blogapp-rs0&authSource=blogapp
+PORT=3000
+LOG_LEVEL=info
+CORS_ORIGINS=http://<load-balancer-ip>
+ENTRA_TENANT_ID=<tenant-id>
+ENTRA_CLIENT_ID=<client-id>
+```
+
+See [AzureArchitectureDesign.md](AzureArchitectureDesign.md#custom-script-extension-environment-configuration) for Bicep implementation details.
+
+#### Workshop Configuration: Parameter File Pattern
+
+**Students configure Entra ID parameters in `main.bicepparam` only** (not in backend `.env` files on VMs):
+
+```bicep
+// main.bicepparam - Student edits this file
+using './main.bicep'
+
+param sshPublicKey = '<student-ssh-public-key>'
+param adminObjectId = '<student-azure-ad-object-id>'
+param entraTenantId = '<student-entra-tenant-id>'    // ← Configure here
+param entraClientId = '<student-entra-client-id>'    // ← Configure here
+```
+
+**Parameter Flow:**
+```
+main.bicepparam → main.bicep → app-tier.bicep → VM /etc/environment → process.env.*
+```
+
+**Workshop Benefits:**
+- Single file to edit (`main.bicepparam`) - easy to verify student configurations
+- Proper separation of infrastructure code vs. configuration values
+- Aligns with Azure/Bicep best practices
+- No need to SSH into VMs to configure environment
+
+See [AzureArchitectureDesign.md](AzureArchitectureDesign.md#bicep-parameter-flow) for complete parameter documentation.
+
+#### MongoDB Credentials Reference
+
+See [DatabaseDesign.md](DatabaseDesign.md#authentication-and-authorization) for credential details:
+
+| User | Username | Database | Role | Environment |
+|------|----------|----------|------|-------------|
+| Admin | `blogadmin` | admin | root | Manual access only |
+| App | `blogapp` | blogapp | readWrite | Production (Bicep injection) |
+
+> ⚠️ **Security Note**: Workshop uses default credentials for educational purposes. Production deployments should use Azure Key Vault.
 
 ---
 

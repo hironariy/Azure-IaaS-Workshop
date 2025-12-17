@@ -103,7 +103,7 @@ rs.initiate({
 
 ```bash
 # Application backend should use this format
-mongodb://blogapp_api_user:<password>@10.0.3.4:27017,10.0.3.5:27017/blogapp?replicaSet=blogapp-rs0&readPreference=primaryPreferred&w=majority
+mongodb://blogapp:<password>@10.0.3.4:27017,10.0.3.5:27017/blogapp?replicaSet=blogapp-rs0&authSource=blogapp&readPreference=primaryPreferred&w=majority
 ```
 
 **Key Components**:
@@ -118,19 +118,19 @@ mongodb://blogapp_api_user:<password>@10.0.3.4:27017,10.0.3.5:27017/blogapp?repl
 **Administrative Access**:
 ```bash
 # For database administration (use admin database)
-mongodb://admin:<admin_password>@10.0.3.4:27017,10.0.3.5:27017/admin?replicaSet=blogapp-rs0
+mongodb://blogadmin:<admin_password>@10.0.3.4:27017,10.0.3.5:27017/admin?replicaSet=blogapp-rs0
 ```
 
 **Direct Connection to Specific Node** (troubleshooting only):
 ```bash
 # Connect to primary directly (bypass replica set)
-mongodb://admin:<admin_password>@10.0.3.4:27017/blogapp
+mongodb://blogadmin:<admin_password>@10.0.3.4:27017/blogapp
 ```
 
 **Environment Variable Pattern**:
 ```bash
 # In backend .env file
-MONGODB_URI=mongodb://blogapp_api_user:${MONGODB_PASSWORD}@10.0.3.4:27017,10.0.3.5:27017/blogapp?replicaSet=blogapp-rs0&readPreference=primaryPreferred&w=majority
+MONGODB_URI=mongodb://blogapp:${MONGODB_PASSWORD}@10.0.3.4:27017,10.0.3.5:27017/blogapp?replicaSet=blogapp-rs0&authSource=blogapp&readPreference=primaryPreferred&w=majority
 MONGODB_DATABASE=blogapp
 ```
 
@@ -1474,13 +1474,21 @@ npm run seed
 **MongoDB Admin User**:
 ```javascript
 // Created during MongoDB installation
+use admin;
 db.createUser({
-  user: "admin",
-  pwd: "<strong_admin_password>",  // From Azure Key Vault
+  user: "blogadmin",
+  pwd: "<strong_admin_password>",  // From Azure Key Vault or workshop default
   roles: [
     { role: "root", db: "admin" }
   ]
 });
+```
+
+**Workshop Default Credentials** (for learning purposes only):
+- Admin User: `blogadmin`
+- Admin Password: `BlogApp2024Secure`
+
+> ⚠️ **Production Warning**: Never use these default credentials in production. Store passwords in Azure Key Vault.
 ```
 
 **Application User** (least privilege):
@@ -1488,12 +1496,19 @@ db.createUser({
 // Created for backend API access
 use blogapp;
 db.createUser({
-  user: "blogapp_api_user",
+  user: "blogapp",
   pwd: "<strong_api_password>",    // From Azure Key Vault or GitHub Secret
   roles: [
     { role: "readWrite", db: "blogapp" }
   ]
 });
+```
+
+**Workshop Default Credentials** (for learning purposes only):
+- App User: `blogapp`
+- App Password: `BlogAppUser2024`
+
+> ⚠️ **Production Warning**: Never use these default credentials in production. Store passwords in Azure Key Vault.
 ```
 
 **Backup User** (read-only + backup):

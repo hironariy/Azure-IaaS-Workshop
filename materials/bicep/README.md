@@ -96,6 +96,9 @@ az deployment group create \
   --parameters \
     sshPublicKey="$(cat ~/.ssh/azure-workshop.pub)" \
     adminObjectId="$ADMIN_OBJECT_ID" \
+    entraTenantId="$(az account show --query tenantId -o tsv)" \
+    entraClientId="<YOUR_BACKEND_API_CLIENT_ID>" \
+    entraFrontendClientId="<YOUR_FRONTEND_SPA_CLIENT_ID>" \
     environment="prod"
 
 # 6. Get deployment outputs
@@ -105,21 +108,34 @@ az deployment group show \
   --query properties.outputs -o json
 ```
 
-### Option 2: Parameter File Deployment
+### Option 2: Parameter File Deployment (Workshop Recommended)
+
+**Important**: The parameter files contain personal Azure identifiers. Use the following pattern:
+
+| File | Purpose | Git Status |
+|------|---------|------------|
+| `main.bicepparam` | **Template** - Empty values, shows required params | ✅ Committed |
+| `main.local.bicepparam` | **Your values** - Personal development | ❌ Gitignored |
 
 ```bash
-# Using the production parameter file
+# Step 1: Create your local parameter file (first time only)
+cp main.bicepparam main.local.bicepparam
+
+# Step 2: Edit main.local.bicepparam with your values
+# - sshPublicKey          (SSH public key for VM access)
+# - adminObjectId         (Your Azure AD Object ID)
+# - entraTenantId         (Microsoft Entra tenant ID)
+# - entraClientId         (Backend API app registration)
+# - entraFrontendClientId (Frontend SPA app registration)
+
+# Step 3: Deploy using YOUR local parameters
 az deployment group create \
   --resource-group rg-blogapp-prod \
   --template-file main.bicep \
-  --parameters main.bicepparam
-
-# Using the development parameter file (lower cost)
-az deployment group create \
-  --resource-group rg-blogapp-dev \
-  --template-file main.bicep \
-  --parameters dev.bicepparam
+  --parameters main.local.bicepparam
 ```
+
+> **Security Note**: `*.local.bicepparam` files are gitignored to prevent accidentally committing your personal Azure identifiers to a public repository.
 
 ### Option 3: Azure Portal
 
@@ -162,10 +178,13 @@ materials/bicep/
 
 ### Required Parameters
 
-| Parameter | Description | Example |
-|-----------|-------------|---------|
-| `sshPublicKey` | SSH public key for VM authentication | Contents of `~/.ssh/id_rsa.pub` |
-| `adminObjectId` | Azure AD Object ID for Key Vault access | Use `az ad signed-in-user show --query id -o tsv` |
+| Parameter | Description | How to Get |
+|-----------|-------------|------------|
+| `sshPublicKey` | SSH public key for VM authentication | `cat ~/.ssh/id_rsa.pub` |
+| `adminObjectId` | Azure AD Object ID for Key Vault access | `az ad signed-in-user show --query id -o tsv` |
+| `entraTenantId` | Microsoft Entra tenant ID | `az account show --query tenantId -o tsv` |
+| `entraClientId` | Backend API app registration client ID | Azure Portal → App registrations → Backend API |
+| `entraFrontendClientId` | Frontend SPA app registration client ID | Azure Portal → App registrations → Frontend SPA |
 
 ### Optional Parameters
 

@@ -479,23 +479,150 @@ interface ApiError {
 
 ### 7. Build and Deployment
 
-#### Environment Variables
+#### Workshop Configuration: Runtime Config Pattern
 
-Required environment variables:
+**Design Goal**: Students should only edit `main.bicepparam` for all configuration. No `.env` file editing required for Azure deployment.
+
+**Challenge**: React/Vite apps use `import.meta.env.VITE_*` which are replaced with literal strings at **build time**, not runtime. This would require students to rebuild the app with their Entra IDs.
+
+**Solution**: Runtime configuration via `/config.json` served by NGINX. The frontend fetches this file at startup.
+
+##### Configuration Flow
+
+```
+┌─────────────────────────┐
+│  main.bicepparam        │  ← Students edit HERE ONLY
+│  ├─ entraTenantId       │
+│  ├─ entraClientId       │    (Backend API)
+│  └─ entraFrontendClientId│   (Frontend SPA)
+└───────────┬─────────────┘
+            │
+    ┌───────┴───────┐
+    │   main.bicep  │
+    └───────┬───────┘
+            │
+    ┌───────┴───────────────────────┐
+    │                               │
+    ▼                               ▼
+┌─────────────┐             ┌─────────────┐
+│ app-tier    │             │ web-tier    │
+│ .bicep      │             │ .bicep      │
+└──────┬──────┘             └──────┬──────┘
+       │                           │
+       ▼                           ▼
+┌─────────────────┐     ┌─────────────────────────┐
+│ /etc/environment│     │ /var/www/html/config.json│
+│ (Backend env)   │     │ (Frontend config)       │
+└─────────────────┘     └─────────────────────────┘
+       │                           │
+       ▼                           ▼
+  Backend reads            Frontend fetches
+  process.env.*            at runtime
+```
+
+##### Runtime Config File (`/config.json`)
+
+Bicep CustomScript creates this file on Web tier VMs:
+
+```json
+{
+  "ENTRA_TENANT_ID": "b3bbbafb-e820-42af-a675-c6d8fece5011",
+  "ENTRA_FRONTEND_CLIENT_ID": "cc795eea-9e46-429b-990d-6c75d942ef91",
+  "ENTRA_BACKEND_CLIENT_ID": "77a3d3ab-d67f-46f8-8e29-8300cfc67f76",
+  "API_BASE_URL": "/api"
+}
+```
+
+##### Frontend Config Loading
+
+The frontend loads configuration differently based on environment:
+
+```typescript
+// src/config/appConfig.ts
+
+interface AppConfig {
+  entraTenantId: string;
+  entraFrontendClientId: string;
+  entraBackendClientId: string;
+  apiBaseUrl: string;
+}
+
+let cachedConfig: AppConfig | null = null;
+
+export async function loadConfig(): Promise<AppConfig> {
+  if (cachedConfig) return cachedConfig;
+  
+  // Development: use Vite environment variables
+  if (import.meta.env.DEV) {
+    cachedConfig = {
+      entraTenantId: import.meta.env.VITE_ENTRA_TENANT_ID,
+      entraFrontendClientId: import.meta.env.VITE_ENTRA_CLIENT_ID,
+      entraBackendClientId: import.meta.env.VITE_API_CLIENT_ID,
+      apiBaseUrl: import.meta.env.VITE_API_BASE_URL || '/api',
+    };
+    return cachedConfig;
+  }
+  
+  // Production: fetch /config.json (created by Bicep)
+  const response = await fetch('/config.json');
+  if (!response.ok) {
+    throw new Error('Failed to load config.json');
+  }
+  const json = await response.json();
+  
+  cachedConfig = {
+    entraTenantId: json.ENTRA_TENANT_ID,
+    entraFrontendClientId: json.ENTRA_FRONTEND_CLIENT_ID,
+    entraBackendClientId: json.ENTRA_BACKEND_CLIENT_ID,
+    apiBaseUrl: json.API_BASE_URL || '/api',
+  };
+  return cachedConfig;
+}
+
+export function getConfig(): AppConfig {
+  if (!cachedConfig) {
+    throw new Error('Config not loaded. Call loadConfig() first.');
+  }
+  return cachedConfig;
+}
+```
+
+##### Environment Comparison
+
+| Aspect | Local Development | Azure Production |
+|--------|------------------|------------------|
+| **Config Source** | `.env` file (Vite) | `/config.json` (Bicep) |
+| **When Read** | Build time | Runtime |
+| **Student Edits** | `.env.local` (gitignored) | `main.bicepparam` only |
+| **How Config Applied** | `import.meta.env.VITE_*` | `fetch('/config.json')` |
+
+##### AWS Comparison
+
+| Azure Pattern | AWS Equivalent |
+|---------------|----------------|
+| `/config.json` on VM | S3 static hosting with `config.js` |
+| Bicep CustomScript | CloudFormation cfn-init or User Data |
+| Runtime fetch | Same pattern (fetch config at runtime) |
+
+#### Local Development Environment Variables
+
+For local development with `npm run dev`, use `.env.local` (gitignored):
+
 ```bash
-# Microsoft Entra ID Configuration
-REACT_APP_CLIENT_ID=              # Entra ID application (client) ID
-REACT_APP_TENANT_ID=              # Entra ID tenant ID
-REACT_APP_AUTHORITY=              # https://login.microsoftonline.com/{tenantId}
-REACT_APP_REDIRECT_URI=           # https://your-app.com or http://localhost:3000
-REACT_APP_POST_LOGOUT_REDIRECT_URI=  # Where to redirect after logout
+# .env.local (LOCAL DEVELOPMENT ONLY - gitignored)
+# This file is for local development with `npm run dev`
+# Production uses /config.json created by Bicep
 
-# API Configuration
-REACT_APP_API_BASE_URL=           # Backend API URL (http://loadbalancer-ip/api)
+# Microsoft Entra ID Configuration (Frontend SPA)
+VITE_ENTRA_CLIENT_ID=cc795eea-9e46-429b-990d-6c75d942ef91
+VITE_ENTRA_TENANT_ID=b3bbbafb-e820-42af-a675-c6d8fece5011
+VITE_ENTRA_REDIRECT_URI=http://localhost:5173
 
-# Optional
-REACT_APP_BLOB_STORAGE_URL=       # Azure Blob Storage for media
-REACT_APP_ENVIRONMENT=            # development | staging | production
+# Backend API App Registration (for token audience)
+VITE_API_CLIENT_ID=77a3d3ab-d67f-46f8-8e29-8300cfc67f76
+
+# API Configuration (Vite proxy handles routing in dev)
+# VITE_API_BASE_URL=http://localhost:3000
 ```
 
 #### Build Process

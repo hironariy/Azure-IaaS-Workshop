@@ -257,9 +257,19 @@ else
   # Create mount point
   mkdir -p "$MOUNT_POINT"
 
-  # Add to fstab for persistent mount (but don't trigger systemd mount yet)
-  if ! grep -q "$DATA_DISK" /etc/fstab; then
-    echo "$DATA_DISK $MOUNT_POINT ext4 defaults,nofail 0 2" >> /etc/fstab
+  # Get UUID for persistent mount (device names like /dev/sdc are NOT stable across reboots in Azure)
+  # Azure may reassign device letters after reboot, causing mount failures
+  DISK_UUID=$(blkid -s UUID -o value "$DATA_DISK")
+  if [ -z "$DISK_UUID" ]; then
+    echo "ERROR: Could not get UUID for $DATA_DISK"
+    exit 1
+  fi
+  echo "Disk UUID: $DISK_UUID"
+
+  # Add to fstab using UUID for persistent mount (but don't trigger systemd mount yet)
+  # CRITICAL: Use UUID instead of device name to survive reboots
+  if ! grep -q "$DISK_UUID" /etc/fstab; then
+    echo "UUID=$DISK_UUID $MOUNT_POINT ext4 defaults,nofail 0 2" >> /etc/fstab
     # Reload systemd to recognize new fstab entry
     systemctl daemon-reload
   fi
@@ -281,22 +291,22 @@ else
         return 0
       fi
       
-      # Check if the disk is already mounted somewhere
-      if mount | grep -q "^$DATA_DISK "; then
-        CURRENT_MOUNT=$(mount | grep "^$DATA_DISK " | awk '{print $3}')
-        echo "$DATA_DISK is already mounted at $CURRENT_MOUNT"
-        if [ "$CURRENT_MOUNT" = "$MOUNT_POINT" ]; then
+      # Check if the disk is already mounted somewhere (by UUID)
+      MOUNTED_AT=$(findmnt -n -o TARGET --source "UUID=$DISK_UUID" 2>/dev/null || true)
+      if [ -n "$MOUNTED_AT" ]; then
+        echo "Disk (UUID=$DISK_UUID) is already mounted at $MOUNTED_AT"
+        if [ "$MOUNTED_AT" = "$MOUNT_POINT" ]; then
           return 0
         else
           echo "WARNING: Disk mounted at unexpected location, unmounting..."
-          umount "$DATA_DISK" 2>/dev/null || true
+          umount "UUID=$DISK_UUID" 2>/dev/null || true
           sleep 2
         fi
       fi
       
-      # Try to mount
-      echo "Attempting to mount $DATA_DISK to $MOUNT_POINT"
-      if mount "$DATA_DISK" "$MOUNT_POINT" 2>/dev/null; then
+      # Try to mount using UUID
+      echo "Attempting to mount UUID=$DISK_UUID to $MOUNT_POINT"
+      if mount "UUID=$DISK_UUID" "$MOUNT_POINT" 2>/dev/null; then
         echo "Mount successful"
         return 0
       fi
@@ -319,11 +329,11 @@ else
 # Execute mount with retry logic
 if ! mount_with_retry; then
   echo "=== Debug: Current mounts ==="
-  mount | grep -E "(sdc|mongodb)" || echo "No relevant mounts found"
+  mount | grep -E "(mongodb|$DISK_UUID)" || echo "No relevant mounts found"
   echo "=== Debug: fstab content ==="
-  grep -E "(sdc|mongodb)" /etc/fstab || echo "No relevant fstab entries"
+  grep -E "(mongodb|$DISK_UUID)" /etc/fstab || echo "No relevant fstab entries"
   echo "=== Debug: Block devices ==="
-  lsblk
+  lsblk -f
   exit 1
 fi
 

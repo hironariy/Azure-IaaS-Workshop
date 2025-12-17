@@ -69,8 +69,13 @@ This document defines the technical architecture requirements for the Azure IaaS
 - OS: Ubuntu 24.04 LTS
 - Availability: Spread across AZ 1 and AZ 2
 - Managed Disk: Standard SSD (OS: 30 GB)
-- Software: Node.js, Express (TypeScript)
+- Software: Node.js 20 LTS, Express (TypeScript), PM2 (process manager)
 - **Rationale**: B-series cost-effective for Node.js apps with low concurrent users (10-20 during workshop)
+- **Environment Configuration**: Bicep CustomScript injects production environment variables
+  - `NODE_ENV=production`
+  - `MONGODB_URI=mongodb://blogapp:<password>@10.0.3.4:27017,10.0.3.5:27017/blogapp?replicaSet=blogapp-rs0&authSource=blogapp`
+  - `PORT=3000`
+  - See [BackendApplicationDesign.md](BackendApplicationDesign.md#environment-aware-configuration) for details
 
 **DB Tier VMs (2 instances):**
 - VM SKU: Standard_B4ms (4 vCPU, 16 GB RAM)
@@ -85,6 +90,95 @@ This document defines the technical architecture requirements for the Azure IaaS
 #### VM Extensions Required
 - Azure Monitor Agent (for all VMs)
 - Custom Script Extension (for initial configuration)
+
+#### Custom Script Extension: Environment Configuration
+
+Bicep uses Custom Script Extension to configure production environment on each VM tier:
+
+**App Tier Environment Injection:**
+```bash
+# Set system-wide environment variables for Node.js application
+cat <<EOF >> /etc/environment
+NODE_ENV=production
+MONGODB_URI=mongodb://blogapp:<password>@10.0.3.4:27017,10.0.3.5:27017/blogapp?replicaSet=blogapp-rs0&authSource=blogapp
+PORT=3000
+LOG_LEVEL=info
+ENTRA_TENANT_ID=<tenant-id>
+ENTRA_CLIENT_ID=<client-id>
+CORS_ORIGINS=http://<load-balancer-ip>
+EOF
+```
+
+**Why Bicep Injection (vs. manual .env editing)?**
+- **Zero manual configuration**: VMs are production-ready after deployment
+- **12-factor compliance**: Environment determines behavior, not config files
+- **Workshop efficiency**: Students don't edit files on VMs
+- **Security**: Credentials injected at deploy time, not stored in Git
+
+#### Bicep Parameter Flow
+
+Student-specific configuration flows from parameter file to VM configuration:
+
+```
+main.bicepparam (Student edits)    
+        │                          
+        │  param entraTenantId          (Entra tenant)
+        │  param entraClientId          (Backend API app)
+        │  param entraFrontendClientId  (Frontend SPA app)
+        │  param sshPublicKey      
+        ▼                          
+    main.bicep                     
+        │                          
+        │  passes to modules       
+        ├──────────────────────────────────┐
+        ▼                                  ▼
+  app-tier.bicep                     web-tier.bicep
+        │                                  │
+        │  CustomScript Extension          │  CustomScript Extension
+        ▼                                  ▼
+  /etc/environment (on VM)         /var/www/html/config.json
+        │                                  │
+        │  NODE_ENV=production             │  {
+        │  ENTRA_TENANT_ID=xxx             │    "ENTRA_TENANT_ID": "xxx",
+        │  ENTRA_CLIENT_ID=yyy             │    "ENTRA_FRONTEND_CLIENT_ID": "zzz",
+        ▼                                  │    "ENTRA_BACKEND_CLIENT_ID": "yyy"
+  Backend Application                      │  }
+  (reads process.env.*)                    ▼
+                                    Frontend Application
+                                    (fetches /config.json at runtime)
+```
+
+**Workshop Instruction Pattern:**
+1. Students edit **only `main.bicepparam`** - single location for all customization
+2. No editing of `.bicep` module files (infrastructure code)
+3. No editing of `.env` files on deployed VMs
+4. No rebuilding frontend app with different Entra IDs
+
+**Parameters Students Must Configure** (in `main.bicepparam`):
+
+| Parameter | Description | How to Get |
+|-----------|-------------|------------|
+| `sshPublicKey` | SSH public key for VM access | `cat ~/.ssh/id_rsa.pub` |
+| `adminObjectId` | User's Azure AD Object ID | `az ad signed-in-user show --query id -o tsv` |
+| `entraTenantId` | Microsoft Entra tenant ID | `az account show --query tenantId -o tsv` |
+| `entraClientId` | Backend API app registration ID | Azure Portal → App Registrations → Backend API |
+| `entraFrontendClientId` | Frontend SPA app registration ID | Azure Portal → App Registrations → Frontend SPA |
+
+**Config Injection by Tier:**
+
+| Tier | Injection Method | Target File | Used By |
+|------|-----------------|-------------|---------|
+| **App (Backend)** | `/etc/environment` + `/opt/blogapp/.env` | Environment variables | Node.js `process.env.*` |
+| **Web (Frontend)** | `/var/www/html/config.json` | JSON config file | Frontend `fetch('/config.json')` |
+
+**Why Different Methods:**
+- **Backend**: Node.js reads environment variables at runtime via `process.env`
+- **Frontend**: React apps bake `import.meta.env.*` at build time, so we use runtime fetch instead
+
+**AWS Comparison:**
+- AWS uses EC2 User Data or SSM Parameter Store for similar pattern
+- Azure Custom Script Extension is equivalent to EC2 User Data
+- Both allow environment-specific configuration at provisioning time
 
 #### Design Decisions
 - **Proximity Placement Groups**: NOT used (explain: AZ distribution takes priority)
