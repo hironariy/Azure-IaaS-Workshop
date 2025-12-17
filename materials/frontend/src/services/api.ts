@@ -7,7 +7,7 @@
 
 import axios, { AxiosInstance, InternalAxiosRequestConfig } from 'axios';
 import { msalInstance, msalInitPromise } from '../config/msalInstance';
-import { apiRequest } from '../config/authConfig';
+import { createApiRequest } from '../config/authConfig';
 
 /**
  * Authentication mode for API requests
@@ -104,7 +104,7 @@ async function getAccessToken(mode: AuthMode = 'optional'): Promise<string | nul
 
     try {
       const response = await msalInstance.acquireTokenSilent({
-        ...apiRequest,
+        ...createApiRequest(),
         account: activeAccount,
       });
       return response.accessToken;
@@ -118,7 +118,7 @@ async function getAccessToken(mode: AuthMode = 'optional'): Promise<string | nul
       ) {
         // Trigger interactive popup for consent
         const response = await msalInstance.acquireTokenPopup({
-          ...apiRequest,
+          ...createApiRequest(),
           account: activeAccount,
         });
         return response.accessToken;

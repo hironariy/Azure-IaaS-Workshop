@@ -133,6 +133,90 @@ az ad signed-in-user show --query id -o tsv
 az ad app list --display-name "blogapp" --query "[].{name:displayName, appId:appId}"
 ```
 
+### Configure Redirect URIs in Entra ID (SPA Platform)
+
+After deploying infrastructure, you must configure the **redirect URIs** for the frontend app registration. The redirect URI must match the public IP address of your External Load Balancer.
+
+> ⚠️ **CRITICAL**: The frontend app registration MUST use **Single-page application (SPA)** platform type - NOT "Web". MSAL.js uses the PKCE (Proof Key for Code Exchange) flow which only works with SPA platform type. Using "Web" platform will cause error: `AADSTS9002326: Cross-origin token redemption is permitted only for the 'Single-Page Application' client-type.`
+
+> **Important:** This step must be done **after** Bicep deployment because you need the public IP address assigned to the External Load Balancer.
+
+**Get your External Load Balancer Public IP:**
+```bash
+# Get the public IP address
+az network public-ip show \
+  --resource-group <YOUR_RESOURCE_GROUP> \
+  --name pip-lb-external-prod \
+  --query ipAddress -o tsv
+```
+
+**Update the frontend app registration with SPA redirect URIs:**
+
+> **Note:** The `az ad app update` command does not support `--spa-redirect-uris`. You must use the Microsoft Graph API directly.
+
+```bash
+# Replace <YOUR_FRONTEND_CLIENT_ID> with your frontend app's Client ID
+# Replace <YOUR_PUBLIC_IP> with the IP address from the command above
+az rest --method PATCH \
+  --uri "https://graph.microsoft.com/v1.0/applications(appId='<YOUR_FRONTEND_CLIENT_ID>')" \
+  --headers "Content-Type=application/json" \
+  --body '{
+    "spa": {
+      "redirectUris": [
+        "https://<YOUR_PUBLIC_IP>",
+        "https://<YOUR_PUBLIC_IP>/",
+        "http://localhost:5173",
+        "http://localhost:5173/"
+      ]
+    },
+    "web": {
+      "redirectUris": []
+    }
+  }'
+```
+
+**Example with actual values:**
+```bash
+az rest --method PATCH \
+  --uri "https://graph.microsoft.com/v1.0/applications(appId='cc795eea-9e46-429b-990d-6c75d942ef91')" \
+  --headers "Content-Type=application/json" \
+  --body '{
+    "spa": {
+      "redirectUris": [
+        "https://20.63.224.11",
+        "https://20.63.224.11/",
+        "http://localhost:5173",
+        "http://localhost:5173/"
+      ]
+    },
+    "web": {
+      "redirectUris": []
+    }
+  }'
+```
+
+**Verify the SPA redirect URIs:**
+```bash
+az ad app show --id <YOUR_FRONTEND_CLIENT_ID> --query "spa.redirectUris"
+```
+
+| Redirect URI | Purpose |
+|--------------|---------|
+| `https://<YOUR_PUBLIC_IP>` | Production - after MSAL login redirect |
+| `https://<YOUR_PUBLIC_IP>/` | Production - with trailing slash (some browsers add this) |
+| `http://localhost:5173` | Local development with Vite |
+| `http://localhost:5173/` | Local development - with trailing slash |
+
+> **Note:** HTTPS is required for production because MSAL uses the Web Crypto API which is only available in secure contexts.
+
+**Alternative: Azure Portal Method:**
+1. Go to Azure Portal → Microsoft Entra ID → App registrations → Your Frontend App
+2. Click **Authentication** in the left menu
+3. Under "Platform configurations", verify you have **Single-page application** (NOT Web)
+4. If you see "Web" platform with your URIs, delete it and add "Single-page application" instead
+5. Add your redirect URIs under the SPA section
+6. Click **Save**
+
 ---
 
 ## Phase 0: Deploy Infrastructure and Run Post-Deployment Script
@@ -750,6 +834,7 @@ curl http://<public-ip>/api/posts
 ### Infrastructure Deployment (Phase 0)
 - [ ] Resource group created
 - [ ] Bicep deployment completed
+- [ ] **Redirect URIs configured in Entra ID** (requires public IP from deployment)
 - [ ] Post-deployment script template copied to `.local` version
 - [ ] Post-deployment script configured with your values
 - [ ] Post-deployment script executed successfully

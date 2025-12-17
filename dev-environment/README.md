@@ -36,9 +36,44 @@ You need **two app registrations** in Azure Portal:
 2. Configure:
    - **Name**: \`BlogApp Frontend (Dev)\`
    - **Supported account types**: Accounts in this organizational directory only
-   - **Redirect URI**: \`Single-page application (SPA)\` → \`http://localhost:5173\`
+   - **Redirect URI**: Select **Single-page application (SPA)** from dropdown → Enter \`http://localhost:5173\`
+   
+   > ⚠️ **CRITICAL**: You MUST select "Single-page application (SPA)" - NOT "Web". MSAL.js uses PKCE flow which only works with SPA platform type. If you select "Web", you will get error: `AADSTS9002326: Cross-origin token redemption is permitted only for the 'Single-Page Application' client-type.`
+
 3. After creation, note the **Application (client) ID** → This is \`VITE_ENTRA_CLIENT_ID\`
 4. Note the **Directory (tenant) ID** → This is \`VITE_ENTRA_TENANT_ID\`
+
+### 1.1.1 Add Production Redirect URI (After Azure Deployment)
+
+After deploying to Azure, add the production redirect URI:
+
+1. Go to Frontend App → **Authentication**
+2. Under "Single-page application" section, click **Add URI**
+3. Add your production URLs:
+   - \`https://<YOUR_PUBLIC_IP>\`
+   - \`https://<YOUR_PUBLIC_IP>/\`
+4. Click **Save**
+
+**Or use Azure CLI with Graph API:**
+```bash
+# Get your public IP first
+PUBLIC_IP=$(az network public-ip show -g <RESOURCE_GROUP> -n pip-lb-external-prod --query ipAddress -o tsv)
+
+# Update SPA redirect URIs (requires Graph API - az ad app update doesn't support SPA)
+az rest --method PATCH \
+  --uri "https://graph.microsoft.com/v1.0/applications(appId='<YOUR_FRONTEND_CLIENT_ID>')" \
+  --headers "Content-Type=application/json" \
+  --body "{
+    \"spa\": {
+      \"redirectUris\": [
+        \"https://${PUBLIC_IP}\",
+        \"https://${PUBLIC_IP}/\",
+        \"http://localhost:5173\",
+        \"http://localhost:5173/\"
+      ]
+    }
+  }"
+```
 
 ### 1.2 Create Backend API App Registration
 
