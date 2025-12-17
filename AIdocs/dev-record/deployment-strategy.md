@@ -369,7 +369,7 @@ pm2 delete blogapp-health
 
 ### 2.3 Deploy Application Code
 
-**Option A: Clone from Git (if repo is accessible):**
+**Option A: Clone from Git (Easy method, if repo is accessible):**
 
 ```bash
 cd /opt/blogapp
@@ -378,7 +378,7 @@ cp -r temp/materials/backend/* ./
 rm -rf temp
 ```
 
-**Option B: Upload via Bastion tunnel (preferred for workshop):**
+**Option B: Upload via Bastion tunnel:**
 
 ```bash
 # On local machine - create tunnel
@@ -400,35 +400,42 @@ scp -P 2222 -r ./materials/backend/* azureuser@127.0.0.1:/opt/blogapp/
 ```bash
 cd /opt/blogapp
 
-# Install all dependencies (including devDependencies for TypeScript compiler)
-npm ci
+# Install all dependencies including devDependencies (TypeScript compiler)
+# Note: --include=dev is required because NODE_ENV=production is set in /etc/environment,
+# which causes npm to skip devDependencies by default
+npm ci --include=dev
 
 # Build TypeScript
 npm run build
 ```
 
-### 2.5 Add MongoDB Connection String to Environment
+> **Why `--include=dev`?** The Bicep CustomScript sets `NODE_ENV=production` in `/etc/environment`. When `NODE_ENV=production`, npm automatically skips `devDependencies` during install. Since TypeScript is a devDependency needed for compilation, we must explicitly include it.
 
-> **Note:** Entra ID parameters are already configured by Bicep. You only need to add the MongoDB connection string.
+### 2.5 Verify MongoDB Connection String
 
-**Append to `/opt/blogapp/.env`:**
+> **Note:** The MongoDB connection string is now automatically injected by Bicep. This step is for verification only.
+
+**Verify `/opt/blogapp/.env` contains MONGODB_URI:**
 
 ```bash
-# Add MongoDB connection string (passwords set by post-deployment-setup.sh)
-echo 'MONGODB_URI=mongodb://blogapp:BlogApp2024Workshop!@10.0.3.4:27017,10.0.3.5:27017/blogapp?replicaSet=blogapp-rs0&authSource=admin' | sudo tee -a /opt/blogapp/.env
-
 # Verify complete .env file
 cat /opt/blogapp/.env
 ```
 
-Expected final `.env`:
+Expected `.env` (all values injected by Bicep):
 ```env
 NODE_ENV=production
 PORT=3000
-AZURE_TENANT_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-AZURE_CLIENT_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+LOG_LEVEL=info
 MONGODB_URI=mongodb://blogapp:BlogApp2024Workshop!@10.0.3.4:27017,10.0.3.5:27017/blogapp?replicaSet=blogapp-rs0&authSource=admin
+ENTRA_TENANT_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+ENTRA_CLIENT_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 ```
+
+> **If MONGODB_URI is missing or incorrect:** Check that `mongoDbUri` parameter is set in your `main.local.bicepparam` file and redeploy, or manually append:
+> ```bash
+> echo 'MONGODB_URI=mongodb://blogapp:BlogApp2024Workshop@10.0.3.4:27017,10.0.3.5:27017/blogapp?replicaSet=blogapp-rs0&authSource=admin' | sudo tee -a /opt/blogapp/.env
+> ```
 
 ### 2.6 Start Application with PM2
 
@@ -436,7 +443,8 @@ MONGODB_URI=mongodb://blogapp:BlogApp2024Workshop!@10.0.3.4:27017,10.0.3.5:27017
 cd /opt/blogapp
 
 # Start application
-pm2 start dist/app.js --name blogapp-api
+# Note: Output is in dist/src/ because tsconfig.json has rootDir="." and includes both src/ and scripts/
+pm2 start dist/src/app.js --name blogapp-api
 
 # Save PM2 process list
 pm2 save
@@ -499,7 +507,36 @@ ls -la dist/
 
 ### 3.3 Deploy Static Files
 
-**Upload via Bastion tunnel to both Web VMs:**
+**Option A: Clone from Git and build on VM (recommended - uses NAT Gateway for outbound):**
+
+```bash
+cd /tmp
+
+# Clone repository (NAT Gateway provides outbound internet access)
+git clone https://github.com/<repo>/AzureIaaSWorkshop.git temp
+
+# Install Node.js for build (if not already installed on Web tier)
+# Note: Web tier VMs have NGINX but not Node.js by default
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt-get install -y nodejs
+
+# Build frontend
+cd temp/materials/frontend
+npm ci
+npm run build
+
+# Deploy to web root (preserve existing config.json!)
+sudo cp /var/www/html/config.json /tmp/config.json.bak
+sudo rm -rf /var/www/html/*
+sudo cp -r dist/* /var/www/html/
+sudo cp /tmp/config.json.bak /var/www/html/config.json
+sudo chown -R www-data:www-data /var/www/html/
+
+# Cleanup
+cd /tmp && rm -rf temp
+```
+
+**Option B: Upload pre-built files via Bastion tunnel:**
 
 ```bash
 # Create tunnel to vm-web-az1-prod
