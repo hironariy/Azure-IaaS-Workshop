@@ -6,7 +6,7 @@
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useMsal, useIsAuthenticated } from '@azure/msal-react';
 import { useEffect } from 'react';
-import { loginRequest } from '../config/authConfig';
+import { createLoginRequest } from '../config/authConfig';
 
 /**
  * Location state interface for redirect-back functionality
@@ -36,7 +36,7 @@ function LoginPage() {
   }, [isAuthenticated, navigate, from]);
 
   const handleLogin = () => {
-    instance.loginRedirect(loginRequest);
+    instance.loginRedirect(createLoginRequest());
   };
 
   return (

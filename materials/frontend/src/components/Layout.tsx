@@ -7,7 +7,7 @@
 import { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { useIsAuthenticated, useMsal } from '@azure/msal-react';
-import { loginRequest } from '../config/authConfig';
+import { createLoginRequest } from '../config/authConfig';
 
 interface LayoutProps {
   children: ReactNode;
@@ -22,7 +22,7 @@ function Layout({ children }: LayoutProps) {
   const { instance, accounts } = useMsal();
 
   const handleLogin = () => {
-    instance.loginRedirect(loginRequest);
+    instance.loginRedirect(createLoginRequest());
   };
 
   const handleLogout = () => {
