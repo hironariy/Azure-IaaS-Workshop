@@ -2,8 +2,8 @@
 
 **Date:** December 16, 2025  
 **Author:** AI Deployment Agent  
-**Status:** Verified and Deployed  
-**Last Updated:** December 17, 2025 - Infrastructure deployed to rg-workshop-3, config injection verified; Updated for Application Gateway with SSL/TLS termination
+**Status:** Template Ready  
+**Last Updated:** January 2026 - Updated for Application Gateway with SSL/TLS termination
 
 ---
 
@@ -14,11 +14,11 @@ This document outlines the deployment strategy for the multi-tier blog applicati
 2. **Inject environment variables** to App tier VMs from Bicep parameters
 3. **Create `/config.json`** on Web tier VMs for frontend runtime configuration
 
-### ✅ Deployment Status (December 17, 2025)
+### Deployment Status
 
 | Component | Status | Resource Group |
 |-----------|--------|----------------|
-| Infrastructure | ✅ Deployed | `rg-workshop-3` |
+| Infrastructure | ⏳ Pending | `<YOUR_RESOURCE_GROUP>` |
 | Config Injection (App tier) | ✅ Verified on all VMs | `/etc/environment`, `/opt/blogapp/.env` |
 | Config Injection (Web tier) | ✅ Verified on all VMs | `/var/www/html/config.json` |
 | MongoDB Replica Set | ⏳ Pending | Run `post-deployment-setup.local.sh` |
@@ -365,12 +365,12 @@ az ad app show --id <YOUR_FRONTEND_CLIENT_ID> --query "spa.redirectUris"
 ### 0.1 Deploy Bicep Template
 
 ```bash
-# Create resource group
-az group create --name rg-workshop-3 --location japaneast
+# Create resource group (choose your own name and region)
+az group create --name <YOUR_RESOURCE_GROUP> --location <YOUR_REGION>
 
 # Deploy infrastructure (initial deployment)
 az deployment group create \
-  --resource-group rg-workshop-3 \
+  --resource-group <YOUR_RESOURCE_GROUP> \
   --template-file materials/bicep/main.bicep \
   --parameters materials/bicep/main.local.bicepparam
 
@@ -385,7 +385,7 @@ If you need to re-run CustomScript extensions on specific tiers (e.g., update NG
 # Force re-run on Web tier only (e.g., NGINX config update)
 # skipVmCreationWeb=true prevents "SSH key change not allowed" error
 az deployment group create \
-  --resource-group rg-workshop-3 \
+  --resource-group <YOUR_RESOURCE_GROUP> \
   --template-file materials/bicep/main.bicep \
   --parameters materials/bicep/main.local.bicepparam \
   --parameters skipVmCreationWeb=true \
@@ -393,7 +393,7 @@ az deployment group create \
 
 # Force re-run on App tier only (e.g., Node.js env update)
 az deployment group create \
-  --resource-group rg-workshop-3 \
+  --resource-group <YOUR_RESOURCE_GROUP> \
   --template-file materials/bicep/main.bicep \
   --parameters materials/bicep/main.local.bicepparam \
   --parameters skipVmCreationApp=true \
@@ -401,7 +401,7 @@ az deployment group create \
 
 # Force re-run on DB tier only (rarely needed)
 az deployment group create \
-  --resource-group rg-workshop-3 \
+  --resource-group <YOUR_RESOURCE_GROUP> \
   --template-file materials/bicep/main.bicep \
   --parameters materials/bicep/main.local.bicepparam \
   --parameters skipVmCreationDb=true \
@@ -410,7 +410,7 @@ az deployment group create \
 # Force re-run on ALL tiers (use with caution)
 TIMESTAMP=$(date +%Y%m%d%H%M%S)
 az deployment group create \
-  --resource-group rg-workshop-3 \
+  --resource-group <YOUR_RESOURCE_GROUP> \
   --template-file materials/bicep/main.bicep \
   --parameters materials/bicep/main.local.bicepparam \
   --parameters skipVmCreationWeb=true skipVmCreationApp=true skipVmCreationDb=true \
@@ -477,6 +477,56 @@ Copy-Item scripts\post-deployment-setup.template.ps1 scripts\post-deployment-set
 7. ✅ Verifies `config.json` on Web tier
 
 ### 0.4 Verify Config Injection (Already done by script, but for manual check)
+
+#### Connect to VMs via Azure Bastion (Native SSH Client)
+
+Use Azure CLI to connect to VMs via Bastion with your native SSH client:
+
+**Connect to App tier VMs:**
+```bash
+# Connect to vm-app-az1-prod
+az network bastion ssh \
+  --name bastion-blogapp-prod \
+  --resource-group <YOUR_RESOURCE_GROUP> \
+  --target-resource-id $(az vm show -g <YOUR_RESOURCE_GROUP> -n vm-app-az1-prod --query id -o tsv) \
+  --auth-type ssh-key \
+  --username azureuser \
+  --ssh-key ~/.ssh/id_rsa
+
+# Connect to vm-app-az2-prod
+az network bastion ssh \
+  --name bastion-blogapp-prod \
+  --resource-group <YOUR_RESOURCE_GROUP> \
+  --target-resource-id $(az vm show -g <YOUR_RESOURCE_GROUP> -n vm-app-az2-prod --query id -o tsv) \
+  --auth-type ssh-key \
+  --username azureuser \
+  --ssh-key ~/.ssh/id_rsa
+```
+
+**Connect to Web tier VMs:**
+```bash
+# Connect to vm-web-az1-prod
+az network bastion ssh \
+  --name bastion-blogapp-prod \
+  --resource-group <YOUR_RESOURCE_GROUP> \
+  --target-resource-id $(az vm show -g <YOUR_RESOURCE_GROUP> -n vm-web-az1-prod --query id -o tsv) \
+  --auth-type ssh-key \
+  --username azureuser \
+  --ssh-key ~/.ssh/id_rsa
+
+# Connect to vm-web-az2-prod
+az network bastion ssh \
+  --name bastion-blogapp-prod \
+  --resource-group <YOUR_RESOURCE_GROUP> \
+  --target-resource-id $(az vm show -g <YOUR_RESOURCE_GROUP> -n vm-web-az2-prod --query id -o tsv) \
+  --auth-type ssh-key \
+  --username azureuser \
+  --ssh-key ~/.ssh/id_rsa
+```
+
+> **Note:** Replace `~/.ssh/id_rsa` with the path to your private SSH key that corresponds to the public key used during deployment.
+
+#### Verify Config on VMs
 
 **On App tier VMs:**
 ```bash
@@ -664,7 +714,7 @@ rm -rf temp
 # On local machine - create tunnel
 az network bastion tunnel \
   --name bastion-blogapp-prod \
-  --resource-group rg-workshop-2 \
+  --resource-group <YOUR_RESOURCE_GROUP> \
   --target-resource-id <VM_RESOURCE_ID> \
   --resource-port 22 \
   --port 2222
@@ -770,7 +820,7 @@ cat /var/www/html/config.json
 # Should show: VITE_ENTRA_CLIENT_ID, VITE_ENTRA_TENANT_ID, VITE_API_BASE_URL
 ```
 
-### 3.2 Build Frontend Application (Local Machine)
+### 3.2 Build Frontend Application (Local Development Machine, not Azure VMs)
 
 > **Note:** No environment variables needed at build time! The frontend fetches `/config.json` at runtime.
 
@@ -822,7 +872,7 @@ cd /tmp && rm -rf temp
 # Create tunnel to vm-web-az1-prod
 az network bastion tunnel \
   --name bastion-blogapp-prod \
-  --resource-group rg-workshop-3 \
+  --resource-group <YOUR_RESOURCE_GROUP> \
   --target-resource-id /subscriptions/.../vm-web-az1-prod \
   --resource-port 22 \
   --port 2222
@@ -940,6 +990,12 @@ curl http://localhost/login
 
 ## Phase 4: End-to-End Verification
 
+> **Note:** Application Gateway is **fully automated by Bicep** - no manual setup required! It provides:
+> - SSL/TLS termination with your self-signed certificate
+> - HTTP→HTTPS redirect (port 80 → port 443)
+> - Health probes to Web tier VMs
+> - Azure DNS label for predictable FQDN
+
 ### 4.1 Health Check Matrix
 
 | Endpoint | Expected | Command |
@@ -951,13 +1007,41 @@ curl http://localhost/login
 | Internal LB | `{"status":"ok"}` | `curl http://10.0.2.10:3000/health` |
 | Frontend VM1 | `healthy` | `curl http://10.0.1.4/health` |
 | Frontend VM2 | `healthy` | `curl http://10.0.1.5/health` |
-| External LB | HTML page | `curl http://<public-ip>/` |
+| Application Gateway | HTML page | `curl -k https://<YOUR_APPGW_FQDN>/` |
 
-### 4.2 Application Test
+### 4.2 Verify Application Gateway
+
+**Get your Application Gateway FQDN:**
+```bash
+# Get the FQDN
+az network public-ip show \
+  --resource-group <YOUR_RESOURCE_GROUP> \
+  --name pip-agw-blogapp-prod \
+  --query dnsSettings.fqdn -o tsv
+```
+
+**Test HTTPS access (with self-signed certificate):**
+```bash
+# Test via FQDN (use -k to skip certificate verification for self-signed cert)
+curl -k https://<YOUR_APPGW_FQDN>/
+
+# Test HTTP→HTTPS redirect (should return 301/302)
+curl -I http://<YOUR_APPGW_FQDN>/
+
+# Test API endpoint through Application Gateway
+curl -k https://<YOUR_APPGW_FQDN>/api/health
+```
+
+**Access in browser:**
+1. Open `https://<YOUR_APPGW_FQDN>/` in your browser
+2. Accept the self-signed certificate warning (expected for workshop)
+3. You should see the blog application login page
+
+### 4.3 Application Test
 
 ```bash
-# Test full stack via public IP
-curl http://<public-ip>/api/posts
+# Test full stack via Application Gateway FQDN
+curl -k https://<YOUR_APPGW_FQDN>/api/posts
 ```
 
 ---
@@ -1068,7 +1152,7 @@ curl http://<public-ip>/api/posts
 
 | Placeholder | Description | Example Value |
 |-------------|-------------|---------------|
-| `<RESOURCE_GROUP>` | Azure resource group name | `rg-workshop-3` |
+| `<RESOURCE_GROUP>` | Azure resource group name | `rg-blogapp-prod` |
 | `<BASTION_NAME>` | Bastion host name | `bastion-blogapp-prod` |
 | `<MONGODB_ADMIN_PASSWORD>` | Admin user password | `AdminP@ss2024!` |
 | `<MONGODB_APP_PASSWORD>` | App user password | `BlogApp2024Workshop!` |
@@ -1082,7 +1166,7 @@ curl http://<public-ip>/api/posts
 **App tier env vars not set:**
 ```bash
 # Re-run CustomScript extension
-az vm run-command invoke --resource-group rg-workshop-3 \
+az vm run-command invoke --resource-group <YOUR_RESOURCE_GROUP> \
   --name vm-app-az1-prod --command-id RunShellScript \
   --scripts "cat /opt/blogapp/.env"
 ```
@@ -1090,7 +1174,7 @@ az vm run-command invoke --resource-group rg-workshop-3 \
 **Web tier config.json missing:**
 ```bash
 # Check if file exists
-az vm run-command invoke --resource-group rg-workshop-3 \
+az vm run-command invoke --resource-group <YOUR_RESOURCE_GROUP> \
   --name vm-web-az1-prod --command-id RunShellScript \
   --scripts "cat /var/www/html/config.json"
 ```
@@ -1142,15 +1226,14 @@ See also:
 
 ---
 
-## Appendix: Verified Deployment Results (December 17, 2025)
+## Appendix: Deployment Verification Commands
 
 ### Infrastructure Deployment
 
 ```
-Resource Group: rg-workshop-3
-Location: japaneast
-Deployment Status: Succeeded
-Exit Code: 0
+Resource Group: <YOUR_RESOURCE_GROUP>
+Location: <YOUR_REGION>
+Deployment Status: (check after deployment)
 ```
 
 ### Config Injection Verification (via az vm run-command)
@@ -1169,21 +1252,21 @@ Exit Code: 0
 | vm-web-az1-prod | ✅ Injected | ✅ Injected | "" (relative) |
 | vm-web-az2-prod | ✅ Injected | ✅ Injected | "" (relative) |
 
-### Verification Commands Used
+### Verification Commands
 
 ```bash
 # App tier verification
-az vm run-command invoke -g rg-workshop-3 -n vm-app-az1-prod \
+az vm run-command invoke -g <YOUR_RESOURCE_GROUP> -n vm-app-az1-prod \
   --command-id RunShellScript --scripts "cat /opt/blogapp/.env"
 
-az vm run-command invoke -g rg-workshop-3 -n vm-app-az2-prod \
+az vm run-command invoke -g <YOUR_RESOURCE_GROUP> -n vm-app-az2-prod \
   --command-id RunShellScript --scripts "cat /opt/blogapp/.env"
 
 # Web tier verification
-az vm run-command invoke -g rg-workshop-3 -n vm-web-az1-prod \
+az vm run-command invoke -g <YOUR_RESOURCE_GROUP> -n vm-web-az1-prod \
   --command-id RunShellScript --scripts "cat /var/www/html/config.json"
 
-az vm run-command invoke -g rg-workshop-3 -n vm-web-az2-prod \
+az vm run-command invoke -g <YOUR_RESOURCE_GROUP> -n vm-web-az2-prod \
   --command-id RunShellScript --scripts "cat /var/www/html/config.json"
 ```
 
