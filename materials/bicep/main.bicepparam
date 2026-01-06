@@ -68,7 +68,6 @@ param sslCertificateData = ''  // REQUIRED: Add base64-encoded PFX certificate h
 
 // Password for the PFX certificate
 // Must match the password used when generating the certificate
-@secure()
 param sslCertificatePassword = ''  // REQUIRED: Add certificate password here
 
 // DNS label prefix for Application Gateway public IP

@@ -13,6 +13,7 @@ AIdocs/agent-instructions/How-to-access-to-Azure-VMs-via-Bastion.md
 # main.local.bicepparam is for YOUR values (gitignored)
 # =============================================================================
 *.local.bicepparam
+*.local.bicepparam.*
 materials/bicep/dev.bicepparam
 
 # =============================================================================

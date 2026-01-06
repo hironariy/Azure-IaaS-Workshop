@@ -171,6 +171,10 @@ Before deploying, edit `main.bicepparam` (or copy to `main.local.bicepparam` for
 ```bicep
 using './main.bicep'
 
+~~
+skipped lines
+~~
+
 // ============================================================
 // REQUIRED: Azure Security Parameters
 // ============================================================
@@ -258,21 +262,33 @@ cat cert-base64.txt
 
 ### Configure Redirect URIs in Entra ID (SPA Platform)
 
-After deploying infrastructure, you must configure the **redirect URIs** for the frontend app registration. The redirect URI must use the Application Gateway FQDN (HTTPS).
+You must configure the **redirect URIs** for the frontend app registration. The redirect URI must use the Application Gateway FQDN (HTTPS).
 
 > ⚠️ **CRITICAL**: The frontend app registration MUST use **Single-page application (SPA)** platform type - NOT "Web". MSAL.js uses the PKCE (Proof Key for Code Exchange) flow which only works with SPA platform type. Using "Web" platform will cause error: `AADSTS9002326: Cross-origin token redemption is permitted only for the 'Single-Page Application' client-type.`
 
-> **Important:** This step must be done **after** Bicep deployment because you need the FQDN assigned to the Application Gateway.
+> **Tip:** You can configure redirect URIs **before or after** deployment - the FQDN is predictable based on your chosen DNS label.
 
-**Get your Application Gateway FQDN:**
+**Construct your Application Gateway FQDN:**
+
+The FQDN follows a predictable format based on the `appGatewayDnsLabel` you set in `main.local.bicepparam`:
+
+```
+<appGatewayDnsLabel>.<region>.cloudapp.azure.com
+```
+
+| Your Parameter | Your FQDN |
+|----------------|-----------|
+| `appGatewayDnsLabel = 'blogapp-john123'` | `blogapp-john123.japanwest.cloudapp.azure.com` |
+| `appGatewayDnsLabel = 'blogapp-team5'` | `blogapp-team5.japanwest.cloudapp.azure.com` |
+| `location = 'eastus'` + `appGatewayDnsLabel = 'blogapp-abc'` | `blogapp-abc.eastus.cloudapp.azure.com` |
+
+**Verify after deployment (optional):**
 ```bash
-# Get the Application Gateway FQDN
+# Confirm the FQDN matches your expectation
 az network public-ip show \
   --resource-group <YOUR_RESOURCE_GROUP> \
-  --name pip-appgw-blogapp-prod \
+  --name pip-agw-blogapp-prod \
   --query dnsSettings.fqdn -o tsv
-
-# Example output: blogapp-12345.japanwest.cloudapp.azure.com
 ```
 
 **Update the frontend app registration with SPA redirect URIs:**
