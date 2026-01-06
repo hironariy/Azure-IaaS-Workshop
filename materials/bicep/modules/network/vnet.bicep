@@ -1,10 +1,11 @@
 // =============================================================================
 // Virtual Network Module
 // =============================================================================
-// Purpose: Creates the VNet with 4 subnets for 3-tier architecture + Bastion
+// Purpose: Creates the VNet with 5 subnets for 3-tier architecture + App Gateway + Bastion
 // Reference: /design/AzureArchitectureDesign.md - Section 1: Networking Architecture
 // 
 // Subnet Layout:
+//   - App Gateway: 10.0.0.0/24 (Application Gateway - dedicated subnet required)
 //   - Web tier:     10.0.1.0/24 (NGINX reverse proxy)
 //   - App tier:     10.0.2.0/24 (Express/Node.js API)
 //   - DB tier:      10.0.3.0/24 (MongoDB replica set)
@@ -41,6 +42,9 @@ param dbSubnetPrefix string = '10.0.3.0/24'
 @description('Azure Bastion subnet CIDR block (minimum /26)')
 param bastionSubnetPrefix string = '10.0.255.0/26'
 
+@description('Application Gateway subnet CIDR block (minimum /26, /24 recommended)')
+param appGatewaySubnetPrefix string = '10.0.0.0/24'
+
 @description('Resource ID of NSG for Web tier subnet')
 param webNsgId string
 
@@ -63,6 +67,7 @@ param tags object = {}
 // Naming Convention
 // =============================================================================
 var vnetName = 'vnet-${workloadName}-${environment}-${location}'
+var appGatewaySubnetName = 'snet-agw-${environment}'
 var webSubnetName = 'snet-web-${environment}'
 var appSubnetName = 'snet-app-${environment}'
 var dbSubnetName = 'snet-db-${environment}'
@@ -105,6 +110,17 @@ resource vnet 'Microsoft.Network/virtualNetworks@2023-11-01' = {
     // Define all subnets within the VNet
     // Note: Subnets in Azure can span Availability Zones (unlike AWS)
     subnets: [
+      // Application Gateway subnet (must be first for consistent output indexing)
+      // Dedicated subnet required for Application Gateway v2
+      {
+        name: appGatewaySubnetName
+        properties: {
+          addressPrefix: appGatewaySubnetPrefix
+          // Application Gateway subnet does NOT get NSG attached (Azure manages it)
+          // Similar to Bastion subnet - Azure-managed service
+          privateEndpointNetworkPolicies: 'Enabled'
+        }
+      }
       {
         name: webSubnetName
         properties: {
@@ -186,7 +202,8 @@ resource vnet 'Microsoft.Network/virtualNetworks@2023-11-01' = {
 // =============================================================================
 // Outputs
 // =============================================================================
-// These outputs are consumed by other modules (compute, bastion, load balancer)
+// These outputs are consumed by other modules (compute, bastion, application gateway)
+// Subnet indices: [0]=AppGW, [1]=Web, [2]=App, [3]=DB, [4]=Bastion
 
 @description('Resource ID of the Virtual Network')
 output vnetId string = vnet.id
@@ -194,17 +211,23 @@ output vnetId string = vnet.id
 @description('Name of the Virtual Network')
 output vnetName string = vnet.name
 
+@description('Resource ID of the Application Gateway subnet')
+output appGatewaySubnetId string = vnet.properties.subnets[0].id
+
 @description('Resource ID of the Web tier subnet')
-output webSubnetId string = vnet.properties.subnets[0].id
+output webSubnetId string = vnet.properties.subnets[1].id
 
 @description('Resource ID of the App tier subnet')
-output appSubnetId string = vnet.properties.subnets[1].id
+output appSubnetId string = vnet.properties.subnets[2].id
 
 @description('Resource ID of the DB tier subnet')
-output dbSubnetId string = vnet.properties.subnets[2].id
+output dbSubnetId string = vnet.properties.subnets[3].id
 
 @description('Resource ID of the Bastion subnet')
-output bastionSubnetId string = vnet.properties.subnets[3].id
+output bastionSubnetId string = vnet.properties.subnets[4].id
+
+@description('Name of the Application Gateway subnet')
+output appGatewaySubnetName string = appGatewaySubnetName
 
 @description('Name of the Web tier subnet')
 output webSubnetName string = webSubnetName
@@ -214,6 +237,9 @@ output appSubnetName string = appSubnetName
 
 @description('Name of the DB tier subnet')
 output dbSubnetName string = dbSubnetName
+
+@description('Address prefix of the Application Gateway subnet')
+output appGatewaySubnetAddressPrefix string = appGatewaySubnetPrefix
 
 @description('Address prefix of the Web tier subnet')
 output webSubnetAddressPrefix string = webSubnetPrefix

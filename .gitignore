@@ -2,6 +2,8 @@
 *.key
 *.crt
 *.pem
+*.pfx
+cert-base64.txt
 AIdocs/agent-instructions/How-to-access-to-Azure-VMs-via-Bastion.md
 
 # =============================================================================

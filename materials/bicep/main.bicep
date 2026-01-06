@@ -19,7 +19,7 @@
 //     --parameters main.bicepparam
 //
 // Estimated Deployment Time: 15-30 minutes
-// Estimated Cost: ~$45 per student for 48-hour workshop
+// Estimated Cost: ~$58 per student for 48-hour workshop (includes Application Gateway)
 // =============================================================================
 
 // =============================================================================
@@ -133,6 +133,25 @@ param entraClientId string
 param entraFrontendClientId string
 
 // =============================================================================
+// Application Gateway SSL Certificate Parameters
+// =============================================================================
+// For workshop: Self-signed certificate enables HTTPS without custom domain/CA
+// Students generate certificate using provided script and encode as base64
+// Browser will show certificate warning (expected - students click "Proceed")
+// =============================================================================
+
+@description('Self-signed SSL certificate in PFX format (base64 encoded). Leave empty to use HTTP only.')
+@secure()
+param sslCertificateData string = ''
+
+@description('Password for the PFX certificate. Required if sslCertificateData is provided.')
+@secure()
+param sslCertificatePassword string = ''
+
+@description('DNS label for Application Gateway public IP (creates <label>.<region>.cloudapp.azure.com)')
+param appGatewayDnsLabel string = ''
+
+// =============================================================================
 // Variables
 // =============================================================================
 var defaultTags = {
@@ -146,6 +165,7 @@ var allTags = union(defaultTags, tags)
 
 // Subnet CIDRs
 var vnetAddressPrefix = '10.0.0.0/16'
+var appGatewaySubnetPrefix = '10.0.0.0/24'
 var webSubnetPrefix = '10.0.1.0/24'
 var appSubnetPrefix = '10.0.2.0/24'
 var dbSubnetPrefix = '10.0.3.0/24'
@@ -193,6 +213,7 @@ module nsgWeb 'modules/network/nsg-web.bicep' = {
     environment: environment
     workloadName: workloadName
     bastionSubnetPrefix: bastionSubnetPrefix
+    appGatewaySubnetPrefix: appGatewaySubnetPrefix
     tags: allTags
   }
 }
@@ -260,6 +281,7 @@ module vnet 'modules/network/vnet.bicep' = {
     environment: environment
     workloadName: workloadName
     vnetAddressPrefix: vnetAddressPrefix
+    appGatewaySubnetPrefix: appGatewaySubnetPrefix
     webSubnetPrefix: webSubnetPrefix
     appSubnetPrefix: appSubnetPrefix
     dbSubnetPrefix: dbSubnetPrefix
@@ -293,18 +315,24 @@ module bastion 'modules/network/bastion.bicep' = if (deployBastion) {
 }
 
 // =============================================================================
-// Module 5: Load Balancer (Web Tier - External)
+// Module 5: Application Gateway (Web Tier - External)
 // =============================================================================
-// Standard Load Balancer for Web tier (public-facing)
+// Application Gateway v2 for Web tier (public-facing with SSL/TLS termination)
+// Provides Layer 7 load balancing with HTTPS support via self-signed certificate
 // =============================================================================
 
-module loadBalancer 'modules/network/load-balancer.bicep' = {
-  name: 'deploy-load-balancer'
+module applicationGateway 'modules/network/application-gateway.bicep' = {
+  name: 'deploy-application-gateway'
   params: {
     location: location
     environment: environment
     workloadName: workloadName
     tags: allTags
+    subnetId: vnet.outputs.appGatewaySubnetId
+    webTierPrivateIps: webTier.outputs.privateIpAddresses
+    sslCertificateData: sslCertificateData
+    sslCertificatePassword: sslCertificatePassword
+    dnsLabel: appGatewayDnsLabel
   }
 }
 
@@ -358,6 +386,7 @@ module storageAccount 'modules/storage/storage-account.bicep' = if (deployStorag
 // Module 8: Web Tier VMs
 // =============================================================================
 // 2 NGINX VMs across Availability Zones
+// Application Gateway manages backend pool using VM private IPs
 // =============================================================================
 
 module webTier 'modules/compute/web-tier.bicep' = {
@@ -367,7 +396,7 @@ module webTier 'modules/compute/web-tier.bicep' = {
     environment: environment
     workloadName: workloadName
     subnetId: vnet.outputs.webSubnetId
-    loadBalancerBackendPoolId: loadBalancer.outputs.backendPoolId
+    // Note: Application Gateway uses VM private IPs directly (no backendPoolId needed)
     adminUsername: adminUsername
     sshPublicKey: sshPublicKey
     vmSize: webVmSize
@@ -479,11 +508,17 @@ module keyVault 'modules/security/key-vault.bicep' = if (deployKeyVault) {
 @description('Resource Group name')
 output resourceGroupName string = resourceGroup().name
 
-@description('Load Balancer public IP address')
-output loadBalancerPublicIp string = loadBalancer.outputs.publicIpAddress
+@description('Application Gateway public IP address')
+output appGatewayPublicIp string = applicationGateway.outputs.publicIpAddress
 
-@description('Load Balancer FQDN')
-output loadBalancerFqdn string = loadBalancer.outputs.fqdn
+@description('Application Gateway FQDN')
+output appGatewayFqdn string = applicationGateway.outputs.fqdn
+
+@description('Application Gateway HTTPS URL')
+output appGatewayHttpsUrl string = applicationGateway.outputs.httpsUrl
+
+@description('SSL/TLS enabled status')
+output sslEnabled bool = applicationGateway.outputs.sslEnabled
 
 @description('Internal Load Balancer private IP (App tier)')
 output internalLoadBalancerIp string = internalLoadBalancer.outputs.frontendPrivateIp

@@ -685,9 +685,10 @@ VITE_ENTRA_CLIENT_ID=dev-client-id
 # .env.production (NOT committed)
 # Note: Frontend accesses API via NGINX reverse proxy, not direct App tier
 # NGINX uses Internal LB (10.0.2.10) to reach App tier
-VITE_API_URL=http://20.10.5.100  # External LB public IP (goes through NGINX)
+# Application Gateway provides HTTPS and Azure DNS label
+VITE_API_URL=https://blogapp-<unique>.<region>.cloudapp.azure.com  # App Gateway DNS label (HTTPS)
 VITE_ENTRA_CLIENT_ID=prod-client-id
-VITE_ENTRA_REDIRECT_URI=http://20.10.5.100
+VITE_ENTRA_REDIRECT_URI=https://blogapp-<unique>.<region>.cloudapp.azure.com  # Must use HTTPS for OAuth2.0
 # ... production values
 ```
 
@@ -714,8 +715,9 @@ Requirements:
 - Gzip compression enabled
 - Cache static assets (30 days)
 - Security headers (CSP, X-Frame-Options, X-Content-Type-Options)
-- Health check endpoint: `/health` returns 200 OK
-- Listen on port 80 (HTTPS termination at Load Balancer)
+- Health check endpoint: `/health` returns 200 OK (used by Application Gateway health probe)
+- **Listen on port 80 only** (HTTPS termination at Application Gateway, not NGINX)
+- **No SSL/TLS configuration needed** on NGINX - Application Gateway handles certificate management
 
 Example:
 ```nginx
@@ -724,6 +726,10 @@ server {
     server_name _;
     root /var/www/blogapp;  # Updated path
     index index.html;
+
+    # Note: HTTPS is terminated at Application Gateway
+    # NGINX receives HTTP traffic from App Gateway backend pool
+    # This simplifies certificate management for workshop students
 
     # Gzip compression
     gzip on;
@@ -734,7 +740,7 @@ server {
     add_header X-Content-Type-Options "nosniff" always;
     add_header X-XSS-Protection "1; mode=block" always;
 
-    # Health check
+    # Health check (used by Application Gateway health probe)
     location /health {
         access_log off;
         return 200 "OK";
@@ -762,11 +768,13 @@ server {
 - [ ] Production build succeeds: `npm run build`
 - [ ] Bundle size < 1MB: `du -sh dist/`
 - [ ] Preview build locally: `npm run preview`
-- [ ] `.env.production` file configured
-- [ ] Entra ID redirect URI updated to VM IP
+- [ ] `.env.production` file configured (or using runtime `/config.json`)
+- [ ] Entra ID redirect URI updated to Application Gateway DNS label (HTTPS)
 
 **Post-Deployment (Smoke Tests)**:
-- [ ] Homepage loads: `http://<VM_IP>`
+- [ ] Homepage loads: `https://<appgw-dns-label>.<region>.cloudapp.azure.com`
+- [ ] HTTP redirects to HTTPS automatically
+- [ ] Browser shows certificate warning (expected for self-signed cert - click "Advanced" → "Proceed")
 - [ ] Login redirects to Microsoft login
 - [ ] After login, user sees name in navbar
 - [ ] Posts display on homepage
@@ -778,15 +786,21 @@ server {
 **Automated Health Checks**:
 ```bash
 #!/bin/bash
-VM_IP="20.10.5.100"
+# Application Gateway DNS label (HTTPS endpoint)
+# Replace <unique> and <region> with your values (e.g., blogapp-student01.japanwest.cloudapp.azure.com)
+APPGW_FQDN="blogapp-<unique>.<region>.cloudapp.azure.com"
 
 echo "Running health checks..."
-curl -f http://${VM_IP}/health || echo "❌ Health check failed"
-curl -f http://${VM_IP}/ || echo "❌ Homepage failed"
-curl -f http://${VM_IP}/assets/index*.js || echo "❌ Static assets failed"
+# Note: -k flag ignores self-signed certificate warnings
+curl -fk https://${APPGW_FQDN}/health || echo "❌ Health check failed"
+curl -fk https://${APPGW_FQDN}/ || echo "❌ Homepage failed"
+curl -fk https://${APPGW_FQDN}/assets/index*.js || echo "❌ Static assets failed"
+
+# Check HTTP to HTTPS redirect
+curl -sI http://${APPGW_FQDN}/ | grep -q "301\|302" && echo "✅ HTTP→HTTPS redirect working" || echo "❌ HTTP redirect not configured"
 
 # Check security headers
-curl -sI http://${VM_IP}/ | grep -q "X-Frame-Options" || echo "❌ Missing security headers"
+curl -skI https://${APPGW_FQDN}/ | grep -q "X-Frame-Options" || echo "❌ Missing security headers"
 
 echo "✅ Health checks complete"
 ```
@@ -967,6 +981,32 @@ For advanced students who finish early:
 
 ---
 
+#### 🟠 HIGH: Self-Signed Certificate Browser Warning
+
+**Symptom**: Browser shows "Your connection is not private" or "NET::ERR_CERT_AUTHORITY_INVALID"
+
+**Root Cause**: Workshop uses self-signed certificate on Application Gateway (expected behavior)
+
+**Fix (for students)**:
+1. **Chrome**: Click "Advanced" → "Proceed to [site] (unsafe)"
+2. **Firefox**: Click "Advanced" → "Accept the Risk and Continue"
+3. **Edge**: Click "Advanced" → "Continue to [site] (unsafe)"
+
+**Why Self-Signed Certificate?**:
+- Workshop students don't have custom domains or CA-signed certificates
+- Application Gateway requires HTTPS for production-like security
+- Self-signed certificates enable HTTPS without domain ownership
+- Trade-off: Browser warning vs. teaching insecure HTTP patterns
+
+**Production Alternative**: 
+- Azure Key Vault with CA-signed certificate
+- Let's Encrypt automation (requires custom domain)
+- Azure Front Door with managed certificates
+
+**Important for OAuth2.0**: Microsoft Entra ID accepts HTTPS with self-signed certificates for redirect URIs. The certificate trust is a browser UX issue, not an authentication blocker.
+
+---
+
 #### 🟠 HIGH: CORS Errors with Backend
 
 **Symptom**: `Access to fetch at 'http://10.0.2.4:3000/api/posts' blocked by CORS policy`
@@ -1077,14 +1117,16 @@ Students are familiar with AWS, so document differences:
 | Authentication | Microsoft Entra ID + MSAL | Amazon Cognito |
 | OAuth2.0 Flow | Authorization Code with PKCE | Same, but different SDK |
 | Token Storage | Session Storage | Same |
-| External LB | Azure Standard Load Balancer (public) | AWS ALB (internet-facing) |
+| External LB | Azure Application Gateway (Layer 7, HTTPS) | AWS ALB (HTTPS listener) |
+| SSL/TLS Termination | Application Gateway with self-signed cert | ALB with ACM certificate |
+| Azure DNS Label | `<label>.<region>.cloudapp.azure.com` | ALB DNS name or Route 53 |
 | Internal LB | Azure Internal Load Balancer (App tier) | AWS ALB (internal) |
-| Reverse Proxy | NGINX on Web VMs | NGINX or built into ALB |
+| Reverse Proxy | NGINX on Web VMs (HTTP only) | NGINX or built into ALB |
 | Static Hosting | NGINX on VM | S3 + CloudFront |
 | Media Storage | Azure Blob Storage | S3 |
 | Identity Claims | Microsoft Graph | Cognito User Pools |
 
-**Traffic Flow**: Browser → External LB → NGINX (Web VM) → Internal LB (10.0.2.10) → Express (App VM) → MongoDB (DB VM)
+**Traffic Flow**: Browser → Application Gateway (HTTPS:443) → NGINX (Web VM, HTTP:80) → Internal LB (10.0.2.10) → Express (App VM) → MongoDB (DB VM)
 
 #### Learning Objectives
 1. Understand OAuth2.0 with Microsoft Entra ID
@@ -1106,7 +1148,8 @@ Students are familiar with AWS, so document differences:
 | 1.0 | 2025-12-01 | Initial specification | Workshop Team |
 | 2.0 | 2025-12-03 | Critical updates based on consultant review:<br>- React Query adopted for state management<br>- Token refresh error handling added<br>- MSAL redirect loop prevention added<br>- Workshop feature prioritization added<br>- Auto-save draft requirement added<br>- Network resilience patterns added<br>- Common pitfalls troubleshooting added<br>- Deployment verification checklist added | Frontend Engineer |
 | 2.1 | 2025-12-10 | Authentication and feature updates:<br>- Added enterprise auth pattern documentation (separate app registrations)<br>- Added My Posts page (`/my-posts`) specification<br>- Added API scope consent flow documentation<br>- Added delete post functionality on Post and My Posts pages | Implementation Update |
+| 3.0 | 2026-01-06 | Infrastructure architecture update:<br>- Updated for Application Gateway with SSL/TLS termination (replacing Standard LB)<br>- NGINX now receives HTTP only (port 80), SSL offloaded to App Gateway<br>- Updated all URLs to HTTPS with Azure DNS label format<br>- Added self-signed certificate browser warning troubleshooting<br>- Updated AWS comparison table for Application Gateway<br>- Updated deployment checklist for HTTPS verification | Architecture Update |
 
 **Document Status**: Living document - update as requirements evolve  
-**Current Version**: 2.1  
-**Last Updated**: 2025-12-10
+**Current Version**: 3.0  
+**Last Updated**: 2026-01-06

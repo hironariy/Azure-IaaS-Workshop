@@ -8,9 +8,12 @@
 //   - Only allow traffic that is explicitly required
 //   - Deny everything else (default Azure behavior)
 //
-// Traffic Flow:
-//   Internet → Load Balancer (80/443) → Web Tier VMs
+// Traffic Flow (with Application Gateway):
+//   Internet → Application Gateway (HTTPS:443) → Web Tier VMs (HTTP:80)
 //   Azure Bastion → Web Tier VMs (SSH 22)
+//
+// Note: Application Gateway terminates SSL/TLS, sends HTTP to backend VMs
+//       No direct Internet traffic reaches Web VMs
 //
 // AWS Comparison:
 //   - NSG ≈ Security Group, but:
@@ -32,6 +35,9 @@ param workloadName string = 'blogapp'
 
 @description('CIDR of the Bastion subnet for SSH access')
 param bastionSubnetPrefix string = '10.0.255.0/26'
+
+@description('CIDR of the Application Gateway subnet')
+param appGatewaySubnetPrefix string = '10.0.0.0/24'
 
 @description('Tags to apply to all resources')
 param tags object = {}
@@ -67,10 +73,10 @@ resource nsg 'Microsoft.Network/networkSecurityGroups@2023-11-01' = {
       // INBOUND RULES
       // =========================================================================
       
-      // Allow HTTP from Internet (via Load Balancer)
-      // Priority 100: Highest priority custom rule
+      // Allow HTTP from Application Gateway subnet only
+      // Application Gateway terminates HTTPS and forwards HTTP to backend
       {
-        name: 'AllowHTTPInbound'
+        name: 'AllowHTTPFromAppGateway'
         properties: {
           priority: 100
           direction: 'Inbound'
@@ -78,25 +84,26 @@ resource nsg 'Microsoft.Network/networkSecurityGroups@2023-11-01' = {
           protocol: 'Tcp'
           sourcePortRange: '*'
           destinationPortRange: '80'
-          sourceAddressPrefix: 'Internet'
+          sourceAddressPrefix: appGatewaySubnetPrefix
           destinationAddressPrefix: '*'
-          description: 'Allow HTTP traffic from Internet via Load Balancer'
+          description: 'Allow HTTP from Application Gateway (SSL terminated at gateway)'
         }
       }
       
-      // Allow HTTPS from Internet (via Load Balancer)
+      // Allow Application Gateway health probes
+      // GatewayManager service tag covers App Gateway v2 infrastructure
       {
-        name: 'AllowHTTPSInbound'
+        name: 'AllowAppGatewayHealthProbe'
         properties: {
           priority: 110
           direction: 'Inbound'
           access: 'Allow'
           protocol: 'Tcp'
           sourcePortRange: '*'
-          destinationPortRange: '443'
-          sourceAddressPrefix: 'Internet'
+          destinationPortRange: '65200-65535'
+          sourceAddressPrefix: 'GatewayManager'
           destinationAddressPrefix: '*'
-          description: 'Allow HTTPS traffic from Internet via Load Balancer'
+          description: 'Required for Application Gateway v2 health probes'
         }
       }
       
@@ -117,8 +124,7 @@ resource nsg 'Microsoft.Network/networkSecurityGroups@2023-11-01' = {
         }
       }
       
-      // Allow Azure Load Balancer health probes
-      // This is required for the Load Balancer to check VM health
+      // Allow Azure Load Balancer probes (if internal LB is used for health)
       {
         name: 'AllowAzureLoadBalancerProbe'
         properties: {
@@ -136,6 +142,7 @@ resource nsg 'Microsoft.Network/networkSecurityGroups@2023-11-01' = {
       
       // Deny all other inbound traffic (explicit for visibility)
       // Azure has implicit deny, but this makes it visible in the portal
+      // Note: No direct Internet traffic allowed - all goes through App Gateway
       {
         name: 'DenyAllInbound'
         properties: {

@@ -55,6 +55,28 @@ param entraClientId = ''  // REQUIRED: Add your backend API client ID here
 param entraFrontendClientId = ''  // REQUIRED: Add your frontend SPA client ID here
 
 // =============================================================================
+// Application Gateway SSL/TLS Configuration
+// =============================================================================
+// These parameters configure HTTPS termination at the Application Gateway
+// Reference: /design/AzureArchitectureDesign.md - Application Gateway Configuration
+// =============================================================================
+
+// Self-signed SSL certificate in PFX format (base64 encoded)
+// Generate with: ./scripts/generate-ssl-cert.sh
+// Then base64 encode: base64 -i cert.pfx | tr -d '\n'
+param sslCertificateData = ''  // REQUIRED: Add base64-encoded PFX certificate here
+
+// Password for the PFX certificate
+// Must match the password used when generating the certificate
+@secure()
+param sslCertificatePassword = ''  // REQUIRED: Add certificate password here
+
+// DNS label prefix for Application Gateway public IP
+// Results in FQDN: <label>.<region>.cloudapp.azure.com
+// Example: blogapp-12345 → blogapp-12345.japanwest.cloudapp.azure.com
+param appGatewayDnsLabel = ''  // REQUIRED: Add unique DNS label here
+
+// =============================================================================
 // Optional Parameters - Feature Flags
 // =============================================================================
 

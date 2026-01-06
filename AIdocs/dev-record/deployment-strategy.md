@@ -3,7 +3,7 @@
 **Date:** December 16, 2025  
 **Author:** AI Deployment Agent  
 **Status:** Verified and Deployed  
-**Last Updated:** December 17, 2025 - Infrastructure deployed to rg-workshop-3, config injection verified
+**Last Updated:** December 17, 2025 - Infrastructure deployed to rg-workshop-3, config injection verified; Updated for Application Gateway with SSL/TLS termination
 
 ---
 
@@ -32,17 +32,24 @@ This document outlines the deployment strategy for the multi-tier blog applicati
 │                         DEPLOYMENT FLOW                                  │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                          │
-│  1. Edit main.bicepparam (or main.local.bicepparam)                     │
+│  1. Generate Self-Signed SSL Certificate                                │
+│     └─ ./scripts/generate-ssl-cert.sh                                   │
+│                          ↓                                               │
+│  2. Edit main.bicepparam (or main.local.bicepparam)                     │
 │     ├─ entraTenantId                                                    │
 │     ├─ entraClientId (backend)                                          │
 │     ├─ entraFrontendClientId                                            │
 │     ├─ sshPublicKey                                                     │
-│     └─ adminObjectId                                                    │
+│     ├─ adminObjectId                                                    │
+│     ├─ sslCertificateData (base64-encoded PFX)                         │
+│     ├─ sslCertificatePassword                                           │
+│     └─ appGatewayDnsLabel (unique DNS label)                           │
 │                          ↓                                               │
-│  2. az deployment group create ...                                       │
+│  3. az deployment group create ...                                       │
 │     └─ Creates all Azure resources with config injected                 │
+│     └─ Application Gateway provides HTTPS with self-signed cert         │
 │                          ↓                                               │
-│  3. Post-deployment script (choose your platform)                       │
+│  4. Post-deployment script (choose your platform)                       │
 │     ├─ macOS/Linux: ./scripts/post-deployment-setup.local.sh            │
 │     └─ Windows:     .\scripts\post-deployment-setup.local.ps1           │
 │     Performs:                                                           │
@@ -50,7 +57,7 @@ This document outlines the deployment strategy for the multi-tier blog applicati
 │     ├─ Creates MongoDB users (blogadmin, blogapp)                       │
 │     └─ Verifies config injection (env vars, config.json)                │
 │                          ↓                                               │
-│  4. Deploy application code (backend + frontend)                        │
+│  5. Deploy application code (backend + frontend)                        │
 │     └─ No environment configuration needed!                             │
 │                                                                          │
 └─────────────────────────────────────────────────────────────────────────┘
@@ -63,6 +70,7 @@ This document outlines the deployment strategy for the multi-tier blog applicati
 | **Database** | MongoDB 7.0, data disk at `/data/mongodb`, replica set config | N/A | ✅ Automated |
 | **Backend** | Node.js 20 LTS, PM2, `/opt/blogapp` directory | `/etc/environment` + `/opt/blogapp/.env` with Entra IDs | ✅ Automated |
 | **Frontend** | NGINX, reverse proxy config, `/var/www/html` | `/var/www/html/config.json` with Entra IDs | ✅ Automated |
+| **Application Gateway** | SSL/TLS termination, HTTP→HTTPS redirect | Self-signed certificate, Azure DNS label | ✅ Automated |
 
 > **Implementation Note:** Bicep templates use external shell scripts loaded via `loadTextContent()` with `replace()` functions for placeholder substitution. This avoids ARM's `format()` function issues with bash scripts and JSON containing curly braces.
 >
@@ -85,10 +93,76 @@ This document outlines the deployment strategy for the multi-tier blog applicati
 | Database | `vm-db-az1-prod`, `vm-db-az2-prod` | 10.0.3.4, 10.0.3.5 | MongoDB 7.0 | N/A |
 | Backend | `vm-app-az1-prod`, `vm-app-az2-prod` | 10.0.2.5, 10.0.2.4 | Node.js 20, PM2 | `/etc/environment`, `/opt/blogapp/.env` |
 | Frontend | `vm-web-az1-prod`, `vm-web-az2-prod` | 10.0.1.4, 10.0.1.5 | NGINX | `/var/www/html/config.json` |
+| Application Gateway | N/A (PaaS) | Public IP | SSL/TLS termination | Self-signed certificate |
+
+### Traffic Flow
+
+```
+Internet → Application Gateway (HTTPS:443)
+         → SSL/TLS Termination (self-signed certificate)
+         → Web Tier VMs (HTTP:80/NGINX)
+         → Internal Load Balancer (HTTP:3000)
+         → App Tier VMs (Express API)
+         → MongoDB Replica Set
+```
 
 ---
 
-## Pre-Deployment: Configure Bicep Parameters
+## Pre-Deployment: Generate SSL Certificate and Configure Bicep Parameters
+
+### Step 0: Generate Self-Signed SSL Certificate
+
+**Before deploying**, generate a self-signed SSL certificate for the Application Gateway:
+
+**macOS/Linux:**
+```bash
+# Navigate to project root
+cd /path/to/AzureIaaSWorkshop
+
+# Generate self-signed certificate (valid for 365 days)
+# This creates: cert.pfx and cert-base64.txt files
+./scripts/generate-ssl-cert.sh
+
+# The script will output:
+# - cert.pfx (PKCS#12 format for Azure Application Gateway)
+# - cert.pem (PEM format for reference)
+# - cert-base64.txt (base64-encoded PFX for Bicep parameter)
+```
+
+**Windows PowerShell:**
+```powershell
+# Navigate to project root
+cd C:\path\to\AzureIaaSWorkshop
+
+# Generate self-signed certificate (valid for 365 days)
+# Uses PowerShell's New-SelfSignedCertificate (no OpenSSL required)
+.\scripts\generate-ssl-cert.ps1
+
+# The script will output:
+# - cert.pfx (PKCS#12 format for Azure Application Gateway)
+# - cert-base64.txt (base64-encoded PFX for Bicep parameter)
+
+# Copy base64 content to clipboard (for pasting into bicepparam)
+Get-Content cert-base64.txt | Set-Clipboard
+```
+
+**Manual certificate generation (alternative):**
+
+```bash
+# Generate private key and certificate
+openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+  -keyout cert.key -out cert.crt \
+  -subj "/CN=blogapp.<region>.cloudapp.azure.com/O=Workshop/C=JP"
+
+# Convert to PFX format (required for Application Gateway)
+openssl pkcs12 -export -out cert.pfx -inkey cert.key -in cert.crt \
+  -password pass:Workshop2024!
+
+# Base64 encode for Bicep parameter
+base64 -i cert.pfx | tr -d '\n' > cert-base64.txt
+```
+
+> **Note:** The certificate CN should match your expected FQDN, but for self-signed certificates, browser warnings will appear regardless. This is acceptable for workshop purposes.
 
 ### Required Parameters in `main.bicepparam`
 
@@ -118,7 +192,53 @@ param entraClientId = '<YOUR_BACKEND_CLIENT_ID>'
 
 // Frontend SPA app registration Client ID
 param entraFrontendClientId = '<YOUR_FRONTEND_CLIENT_ID>'
+
+// ============================================================
+// REQUIRED: Application Gateway SSL/TLS Configuration
+// ============================================================
+// Self-signed certificate (base64-encoded PFX)
+// Generate with: ./scripts/generate-ssl-cert.sh
+param sslCertificateData = '<CONTENTS_OF_cert-base64.txt>'
+
+// Password for the PFX certificate
+param sslCertificatePassword = 'Workshop2024!'
+
+// Unique DNS label for Application Gateway public IP
+// Results in FQDN: blogapp-<unique>.<region>.cloudapp.azure.com
+param appGatewayDnsLabel = 'blogapp-<UNIQUE_SUFFIX>'
 ```
+
+### Choosing Your DNS Label
+
+The `appGatewayDnsLabel` must be **globally unique within the Azure region**. Azure will create an FQDN in the format:
+
+```
+<your-label>.<region>.cloudapp.azure.com
+```
+
+**Guidelines for choosing your DNS label:**
+
+| Approach | Example | Result FQDN |
+|----------|---------|-------------|
+| Name + Random | `blogapp-john-x7k2` | `blogapp-john-x7k2.japanwest.cloudapp.azure.com` |
+| Name + Date | `blogapp-tanaka-0106` | `blogapp-tanaka-0106.japanwest.cloudapp.azure.com` |
+| Team + Number | `blogapp-team3` | `blogapp-team3.japanwest.cloudapp.azure.com` |
+
+**Quick way to generate a unique suffix:**
+
+```bash
+# macOS/Linux - generate random 4-character suffix
+echo "blogapp-$(openssl rand -hex 2)"
+# Example output: blogapp-a3f2
+```
+
+```powershell
+# Windows PowerShell - generate random 4-character suffix
+"blogapp-$(-join ((48..57) + (97..102) | Get-Random -Count 4 | ForEach-Object {[char]$_}))"
+# Example output: blogapp-7b2e
+```
+
+> **Important:** If deployment fails with "DNS label already in use", simply choose a different label and redeploy.
 
 ### Finding Your Values
 
@@ -131,23 +251,28 @@ az ad signed-in-user show --query id -o tsv
 
 # List app registrations to find Client IDs
 az ad app list --display-name "blogapp" --query "[].{name:displayName, appId:appId}"
+
+# Get base64-encoded certificate (after running generate-ssl-cert.sh)
+cat cert-base64.txt
 ```
 
 ### Configure Redirect URIs in Entra ID (SPA Platform)
 
-After deploying infrastructure, you must configure the **redirect URIs** for the frontend app registration. The redirect URI must match the public IP address of your External Load Balancer.
+After deploying infrastructure, you must configure the **redirect URIs** for the frontend app registration. The redirect URI must use the Application Gateway FQDN (HTTPS).
 
 > ⚠️ **CRITICAL**: The frontend app registration MUST use **Single-page application (SPA)** platform type - NOT "Web". MSAL.js uses the PKCE (Proof Key for Code Exchange) flow which only works with SPA platform type. Using "Web" platform will cause error: `AADSTS9002326: Cross-origin token redemption is permitted only for the 'Single-Page Application' client-type.`
 
-> **Important:** This step must be done **after** Bicep deployment because you need the public IP address assigned to the External Load Balancer.
+> **Important:** This step must be done **after** Bicep deployment because you need the FQDN assigned to the Application Gateway.
 
-**Get your External Load Balancer Public IP:**
+**Get your Application Gateway FQDN:**
 ```bash
-# Get the public IP address
+# Get the Application Gateway FQDN
 az network public-ip show \
   --resource-group <YOUR_RESOURCE_GROUP> \
-  --name pip-lb-external-prod \
-  --query ipAddress -o tsv
+  --name pip-appgw-blogapp-prod \
+  --query dnsSettings.fqdn -o tsv
+
+# Example output: blogapp-12345.japanwest.cloudapp.azure.com
 ```
 
 **Update the frontend app registration with SPA redirect URIs:**
@@ -156,15 +281,15 @@ az network public-ip show \
 
 ```bash
 # Replace <YOUR_FRONTEND_CLIENT_ID> with your frontend app's Client ID
-# Replace <YOUR_PUBLIC_IP> with the IP address from the command above
+# Replace <YOUR_APPGW_FQDN> with the FQDN from the command above
 az rest --method PATCH \
   --uri "https://graph.microsoft.com/v1.0/applications(appId='<YOUR_FRONTEND_CLIENT_ID>')" \
   --headers "Content-Type=application/json" \
   --body '{
     "spa": {
       "redirectUris": [
-        "https://<YOUR_PUBLIC_IP>",
-        "https://<YOUR_PUBLIC_IP>/",
+        "https://<YOUR_APPGW_FQDN>",
+        "https://<YOUR_APPGW_FQDN>/",
         "http://localhost:5173",
         "http://localhost:5173/"
       ]
@@ -183,8 +308,8 @@ az rest --method PATCH \
   --body '{
     "spa": {
       "redirectUris": [
-        "https://20.63.224.11",
-        "https://20.63.224.11/",
+        "https://blogapp-12345.japanwest.cloudapp.azure.com",
+        "https://blogapp-12345.japanwest.cloudapp.azure.com/",
         "http://localhost:5173",
         "http://localhost:5173/"
       ]
@@ -202,12 +327,12 @@ az ad app show --id <YOUR_FRONTEND_CLIENT_ID> --query "spa.redirectUris"
 
 | Redirect URI | Purpose |
 |--------------|---------|
-| `https://<YOUR_PUBLIC_IP>` | Production - after MSAL login redirect |
-| `https://<YOUR_PUBLIC_IP>/` | Production - with trailing slash (some browsers add this) |
+| `https://<YOUR_APPGW_FQDN>` | Production - after MSAL login redirect |
+| `https://<YOUR_APPGW_FQDN>/` | Production - with trailing slash (some browsers add this) |
 | `http://localhost:5173` | Local development with Vite |
 | `http://localhost:5173/` | Local development - with trailing slash |
 
-> **Note:** HTTPS is required for production because MSAL uses the Web Crypto API which is only available in secure contexts.
+> **Note:** HTTPS is provided by Application Gateway with a self-signed certificate. Browsers will show a certificate warning, but this is acceptable for workshop purposes. For production, use a certificate from a trusted CA or Azure Key Vault.
 
 **Alternative: Azure Portal Method:**
 1. Go to Azure Portal → Microsoft Entra ID → App registrations → Your Frontend App

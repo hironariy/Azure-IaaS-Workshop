@@ -10,7 +10,8 @@ This document defines the technical architecture requirements for the Azure IaaS
 - **Application Type**: Multi-user blog site
 - **Architecture Pattern**: Traditional 3-tier web application
 - **Tiers**: Web (NGINX) → Internal LB → App (Express/TypeScript) → DB (MongoDB)
-- **Traffic Flow**: Internet → External LB → Web VMs → Internal LB (10.0.2.10) → App VMs → DB VMs
+- **Traffic Flow**: Internet → Application Gateway (HTTPS:443) → Web VMs (HTTP:80) → Internal LB (10.0.2.10) → App VMs → DB VMs
+- **SSL/TLS**: Application Gateway terminates HTTPS with self-signed certificate; backend traffic is HTTP within VNet
 - **OS**: Ubuntu 22.04 LTS
 - **HA Strategy**: Availability Zones within primary region
 - **DR Strategy**: Azure Site Recovery to secondary region
@@ -23,19 +24,20 @@ This document defines the technical architecture requirements for the Azure IaaS
 #### Virtual Network (VNet)
 - **Address Space**: 10.0.0.0/16 (or suitable range)
 - **Subnet Design**:
+  - **Application Gateway subnet**: 10.0.0.0/24 (dedicated subnet for App Gateway, minimum /26)
   - Web tier subnet: 10.0.1.0/24 (2 VMs in different AZs)
   - App tier subnet: 10.0.2.0/24 (2 VMs in different AZs)
   - DB tier subnet: 10.0.3.0/24 (2 VMs in different AZs)
   - Azure Bastion subnet: 10.0.255.0/26 (AzureBastionSubnet - required name)
-  - Load balancer subnet: If needed based on design
 
 #### Network Security Groups (NSGs)
 
 **Web Tier NSG Rules:**
-- Allow HTTPS (443) from Internet
-- Allow HTTP (80) from Internet
+- Allow HTTP (80) from Application Gateway subnet only (backend traffic after SSL termination)
+- Allow health probe traffic (65200-65535) from GatewayManager service tag
 - Allow SSH (22) from Azure Bastion subnet only
 - Deny all other inbound traffic
+- **Note**: No direct Internet traffic to Web VMs; all traffic flows through Application Gateway
 
 **App Tier NSG Rules:**
 - Allow application port (e.g., 3000) from Web tier subnet only
@@ -253,36 +255,90 @@ This choice becomes a teaching moment: "We're using B-series because workshop lo
 
 ### 3. Load Balancing
 
-#### External Load Balancer (Web Tier)
+#### Application Gateway (Web Tier)
 
-**Purpose**: Public-facing load balancer for web traffic
+**Purpose**: Public-facing Layer 7 load balancer with SSL/TLS termination for secure web traffic
 
-**SKU**: Standard (not Basic)
-- **Reason**: Zone redundancy, better SLA, required for AZ deployment
+**Why Application Gateway Instead of Standard Load Balancer**:
+- **SSL/TLS Termination**: Offloads certificate management from VMs; students don't need to configure NGINX for HTTPS
+- **Layer 7 Features**: Path-based routing, URL rewriting, WAF capability (optional)
+- **Azure DNS Label**: Provides `<label>.<region>.cloudapp.azure.com` domain - no custom domain required
+- **Workshop Simplification**: Self-signed certificate eliminates need for CA or domain ownership
+- **Educational Value**: Teaches modern cloud load balancing patterns vs basic Layer 4 load balancing
+
+**SKU**: Standard_v2
+- **Reason**: Zone redundancy, auto-scaling, better performance
+- **Tier**: Standard (WAF_v2 optional for security demonstration)
+- **Capacity**: Manual scaling with 1-2 instances (cost-optimized for workshop)
 
 **Public IP**:
 - SKU: Standard
 - Allocation: Static
 - Zone: Zone-redundant
+- **DNS Label**: `blogapp-<unique>` → `blogapp-<unique>.<region>.cloudapp.azure.com`
+
+**SSL/TLS Configuration**:
+- **Certificate Type**: Self-signed certificate (PFX format)
+- **Certificate Generation**:
+  ```bash
+  # Generate self-signed certificate (students run this script)
+  # Replace <region> with your Azure region (e.g., japanwest, eastus, westeurope)
+  openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+    -keyout workshop.key \
+    -out workshop.crt \
+    -subj "/CN=blogapp-<unique>.<region>.cloudapp.azure.com"
+  
+  # Convert to PFX for Application Gateway
+  openssl pkcs12 -export -out workshop.pfx \
+    -inkey workshop.key \
+    -in workshop.crt \
+    -password pass:WorkshopP@ss123
+  ```
+- **Browser Warning**: Expected with self-signed certificates (acceptable for workshop)
+- **Alternative (Production)**: Azure Key Vault integration with CA-signed certificates
 
 **Frontend Configuration**:
-- Public IP address for web traffic
+- **HTTPS Listener** (port 443): Primary listener with SSL certificate
+- **HTTP Listener** (port 80): Redirects to HTTPS (HTTP→HTTPS redirect rule)
 
-**Backend Pools**:
+**Backend Pool**:
 - Web tier VMs (both AZs)
+- **Backend Port**: 80 (HTTP - SSL terminated at App Gateway)
+- **Backend Protocol**: HTTP
+
+**Backend HTTP Settings**:
+- Port: 80
+- Protocol: HTTP
+- Cookie-based affinity: Disabled (stateless SPA)
+- Request timeout: 30 seconds
+- **Override backend path**: Not used
 
 **Health Probes**:
-- HTTP probe on port 80
+- Protocol: HTTP
 - Path: /health
+- Host: Pick from backend HTTP settings
 - Interval: 15 seconds
-- Unhealthy threshold: 2
+- Unhealthy threshold: 3
+- Match status codes: 200-399
 
-**Load Balancing Rules**:
-- HTTP (port 80) → Backend port 80
-- HTTPS (port 443) → Backend port 443 (if SSL termination on VMs)
+**Routing Rules**:
+- **HTTPS Rule**: HTTPS listener → Backend pool (Web VMs)
+- **HTTP Redirect Rule**: HTTP listener → Redirect to HTTPS listener (permanent 301)
 
-**Outbound Rules**:
-- Configure for outbound internet access from backend VMs
+**WAF Configuration** (Optional - for security demonstration):
+- Mode: Detection (not Prevention for workshop to avoid blocking legitimate traffic)
+- Rule set: OWASP 3.2
+- **Educational Value**: Shows how to add application-layer security
+
+**AWS Comparison**:
+| Azure Application Gateway | AWS Equivalent |
+|--------------------------|----------------|
+| Application Gateway | Application Load Balancer (ALB) |
+| SSL/TLS termination | ALB HTTPS listener |
+| Backend HTTP settings | Target group settings |
+| Health probes | ALB health checks |
+| WAF_v2 SKU | AWS WAF attached to ALB |
+| Azure DNS label | Route 53 alias or ALB DNS name |
 
 #### Internal Load Balancer (App Tier)
 
@@ -481,15 +537,18 @@ Follow Azure naming best practices:
 
 | Resource Type | Pattern | Example |
 |---------------|---------|---------||
-| Resource Group | rg-{workload}-{env}-{region} | rg-blogapp-prod-eastus |
-| Virtual Network | vnet-{workload}-{env}-{region} | vnet-blogapp-prod-eastus |
+| Resource Group | rg-{workload}-{env}-{region} | rg-blogapp-prod-japanwest |
+| Virtual Network | vnet-{workload}-{env}-{region} | vnet-blogapp-prod-japanwest |
 | Subnet | snet-{tier}-{env} | snet-web-prod |
 | VM | vm-{tier}{instance}-{env} | vm-web01-prod |
-| External Load Balancer | lbe-{workload}-{env} | lbe-blogapp-prod |
+| **Application Gateway** | agw-{workload}-{env} | agw-blogapp-prod |
+| **App Gateway Public IP** | pip-agw-{workload}-{env} | pip-agw-blogapp-prod |
 | Internal Load Balancer | lbi-{tier}-{workload}-{env} | lbi-app-blogapp-prod |
 | Storage Account | st{workload}{uniqueid} | stblogapp001 |
 | NSG | nsg-{subnet}-{env} | nsg-web-prod |
 | Log Analytics | log-{workload}-{env} | log-blogapp-prod |
+
+**Application Gateway DNS Label**: `{workload}-{unique}` → `blogapp-<unique>.<region>.cloudapp.azure.com`
 
 #### Tagging Strategy
 
@@ -512,7 +571,7 @@ Required tags for all resources:
 
 **Web Tier**:
 - 2 VMs in different Availability Zones
-- Load Balancer distributes traffic
+- Application Gateway distributes traffic (Layer 7, HTTPS termination)
 - Stateless design (no session affinity)
 
 **App Tier**:
@@ -555,7 +614,8 @@ Required tags for all resources:
 
 **Additional Infrastructure Costs (48 hours)**:
 - Managed Disks (6 × Standard SSD 30GB + 2 × Premium SSD 128GB): **~$2.50**
-- Standard Load Balancer (External + Internal) + Public IP: **~$2.00**
+- Application Gateway (Standard_v2, 1 capacity unit) + Public IP: **~$12.00**
+- Internal Load Balancer + Private IP: **~$1.00**
 - Storage Account (Standard LRS, minimal usage): **~$0.50**
 - Azure Bastion (Standard SKU): **~$9.00** (enables native client SSH from terminal)
 - Log Analytics (30-day retention, light ingestion): **~$2.00**
@@ -563,7 +623,13 @@ Required tags for all resources:
 - Azure Site Recovery (replication): **~$6.00**
 - Data transfer (minimal): **~$0.50**
 
-**Total Estimated Cost**: **~$47 per student** for 48-hour workshop
+**Total Estimated Cost**: **~$58 per student** for 48-hour workshop
+
+**Note**: Application Gateway adds ~$11 vs Standard Load Balancer, but provides:
+- SSL/TLS termination (no NGINX HTTPS config needed)
+- Azure-provided DNS label (no custom domain needed)
+- Layer 7 load balancing features
+- Optional WAF for security
 
 **Cost Optimization Tips for Students**:
 - Deallocate VMs during breaks: Save ~$0.50/hour
@@ -631,10 +697,17 @@ Required tags for all resources:
 ## Alternative Technologies (Educational Context)
 
 ### Application Gateway vs Standard Load Balancer
-- **Workshop Choice**: Standard Load Balancer
-- **Better Production Choice**: Application Gateway + WAF
-- **Reason for SLB**: Time constraints, focus on IaaS fundamentals
-- **Explanation Required**: Document why App Gateway is preferred for production
+- **Workshop Choice**: Application Gateway with self-signed certificate
+- **Reason for Application Gateway**:
+  - **SSL/TLS termination**: Eliminates need for students to configure HTTPS on NGINX
+  - **Azure DNS label**: Provides `<label>.<region>.cloudapp.azure.com` domain - no custom domain or CA needed
+  - **Self-signed certificate**: Quick to generate, acceptable for workshop (browser warnings expected)
+  - **Educational value**: Teaches Layer 7 load balancing, SSL offloading patterns
+- **Cost Trade-off**: ~$11 more per student for 48 hours vs Standard Load Balancer
+- **Alternative (Standard Load Balancer)**: Would require students to:
+  - Generate certificates on each VM
+  - Configure NGINX for HTTPS (time-consuming, not workshop focus)
+  - Either accept HTTP-only (insecure) or spend significant time on certificate management
 
 ### Azure Files vs Blob Storage
 - **Workshop Choice**: Blob Storage for static assets
@@ -687,5 +760,12 @@ Required tags for all resources:
 ---
 
 **Document Status**: Living document - update as architecture evolves
-**Last Updated**: 2025-12-01
-**Version**: 1.0
+**Last Updated**: 2026-01-06
+**Version**: 2.0
+
+### Document History
+
+| Version | Date | Changes |
+|---------|------|---------|
+| 1.0 | 2025-12-01 | Initial specification |
+| 2.0 | 2026-01-06 | Major architecture update:<br>- Replaced Standard Load Balancer with Application Gateway for Web tier<br>- Added SSL/TLS termination with self-signed certificate<br>- Added Application Gateway subnet (10.0.0.0/24)<br>- Updated NSG rules for App Gateway traffic patterns<br>- Added certificate generation script documentation<br>- Updated cost estimates (+$11/student for App Gateway)<br>- Added Azure DNS label for HTTPS endpoint<br>- Updated naming conventions for Application Gateway resources |

@@ -6,12 +6,12 @@
 //
 // Architecture:
 //   - 2 VMs: vm-web-az1 (Zone 1), vm-web-az2 (Zone 2)
-//   - Both connected to Load Balancer backend pool
+//   - Application Gateway routes HTTPS traffic to these VMs
 //   - NGINX serves static React frontend and proxies to App tier
 //   - Stateless design (no session affinity)
 //
 // Traffic Flow:
-//   Internet → Load Balancer → Web Tier (NGINX) → App Tier (Express)
+//   Internet → Application Gateway (HTTPS) → Web Tier (HTTP/NGINX) → App Tier
 //
 // VM Sizing Rationale (B2s):
 //   - 2 vCPU, 4 GB RAM
@@ -33,8 +33,8 @@ param workloadName string = 'blogapp'
 @description('Resource ID of the Web tier subnet')
 param subnetId string
 
-@description('Resource ID of the Load Balancer backend pool')
-param loadBalancerBackendPoolId string
+@description('Resource ID of the Load Balancer backend pool (optional - not used with Application Gateway)')
+param loadBalancerBackendPoolId string = ''
 
 @description('Admin username for VMs')
 param adminUsername string = 'azureuser'
@@ -118,7 +118,7 @@ var nginxInstallScript = replace(
 // Web Tier VMs
 // =============================================================================
 // Deploy 2 VMs in different Availability Zones for high availability
-// Both are registered with the Load Balancer backend pool
+// Application Gateway manages backend pool using VM private IPs directly
 // =============================================================================
 
 // VM in Availability Zone 1
