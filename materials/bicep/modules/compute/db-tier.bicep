@@ -72,6 +72,12 @@ param forceUpdateTag string = ''
 @description('Skip VM creation and only update extensions (for re-deployment)')
 param skipVmCreation bool = false
 
+@description('Static private IP for DB VM in Zone 1 (must be in dbSubnet range)')
+param dbVmAz1PrivateIp string = '10.0.3.4'
+
+@description('Static private IP for DB VM in Zone 2 (must be in dbSubnet range)')
+param dbVmAz2PrivateIp string = '10.0.3.5'
+
 // =============================================================================
 // Variables
 // =============================================================================
@@ -509,6 +515,7 @@ module vmAz1 'vm.bicep' = {
     osDiskSizeGB: 30
     dataDisks: dataDisks
     loadBalancerBackendPoolId: ''  // No LB for DB tier
+    privateIPAddress: dbVmAz1PrivateIp  // Static IP for predictable replica set config
     enableMonitoring: enableMonitoring
     logAnalyticsWorkspaceId: logAnalyticsWorkspaceId
     dataCollectionRuleId: dataCollectionRuleId
@@ -534,6 +541,7 @@ module vmAz2 'vm.bicep' = {
     osDiskSizeGB: 30
     dataDisks: dataDisks
     loadBalancerBackendPoolId: ''  // No LB for DB tier
+    privateIPAddress: dbVmAz2PrivateIp  // Static IP for predictable replica set config
     enableMonitoring: enableMonitoring
     logAnalyticsWorkspaceId: logAnalyticsWorkspaceId
     dataCollectionRuleId: dataCollectionRuleId
@@ -573,4 +581,4 @@ output principalIds array = [
 ]
 
 @description('MongoDB connection string (after replica set initialization)')
-output mongoConnectionString string = 'mongodb://${vmAz1.outputs.privateIpAddress}:27017,${vmAz2.outputs.privateIpAddress}:27017/blogapp?replicaSet=blogapp-rs0'
+output mongoConnectionString string = 'mongodb://${dbVmAz1PrivateIp}:27017,${dbVmAz2PrivateIp}:27017/blogapp?replicaSet=blogapp-rs0'

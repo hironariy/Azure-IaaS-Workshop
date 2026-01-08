@@ -2,6 +2,8 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
+日本語版: [README.ja.md](./README.ja.md)
+
 A hands-on workshop for learning Azure IaaS patterns through building and deploying a resilient multi-tier web application.
 
 ---
@@ -739,8 +741,8 @@ Connect to each Web VM via Bastion and deploy the frontend code. See [deployment
 # Test HTTPS access (use -k for self-signed certificate)
 curl -k https://$FQDN/
 
-# Test API endpoint
-curl -k https://$FQDN/api/health
+# Test API endpoint (use /api/posts - backend health is at /health, not /api/health)
+curl -k https://$FQDN/api/posts
 
 # Open in browser
 echo "Open: https://$FQDN"
@@ -763,25 +765,314 @@ az group delete --name rg-blogapp-workshop --yes --no-wait
 
 ## 3. Resiliency Testing
 
-*This section will contain exercises for testing the high availability and disaster recovery capabilities of the deployed architecture.*
+This section contains exercises for testing the high availability and disaster recovery capabilities of the deployed architecture.
 
-### Planned Exercises
-
-| Exercise | Description | Status |
-|----------|-------------|--------|
-| **VM Failure Simulation** | Stop a VM and verify automatic failover | 🔜 Coming Soon |
-| **Zone Failure Simulation** | Test cross-zone failover | 🔜 Coming Soon |
-| **Database Failover** | Force MongoDB replica set failover | 🔜 Coming Soon |
-| **Load Balancer Health Probes** | Verify unhealthy instances are removed | 🔜 Coming Soon |
-| **Application Gateway Failover** | Test backend pool failover | 🔜 Coming Soon |
-
-### Prerequisites for Resiliency Testing
+### Prerequisites
 
 - Completed Azure deployment (Section 2.3)
-- Azure CLI configured
+- Azure CLI configured and logged in
 - Access to Azure Portal for monitoring
+- Application accessible via Application Gateway URL
 
-*Detailed instructions will be added in future updates.*
+### 3.1 Core Resiliency Tests (Recommended)
+
+These tests demonstrate automatic failover capabilities without requiring complex manual recovery steps.
+
+#### Test 1: Web Tier VM Failure
+
+**Objective:** Verify Application Gateway removes failed VM from backend pool automatically.
+
+```bash
+# 1. Verify both Web VMs are healthy
+az network application-gateway show-backend-health \
+  -g rg-blogapp-workshop \
+  -n agw-blogapp-prod \
+  --query 'backendAddressPools[0].backendHttpSettingsCollection[0].servers[].{address:address,health:health}'
+
+# 2. Stop one Web VM
+az vm stop -g rg-blogapp-workshop -n vm-web-az1-prod
+
+# 3. Wait for health probe (60 seconds)
+sleep 60
+
+# 4. Verify application still works
+curl -k https://<YOUR_APPGW_FQDN>/
+
+# 5. Check backend health - one should be "Unhealthy"
+az network application-gateway show-backend-health \
+  -g rg-blogapp-workshop \
+  -n agw-blogapp-prod \
+  --query 'backendAddressPools[0].backendHttpSettingsCollection[0].servers[].{address:address,health:health}'
+
+# 6. Restore the VM
+az vm start -g rg-blogapp-workshop -n vm-web-az1-prod
+```
+
+**Expected Result:** Application continues to work. Traffic automatically routes to healthy VM.
+
+---
+
+#### Test 2: App Tier VM Failure
+
+**Objective:** Verify Internal Load Balancer removes failed VM from backend pool.
+
+```bash
+# 1. Stop one App VM
+az vm stop -g rg-blogapp-workshop -n vm-app-az1-prod
+
+# 2. Wait for health probe (60 seconds)
+sleep 60
+
+# 3. Test API endpoint - should still work
+curl -k https://<YOUR_APPGW_FQDN>/api/posts
+
+# 4. Restore the VM
+az vm start -g rg-blogapp-workshop -n vm-app-az1-prod
+```
+
+**Expected Result:** API continues to respond. Internal LB routes to healthy App VM.
+
+---
+
+#### Test 3: Application Process Failure (NGINX)
+
+**Objective:** Verify health probes detect application-level failures, not just VM failures.
+
+```bash
+# 1. Connect to Web VM via Bastion
+az network bastion ssh \
+  -n bastion-blogapp-prod \
+  -g rg-blogapp-workshop \
+  --target-resource-id $(az vm show -g rg-blogapp-workshop -n vm-web-az1-prod --query id -o tsv) \
+  --auth-type ssh-key \
+  --username azureuser \
+  --ssh-key ~/.ssh/id_rsa
+
+# 2. Stop NGINX
+sudo systemctl stop nginx
+
+# 3. Exit and wait for health probe
+exit
+sleep 60
+
+# 4. Test application - should still work via other VM
+curl -k https://<YOUR_APPGW_FQDN>/
+
+# 5. Reconnect and restart NGINX
+# (use same bastion ssh command as step 1)
+sudo systemctl start nginx
+```
+
+**Expected Result:** Application Gateway detects NGINX failure and routes traffic to healthy VM.
+
+---
+
+#### Test 4: Application Process Failure (Node.js/PM2)
+
+**Objective:** Verify Internal LB detects Node.js application failure.
+
+```bash
+# 1. Connect to App VM via Bastion
+az network bastion ssh \
+  -n bastion-blogapp-prod \
+  -g rg-blogapp-workshop \
+  --target-resource-id $(az vm show -g rg-blogapp-workshop -n vm-app-az1-prod --query id -o tsv) \
+  --auth-type ssh-key \
+  --username azureuser \
+  --ssh-key ~/.ssh/id_rsa
+
+# 2. Stop the application
+pm2 stop blogapp-api
+
+# 3. Exit and test API
+exit
+curl -k https://<YOUR_APPGW_FQDN>/api/posts
+# Should still work via other App VM
+
+# 4. Reconnect and restart
+pm2 start blogapp-api
+```
+
+**Expected Result:** API continues to respond via healthy App VM.
+
+---
+
+#### Test 5: MongoDB Graceful Failover (rs.stepDown)
+
+**Objective:** Verify MongoDB replica set automatic election when primary steps down gracefully.
+
+> **Note:** This tests graceful failover where both members are online. For hard failure scenarios, see Optional Tests.
+
+```bash
+# 1. Connect to primary DB VM
+az network bastion ssh \
+  -n bastion-blogapp-prod \
+  -g rg-blogapp-workshop \
+  --target-resource-id $(az vm show -g rg-blogapp-workshop -n vm-db-az1-prod --query id -o tsv) \
+  --auth-type ssh-key \
+  --username azureuser \
+  --ssh-key ~/.ssh/id_rsa
+
+# 2. Check current status
+mongosh --eval 'rs.status().members.map(m => ({name: m.name, state: m.stateStr}))'
+
+# 3. Force primary to step down (triggers election)
+mongosh --eval 'rs.stepDown(60)'
+
+# 4. Check new status - roles should be swapped
+mongosh --eval 'rs.status().members.map(m => ({name: m.name, state: m.stateStr}))'
+
+# 5. Exit and test application
+exit
+curl -k https://<YOUR_APPGW_FQDN>/api/posts
+```
+
+**Expected Result:** Secondary becomes PRIMARY within 10-15 seconds. Application reconnects automatically.
+
+---
+
+#### Test 6: Traffic Distribution Verification
+
+**Objective:** Confirm Application Gateway distributes traffic across multiple instances.
+
+```bash
+# Terminal 1: Tail logs on Web VM AZ1
+az network bastion ssh ... -n vm-web-az1-prod
+sudo tail -f /var/log/nginx/access.log
+
+# Terminal 2: Tail logs on Web VM AZ2
+az network bastion ssh ... -n vm-web-az2-prod
+sudo tail -f /var/log/nginx/access.log
+
+# Terminal 3: Generate traffic
+for i in {1..20}; do
+  curl -k https://<YOUR_APPGW_FQDN>/ > /dev/null 2>&1
+  sleep 1
+done
+```
+
+**Expected Result:** Requests appear in BOTH Web VM logs, showing load balancing.
+
+---
+
+#### Test 7: Health Probe Manipulation
+
+**Objective:** Understand how health probes affect traffic routing.
+
+```bash
+# 1. Connect to Web VM
+az network bastion ssh ... -n vm-web-az1-prod
+
+# 2. Inject health failure into NGINX config
+sudo sed -i '/server {/a \    location = /health { return 503 "unhealthy"; add_header Content-Type text/plain; }' /etc/nginx/sites-enabled/default
+sudo nginx -t && sudo systemctl reload nginx
+
+# 3. Verify health returns 503
+curl -I http://localhost/health
+
+# 4. Exit and wait for probe detection
+exit
+sleep 60
+
+# 5. Check backend health - should show one Unhealthy
+az network application-gateway show-backend-health \
+  -g rg-blogapp-workshop \
+  -n agw-blogapp-prod \
+  --query 'backendAddressPools[0].backendHttpSettingsCollection[0].servers[].{address:address,health:health}'
+
+# 6. Application should still work
+curl -k https://<YOUR_APPGW_FQDN>/
+
+# 7. Restore health endpoint
+# Reconnect and run:
+sudo sed -i '/location = \/health { return 503/d' /etc/nginx/sites-enabled/default
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+**Expected Result:** Health probe detects 503, removes VM from pool, traffic routes to healthy VM.
+
+---
+
+#### Test 8: Network Partition (NSG-based)
+
+**Objective:** Test behavior when network connectivity is lost between tiers.
+
+```bash
+# 1. Block App Tier → Database Tier traffic
+az network nsg rule create \
+  -g rg-blogapp-workshop \
+  --nsg-name nsg-app-prod \
+  -n DenyMongoDB \
+  --priority 100 \
+  --access Deny \
+  --direction Outbound \
+  --destination-address-prefixes 10.0.3.0/24 \
+  --destination-port-ranges 27017 \
+  --protocol Tcp
+
+# 2. Test application - should return error
+curl -k https://<YOUR_APPGW_FQDN>/api/posts
+
+# 3. Remove the blocking rule
+az network nsg rule delete \
+  -g rg-blogapp-workshop \
+  --nsg-name nsg-app-prod \
+  -n DenyMongoDB
+
+# 4. Verify recovery
+sleep 30
+curl -k https://<YOUR_APPGW_FQDN>/api/posts
+```
+
+**Expected Result:** Application shows database error, then recovers after rule removal.
+
+---
+
+### 3.2 Optional Advanced Tests
+
+The following tests involve **manual MongoDB recovery** due to the 2-member replica set limitation. They are educational but time-consuming (15-30 minutes each).
+
+> ⚠️ **2-Member Replica Set Limitation**
+> 
+> MongoDB requires a majority vote to elect a new primary. With only 2 members:
+> - When both are online: Election works (2/2 votes available)
+> - When one is down: No election possible (only 1/2 votes)
+> 
+> This is why graceful `rs.stepDown()` works, but hard VM failure requires manual recovery.
+
+| Test | Description | Time Required |
+|------|-------------|---------------|
+| **MongoDB Hard Failure** | Stop primary DB VM, observe no auto-election | 15-30 min |
+| **Manual MongoDB Recovery** | Force reconfigure to promote secondary | 15-30 min |
+| **Simulated Zone Failure** | Stop all Zone 1 VMs simultaneously | 20-40 min |
+| **Azure Chaos Studio** | Use Azure's managed chaos engineering | Setup required |
+
+For detailed instructions on these advanced tests, see:
+📄 **[Resiliency Test Strategy (Full Document)](AIdocs/dev-record/resiliency-test-strategy.md)**
+
+---
+
+### 3.3 Test Summary
+
+| Test | Type | Failover | Recovery |
+|------|------|----------|----------|
+| Web VM Stop | Automatic | ✅ Application Gateway health probe | Start VM |
+| App VM Stop | Automatic | ✅ Internal LB health probe | Start VM |
+| NGINX Stop | Automatic | ✅ Application Gateway health probe | Start NGINX |
+| PM2 Stop | Automatic | ✅ Internal LB health probe | Start PM2 |
+| MongoDB stepDown | Automatic | ✅ Replica set election | Automatic |
+| MongoDB VM Stop | ⚠️ Manual | ❌ 2-member RS limitation | Force reconfigure |
+| Zone Failure | ⚠️ Manual | ❌ Requires DB manual recovery | Force reconfigure + Start VMs |
+
+### Key Learnings
+
+After completing these tests, you will understand:
+
+1. **Health Probes**: How Azure load balancers detect and route around failures
+2. **Automatic Failover**: Web and App tiers fail over without intervention
+3. **MongoDB Replication**: Graceful failover vs. hard failure scenarios
+4. **2-Member RS Limitation**: Why production uses 3+ members or arbiters
+5. **Defense in Depth**: Multiple layers of redundancy protect the application
 
 ---
 

@@ -1,33 +1,34 @@
-# Deployment Strategy for Blog Application to Azure VMs
+# Azure VM へのブログアプリケーション デプロイ戦略
 
-**Date:** December 16, 2025  
-**Author:** AI Deployment Agent  
-**Status:** Template Ready  
-**Last Updated:** January 2026 - Updated for Application Gateway with SSL/TLS termination
+**日付:** 2025年12月16日  
+**著者:** AI Deployment Agent  
+**ステータス:** Template Ready  
+**最終更新:** 2026年1月 - Application Gateway の SSL/TLS 終端対応に更新
 
 ---
 
-日本語版: [ブログアプリケーションのAzure VMへのデプロイ戦略](./deployment-strategy.ja.md)
+English version: [Deployment Strategy for Blog Application to Azure VMs](./deployment-strategy.md)
 
-## Executive Summary
+## エグゼクティブ サマリー
 
-This document outlines the deployment strategy for the multi-tier blog application to Azure VMs. The VMs are provisioned via Bicep templates which include **CustomScript Extensions** that:
-1. Pre-install all middleware (MongoDB, Node.js, PM2, NGINX)
-2. **Inject environment variables** to App tier VMs from Bicep parameters
-3. **Create `/config.json`** on Web tier VMs for frontend runtime configuration
+このドキュメントは、マルチティア構成のブログアプリケーションを Azure VM にデプロイするための戦略をまとめたものです。VM は Bicep テンプレートでプロビジョニングされ、テンプレートには **CustomScript Extensions** が含まれます。これにより以下を実施します。
 
-### Deployment Status
+1. すべてのミドルウェア（MongoDB / Node.js / PM2 / NGINX）を事前インストール
+2. Bicep パラメータから App tier VM に **環境変数を注入**
+3. フロントエンドの実行時設定のために Web tier VM 上に **`/config.json` を作成**
 
-| Component | Status | Resource Group |
+### デプロイ状況
+
+| コンポーネント | 状態 | リソース グループ |
 |-----------|--------|----------------|
-| Infrastructure | ⏳ Pending | `<YOUR_RESOURCE_GROUP>` |
-| Config Injection (App tier) | ✅ Verified on all VMs | `/etc/environment`, `/opt/blogapp/.env` |
-| Config Injection (Web tier) | ✅ Verified on all VMs | `/var/www/html/config.json` |
-| MongoDB Replica Set | ⏳ Pending | Run `post-deployment-setup.local.sh` |
-| Backend Application | ⏳ Pending | Deploy code after MongoDB setup |
-| Frontend Application | ⏳ Pending | Deploy static files |
+| インフラ | ⏳ Pending | `<YOUR_RESOURCE_GROUP>` |
+| 設定注入（App tier） | ✅ 全 VM で検証済み | `/etc/environment`, `/opt/blogapp/.env` |
+| 設定注入（Web tier） | ✅ 全 VM で検証済み | `/var/www/html/config.json` |
+| MongoDB レプリカセット | ⏳ Pending | `post-deployment-setup.local.sh` を実行 |
+| バックエンド アプリケーション | ⏳ Pending | MongoDB セットアップ後にコードをデプロイ |
+| フロントエンド アプリケーション | ⏳ Pending | 静的ファイルをデプロイ |
 
-### Deployment Flow Overview
+### デプロイ フロー概要
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -65,39 +66,39 @@ This document outlines the deployment strategy for the multi-tier blog applicati
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-### What Bicep Provisions (Fully Automated)
+### Bicep がプロビジョニングするもの（完全自動）
 
-| Tier | Pre-installed by Bicep | Config Injection | Status |
+| Tier | Bicep により事前インストール | 設定注入 | 状態 |
 |------|------------------------|------------------|--------|
-| **Database** | MongoDB 7.0, data disk at `/data/mongodb`, replica set config | N/A | ✅ Automated |
-| **Backend** | Node.js 20 LTS, PM2, `/opt/blogapp` directory | `/etc/environment` + `/opt/blogapp/.env` with Entra IDs | ✅ Automated |
-| **Frontend** | NGINX, reverse proxy config, `/var/www/html` | `/var/www/html/config.json` with Entra IDs | ✅ Automated |
-| **Application Gateway** | SSL/TLS termination, HTTP→HTTPS redirect | Self-signed certificate, Azure DNS label | ✅ Automated |
+| **Database** | MongoDB 7.0、`/data/mongodb` にデータディスク、レプリカセット設定 | N/A | ✅ 自動化 |
+| **Backend** | Node.js 20 LTS、PM2、`/opt/blogapp` ディレクトリ | Entra ID を含む `/etc/environment` + `/opt/blogapp/.env` | ✅ 自動化 |
+| **Frontend** | NGINX、リバースプロキシ設定、`/var/www/html` | Entra ID を含む `/var/www/html/config.json` | ✅ 自動化 |
+| **Application Gateway** | SSL/TLS 終端、HTTP→HTTPS リダイレクト | 自己署名証明書、Azure DNS ラベル | ✅ 自動化 |
 
-> **Implementation Note:** Bicep templates use external shell scripts loaded via `loadTextContent()` with `replace()` functions for placeholder substitution. This avoids ARM's `format()` function issues with bash scripts and JSON containing curly braces.
+> **実装メモ:** Bicep テンプレートは、`loadTextContent()` で外部シェルスクリプトを読み込み、`replace()` 関数でプレースホルダ置換を行います。これにより、bash スクリプトや JSON に含まれる波括弧が原因で ARM の `format()` 関数が問題を起こすケースを回避できます。
 >
-> - `modules/compute/scripts/nginx-install.sh` - Web tier setup script
-> - `modules/compute/scripts/nodejs-install.sh` - App tier setup script
+> - `modules/compute/scripts/nginx-install.sh` - Web tier セットアップ スクリプト
+> - `modules/compute/scripts/nodejs-install.sh` - App tier セットアップ スクリプト
 
-### What Requires Post-Deployment Action
+### ポストデプロイで必要な作業
 
-| Task | Manual/Automated | Script (macOS/Linux) | Script (Windows) |
+| タスク | 手動/自動 | スクリプト（macOS/Linux） | スクリプト（Windows） |
 |------|------------------|----------------------|------------------|
-| Initialize MongoDB replica set | **Automated** | `post-deployment-setup.local.sh` | `post-deployment-setup.local.ps1` |
-| Create MongoDB users | **Automated** | `post-deployment-setup.local.sh` | `post-deployment-setup.local.ps1` |
-| Deploy backend application code | Manual | See Phase 2 | See Phase 2 |
-| Deploy frontend static files | Manual | See Phase 3 | See Phase 3 |
+| MongoDB レプリカセット初期化 | **自動** | `post-deployment-setup.local.sh` | `post-deployment-setup.local.ps1` |
+| MongoDB ユーザー作成 | **自動** | `post-deployment-setup.local.sh` | `post-deployment-setup.local.ps1` |
+| バックエンド アプリケーションのコード デプロイ | 手動 | Phase 2 を参照 | Phase 2 を参照 |
+| フロントエンド静的ファイルのデプロイ | 手動 | Phase 3 を参照 | Phase 3 を参照 |
 
-### Target Environment
+### 対象環境
 
-| Tier | VMs | IPs | Pre-installed | Config Files |
+| Tier | VM | IP | 事前インストール | 設定ファイル |
 |------|-----|-----|---------------|--------------|
 | Database | `vm-db-az1-prod`, `vm-db-az2-prod` | 10.0.3.4, 10.0.3.5 | MongoDB 7.0 | N/A |
 | Backend | `vm-app-az1-prod`, `vm-app-az2-prod` | 10.0.2.5, 10.0.2.4 | Node.js 20, PM2 | `/etc/environment`, `/opt/blogapp/.env` |
 | Frontend | `vm-web-az1-prod`, `vm-web-az2-prod` | 10.0.1.4, 10.0.1.5 | NGINX | `/var/www/html/config.json` |
-| Application Gateway | N/A (PaaS) | Public IP | SSL/TLS termination | Self-signed certificate |
+| Application Gateway | N/A（PaaS） | Public IP | SSL/TLS 終端 | 自己署名証明書 |
 
-### Traffic Flow
+### トラフィック フロー
 
 ```
 Internet → Application Gateway (HTTPS:443)
@@ -110,11 +111,11 @@ Internet → Application Gateway (HTTPS:443)
 
 ---
 
-## Pre-Deployment: Generate SSL Certificate and Configure Bicep Parameters
+## デプロイ前: SSL 証明書の生成と Bicep パラメータの設定
 
-### Step 0: Generate Self-Signed SSL Certificate
+### Step 0: 自己署名 SSL 証明書の生成
 
-**Before deploying**, generate a self-signed SSL certificate for the Application Gateway:
+**デプロイ前に**、Application Gateway 用の自己署名 SSL 証明書を生成します。
 
 **macOS/Linux:**
 ```bash
@@ -148,7 +149,7 @@ cd C:\path\to\AzureIaaSWorkshop
 Get-Content cert-base64.txt | Set-Clipboard
 ```
 
-**Manual certificate generation (alternative):**
+**手動での証明書生成（代替手段）:**
 
 ```bash
 # Generate private key and certificate
@@ -164,11 +165,11 @@ openssl pkcs12 -export -out cert.pfx -inkey cert.key -in cert.crt \
 base64 -i cert.pfx | tr -d '\n' > cert-base64.txt
 ```
 
-> **Note:** The certificate CN should match your expected FQDN, but for self-signed certificates, browser warnings will appear regardless. This is acceptable for workshop purposes.
+> **Note:** 証明書の CN は想定する FQDN と一致させる必要があります。ただし自己署名証明書の場合、いずれにせよブラウザ警告が表示されます。ワークショップ用途では許容されます。
 
-### Required Parameters in `main.bicepparam`
+### `main.bicepparam` に必要なパラメータ
 
-Before deploying, edit `main.bicepparam` (or copy to `main.local.bicepparam` for personal values):
+デプロイ前に `main.bicepparam` を編集します（または個人値用に `main.local.bicepparam` をコピーして利用します）。
 
 ```bicep
 using './main.bicep'
@@ -214,23 +215,23 @@ param sslCertificatePassword = 'Workshop2024!'
 param appGatewayDnsLabel = 'blogapp-<UNIQUE_SUFFIX>'
 ```
 
-### Choosing Your DNS Label
+### DNS ラベルの選び方
 
-The `appGatewayDnsLabel` must be **globally unique within the Azure region**. Azure will create an FQDN in the format:
+`appGatewayDnsLabel` は **Azure リージョン内でグローバルに一意**である必要があります。Azure は次の形式で FQDN を作成します。
 
 ```
 <your-label>.<region>.cloudapp.azure.com
 ```
 
-**Guidelines for choosing your DNS label:**
+**DNS ラベル選択のガイドライン:**
 
-| Approach | Example | Result FQDN |
+| アプローチ | 例 | 結果 FQDN |
 |----------|---------|-------------|
-| Name + Random | `blogapp-john-x7k2` | `blogapp-john-x7k2.japanwest.cloudapp.azure.com` |
-| Name + Date | `blogapp-tanaka-0106` | `blogapp-tanaka-0106.japanwest.cloudapp.azure.com` |
-| Team + Number | `blogapp-team3` | `blogapp-team3.japanwest.cloudapp.azure.com` |
+| 名前 + ランダム | `blogapp-john-x7k2` | `blogapp-john-x7k2.japanwest.cloudapp.azure.com` |
+| 名前 + 日付 | `blogapp-tanaka-0106` | `blogapp-tanaka-0106.japanwest.cloudapp.azure.com` |
+| チーム + 番号 | `blogapp-team3` | `blogapp-team3.japanwest.cloudapp.azure.com` |
 
-**Quick way to generate a unique suffix:**
+**一意なサフィックスを生成する簡単な方法:**
 
 ```bash
 # macOS/Linux - generate random 4-character suffix
@@ -244,9 +245,9 @@ echo "blogapp-$(openssl rand -hex 2)"
 # Example output: blogapp-7b2e
 ```
 
-> **Important:** If deployment fails with "DNS label already in use", simply choose a different label and redeploy.
+> **Important:** デプロイが "DNS label already in use" で失敗した場合、別のラベルに変更して再デプロイしてください。
 
-### Finding Your Values
+### 値の確認方法
 
 ```bash
 # Get your Tenant ID
@@ -262,29 +263,29 @@ az ad app list --display-name "blogapp" --query "[].{name:displayName, appId:app
 cat cert-base64.txt
 ```
 
-### Configure Redirect URIs in Entra ID (SPA Platform)
+### Entra ID のリダイレクト URI 設定（SPA プラットフォーム）
 
-You must configure the **redirect URIs** for the frontend app registration. The redirect URI must use the Application Gateway FQDN (HTTPS).
+フロントエンドのアプリ登録の **リダイレクト URI** を設定する必要があります。リダイレクト URI は Application Gateway の FQDN（HTTPS）を使用します。
 
-> ⚠️ **CRITICAL**: The frontend app registration MUST use **Single-page application (SPA)** platform type - NOT "Web". MSAL.js uses the PKCE (Proof Key for Code Exchange) flow which only works with SPA platform type. Using "Web" platform will cause error: `AADSTS9002326: Cross-origin token redemption is permitted only for the 'Single-Page Application' client-type.`
+> ⚠️ **CRITICAL**: フロントエンドのアプリ登録は **Single-page application (SPA)** プラットフォーム種別でなければなりません（"Web" ではありません）。MSAL.js は PKCE（Proof Key for Code Exchange）フローを使用しますが、これは SPA プラットフォーム種別でのみ動作します。"Web" プラットフォームを使うと、次のエラーになります: `AADSTS9002326: Cross-origin token redemption is permitted only for the 'Single-Page Application' client-type.`
 
-> **Tip:** You can configure redirect URIs **before or after** deployment - the FQDN is predictable based on your chosen DNS label.
+> **Tip:** リダイレクト URI は、デプロイの前後どちらでも設定できます。FQDN は選択した DNS ラベルから予測可能です。
 
-**Construct your Application Gateway FQDN:**
+**Application Gateway の FQDN を組み立てる:**
 
-The FQDN follows a predictable format based on the `appGatewayDnsLabel` you set in `main.local.bicepparam`:
+`main.local.bicepparam` に設定した `appGatewayDnsLabel` に基づき、FQDN は次の予測可能な形式になります。
 
 ```
 <appGatewayDnsLabel>.<region>.cloudapp.azure.com
 ```
 
-| Your Parameter | Your FQDN |
+| パラメータ | FQDN |
 |----------------|-----------|
 | `appGatewayDnsLabel = 'blogapp-john123'` | `blogapp-john123.japanwest.cloudapp.azure.com` |
 | `appGatewayDnsLabel = 'blogapp-team5'` | `blogapp-team5.japanwest.cloudapp.azure.com` |
 | `location = 'eastus'` + `appGatewayDnsLabel = 'blogapp-abc'` | `blogapp-abc.eastus.cloudapp.azure.com` |
 
-**Verify after deployment (optional):**
+**デプロイ後に確認（任意）:**
 ```bash
 # Confirm the FQDN matches your expectation
 az network public-ip show \
@@ -293,9 +294,9 @@ az network public-ip show \
   --query dnsSettings.fqdn -o tsv
 ```
 
-**Update the frontend app registration with SPA redirect URIs:**
+**SPA のリダイレクト URI を Microsoft Graph で更新:**
 
-> **Note:** The `az ad app update` command does not support `--spa-redirect-uris`. You must use the Microsoft Graph API directly.
+> **Note:** `az ad app update` コマンドは `--spa-redirect-uris` をサポートしていません。Microsoft Graph API を直接使用する必要があります。
 
 ```bash
 # Replace <YOUR_FRONTEND_CLIENT_ID> with your frontend app's Client ID
@@ -318,7 +319,7 @@ az rest --method PATCH \
   }'
 ```
 
-**Example with actual values:**
+**実値の例:**
 ```bash
 az rest --method PATCH \
   --uri "https://graph.microsoft.com/v1.0/applications(appId='cc795eea-9e46-429b-990d-6c75d942ef91')" \
@@ -338,33 +339,33 @@ az rest --method PATCH \
   }'
 ```
 
-**Verify the SPA redirect URIs:**
+**SPA のリダイレクト URI を確認:**
 ```bash
 az ad app show --id <YOUR_FRONTEND_CLIENT_ID> --query "spa.redirectUris"
 ```
 
-| Redirect URI | Purpose |
+| リダイレクト URI | 目的 |
 |--------------|---------|
-| `https://<YOUR_APPGW_FQDN>` | Production - after MSAL login redirect |
-| `https://<YOUR_APPGW_FQDN>/` | Production - with trailing slash (some browsers add this) |
-| `http://localhost:5173` | Local development with Vite |
-| `http://localhost:5173/` | Local development - with trailing slash |
+| `https://<YOUR_APPGW_FQDN>` | 本番 - MSAL ログイン後のリダイレクト |
+| `https://<YOUR_APPGW_FQDN>/` | 本番 - 末尾スラッシュ付き（ブラウザが付与する場合あり） |
+| `http://localhost:5173` | Vite を用いたローカル開発 |
+| `http://localhost:5173/` | ローカル開発 - 末尾スラッシュ付き |
 
-> **Note:** HTTPS is provided by Application Gateway with a self-signed certificate. Browsers will show a certificate warning, but this is acceptable for workshop purposes. For production, use a certificate from a trusted CA or Azure Key Vault.
+> **Note:** HTTPS は自己署名証明書を使った Application Gateway により提供されます。ブラウザで証明書警告が出ますが、ワークショップ用途では許容されます。本番では、信頼された CA の証明書、もしくは Azure Key Vault の証明書を使用してください。
 
-**Alternative: Azure Portal Method:**
-1. Go to Azure Portal → Microsoft Entra ID → App registrations → Your Frontend App
-2. Click **Authentication** in the left menu
-3. Under "Platform configurations", verify you have **Single-page application** (NOT Web)
-4. If you see "Web" platform with your URIs, delete it and add "Single-page application" instead
-5. Add your redirect URIs under the SPA section
-6. Click **Save**
+**代替手段: Azure Portal を使う方法:**
+1. Azure Portal → Microsoft Entra ID → App registrations → 対象のフロントエンド アプリ
+2. 左メニューの **Authentication** をクリック
+3. "Platform configurations" で **Single-page application**（"Web" ではない）になっていることを確認
+4. "Web" プラットフォームの URI がある場合は削除し、代わりに "Single-page application" を追加
+5. SPA セクションにリダイレクト URI を追加
+6. **Save** をクリック
 
 ---
 
-## Phase 0: Deploy Infrastructure and Run Post-Deployment Script
+## Phase 0: インフラをデプロイし、ポストデプロイ スクリプトを実行
 
-### 0.1 Deploy Bicep Template
+### 0.1 Bicep テンプレートのデプロイ
 
 ```bash
 # Create resource group (choose your own name and region)
@@ -379,9 +380,9 @@ az deployment group create \
 # Wait for deployment (15-30 minutes)
 ```
 
-### 0.1.1 Re-run CustomScript on Existing VMs (Optional)
+### 0.1.1 既存 VM の CustomScript を再実行（任意）
 
-If you need to re-run CustomScript extensions on specific tiers (e.g., update NGINX config), use the **tier-specific force update tags** along with **skipVmCreation** to avoid the SSH key change error:
+特定 tier（例: NGINX 設定更新）の CustomScript を再実行したい場合、**tier 別の force update タグ** と `skipVmCreation` を併用して、SSH キー変更エラーを回避します。
 
 ```bash
 # Force re-run on Web tier only (e.g., NGINX config update)
@@ -421,31 +422,31 @@ az deployment group create \
                forceUpdateTagDb="$TIMESTAMP"
 ```
 
-| Parameter | Purpose |
+| パラメータ | 目的 |
 |-----------|---------|
-| `skipVmCreationWeb/App/Db` | **Required for re-deployment**. Skips VM resource update, only updates extensions. Avoids "SSH key change not allowed" error. |
-| `forceUpdateTagWeb/App/Db` | Changes to this value force CustomScript extension to re-run |
+| `skipVmCreationWeb/App/Db` | **再デプロイに必須**。VM リソース更新をスキップし、拡張機能のみ更新します。"SSH key change not allowed" エラーを回避します。 |
+| `forceUpdateTagWeb/App/Db` | 値を変更すると CustomScript 拡張機能の再実行を強制します |
 
-| Tier | forceUpdateTag | skipVmCreation | When to Use |
+| Tier | forceUpdateTag | skipVmCreation | 使いどころ |
 |------|----------------|----------------|-------------|
-| Web (NGINX) | `forceUpdateTagWeb` | `skipVmCreationWeb` | Updated NGINX config, security headers |
-| App (Node.js) | `forceUpdateTagApp` | `skipVmCreationApp` | Updated env vars, Node.js version |
-| DB (MongoDB) | `forceUpdateTagDb` | `skipVmCreationDb` | Rarely needed (one-time setup) |
+| Web（NGINX） | `forceUpdateTagWeb` | `skipVmCreationWeb` | NGINX 設定更新、セキュリティヘッダ更新 |
+| App（Node.js） | `forceUpdateTagApp` | `skipVmCreationApp` | 環境変数更新、Node.js バージョン更新 |
+| DB（MongoDB） | `forceUpdateTagDb` | `skipVmCreationDb` | まれ（基本は一度きりのセットアップ） |
 
-> **Important:** When VMs already exist, you MUST set `skipVmCreation*=true` for the corresponding tier. Otherwise, Azure will fail with "Changing property 'linuxConfiguration.ssh.publicKeys' is not allowed" error.
+> **Important:** VM が既に存在する場合、該当 tier の `skipVmCreation*=true` を必ず指定してください。指定しないと、Azure は "Changing property 'linuxConfiguration.ssh.publicKeys' is not allowed" エラーで失敗します。
 
-### 0.2 Prepare Post-Deployment Script
+### 0.2 ポストデプロイ スクリプトの準備
 
-The post-deployment scripts use a **template pattern** to separate configuration from execution:
+ポストデプロイ スクリプトは、設定と実行を分離する **テンプレート パターン** を使います。
 
-| File | Purpose | Commit to Git |
+| ファイル | 用途 | Git にコミット |
 |------|---------|---------------|
-| `post-deployment-setup.template.sh` | Template for macOS/Linux | ✅ Yes |
-| `post-deployment-setup.template.ps1` | Template for Windows | ✅ Yes |
-| `post-deployment-setup.local.sh` | Your local copy with values | ❌ No (gitignored) |
-| `post-deployment-setup.local.ps1` | Your local copy with values | ❌ No (gitignored) |
+| `post-deployment-setup.template.sh` | macOS/Linux 用テンプレート | ✅ Yes |
+| `post-deployment-setup.template.ps1` | Windows 用テンプレート | ✅ Yes |
+| `post-deployment-setup.local.sh` | 値を入れたローカル用コピー | ❌ No（gitignored） |
+| `post-deployment-setup.local.ps1` | 値を入れたローカル用コピー | ❌ No（gitignored） |
 
-**First time setup:**
+**初回セットアップ:**
 ```bash
 # macOS/Linux
 cp scripts/post-deployment-setup.template.sh scripts/post-deployment-setup.local.sh
@@ -457,7 +458,7 @@ Copy-Item scripts\post-deployment-setup.template.ps1 scripts\post-deployment-set
 # Edit and replace placeholders with your values
 ```
 
-### 0.3 Run Post-Deployment Setup Script
+### 0.3 ポストデプロイ セットアップ スクリプトの実行
 
 **macOS/Linux:**
 ```bash
@@ -469,22 +470,22 @@ Copy-Item scripts\post-deployment-setup.template.ps1 scripts\post-deployment-set
 .\scripts\post-deployment-setup.local.ps1
 ```
 
-**What the script does:**
-1. ✅ Verifies all VMs are running
-2. ✅ Waits for CustomScript extensions to complete
-3. ✅ Initializes MongoDB replica set (`blogapp-rs0`)
-4. ✅ Creates admin user (`blogadmin`)
-5. ✅ Creates application user (`blogapp`)
-6. ✅ Verifies environment variables on App tier
-7. ✅ Verifies `config.json` on Web tier
+**スクリプトが実施する内容:**
+1. ✅ すべての VM が起動していることを確認
+2. ✅ CustomScript 拡張機能の完了を待機
+3. ✅ MongoDB レプリカセット（`blogapp-rs0`）を初期化
+4. ✅ 管理ユーザー（`blogadmin`）を作成
+5. ✅ アプリケーション ユーザー（`blogapp`）を作成
+6. ✅ App tier の環境変数を検証
+7. ✅ Web tier の `config.json` を検証
 
-### 0.4 Verify Config Injection (Already done by script, but for manual check)
+### 0.4 設定注入の検証（スクリプトで実施済みだが、手動確認用）
 
-#### Connect to VMs via Azure Bastion (Native SSH Client)
+#### Azure Bastion 経由で VM に接続（ネイティブ SSH クライアント）
 
-Use Azure CLI to connect to VMs via Bastion with your native SSH client:
+Azure CLI を使用して、ネイティブ SSH クライアントで Bastion 経由で VM に接続します。
 
-**Connect to App tier VMs:**
+**App tier VM に接続:**
 ```bash
 # Connect to vm-app-az1-prod
 az network bastion ssh \
@@ -505,7 +506,7 @@ az network bastion ssh \
   --ssh-key ~/.ssh/id_rsa
 ```
 
-**Connect to Web tier VMs:**
+**Web tier VM に接続:**
 ```bash
 # Connect to vm-web-az1-prod
 az network bastion ssh \
@@ -526,18 +527,18 @@ az network bastion ssh \
   --ssh-key ~/.ssh/id_rsa
 ```
 
-> **Note:** Replace `~/.ssh/id_rsa` with the path to your private SSH key that corresponds to the public key used during deployment.
+> **Note:** `~/.ssh/id_rsa` は、デプロイ時に使用した公開鍵に対応する秘密鍵のパスに置き換えてください。
 
-#### Verify Config on VMs
+#### VM 上で設定を検証
 
-**On App tier VMs:**
+**App tier VM 上:**
 ```bash
 # Check environment variables
 cat /etc/environment | grep -E "(AZURE_|NODE_ENV|PORT)"
 cat /opt/blogapp/.env
 ```
 
-Expected output:
+期待される出力:
 ```
 NODE_ENV=production
 PORT=3000
@@ -545,13 +546,13 @@ AZURE_TENANT_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 AZURE_CLIENT_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 ```
 
-**On Web tier VMs:**
+**Web tier VM 上:**
 ```bash
 # Check config.json
 cat /var/www/html/config.json
 ```
 
-Expected output:
+期待される出力:
 ```json
 {
   "VITE_ENTRA_CLIENT_ID": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
@@ -562,13 +563,13 @@ Expected output:
 
 ---
 
-## Phase 1: Database Tier Configuration (AUTOMATED)
+## Phase 1: Database tier 設定（自動化）
 
-> **Note:** This phase is now fully automated by `post-deployment-setup.local.sh` / `post-deployment-setup.local.ps1`. The sections below are kept for reference and manual troubleshooting.
+> **Note:** この Phase は `post-deployment-setup.local.sh` / `post-deployment-setup.local.ps1` により完全に自動化されています。以下のセクションは参照および手動トラブルシュート用に残しています。
 
-### 1.1 Verify Pre-installed MongoDB
+### 1.1 事前インストール済み MongoDB の確認
 
-**On both DB VMs - Verification only (no installation needed):**
+**両方の DB VM で確認のみ（インストール不要）:**
 
 ```bash
 # Check MongoDB is running
@@ -584,26 +585,26 @@ df -h /data/mongodb
 sudo tail -20 /data/mongodb/log/mongod.log
 ```
 
-### 1.2 Check Replica Set Status (BEFORE Initialization)
+### 1.2 レプリカセット状態の確認（初期化前）
 
-**On `vm-db-az1-prod` - Check if replica set is already initialized:**
+**`vm-db-az1-prod` 上で、レプリカセットが既に初期化されているか確認:**
 
 ```bash
 # Check replica set status
 mongosh --eval 'rs.status()' 2>&1
 ```
 
-**Expected outputs and actions:**
+**想定される出力とアクション:**
 
-| Output | Meaning | Action |
+| 出力 | 意味 | アクション |
 |--------|---------|--------|
-| `"ok" : 1` with members list | Already initialized | Skip to 1.3 (user creation) |
-| `MongoServerError: no replset config` | Not initialized | Execute 1.2.1 |
-| `NotYetInitialized` | Not initialized | Execute 1.2.1 |
+| `"ok" : 1` と members リスト | 既に初期化済み | 1.3（ユーザー作成）へスキップ |
+| `MongoServerError: no replset config` | 未初期化 | 1.2.1 を実行 |
+| `NotYetInitialized` | 未初期化 | 1.2.1 を実行 |
 
-### 1.2.1 Initialize Replica Set (ONLY IF NOT INITIALIZED)
+### 1.2.1 レプリカセット初期化（未初期化の場合のみ）
 
-**Execute ONLY if rs.status() shows "no replset config" or "NotYetInitialized":**
+**`rs.status()` が "no replset config" または "NotYetInitialized" の場合のみ実行:**
 
 ```bash
 # Initialize replica set (ONE TIME ONLY)
@@ -624,11 +625,11 @@ sleep 20
 mongosh --eval 'rs.status()'
 ```
 
-### 1.3 Check/Create Application User (AUTOMATED)
+### 1.3 アプリケーション ユーザーの確認/作成（自動化）
 
-> **Note:** User creation is now automated by `post-deployment-setup.local.sh` / `post-deployment-setup.local.ps1`.
+> **Note:** ユーザー作成は `post-deployment-setup.local.sh` / `post-deployment-setup.local.ps1` により自動化されています。
 
-**Manual verification if needed:**
+**必要に応じた手動確認:**
 
 ```bash
 # Check if blogapp user exists
@@ -636,7 +637,7 @@ mongosh admin --eval 'db.getUsers()' 2>&1 | grep -q "blogapp"
 echo $?  # 0 = exists, 1 = not exists
 ```
 
-**Create user ONLY if not exists:**
+**存在しない場合のみ作成:**
 
 ```javascript
 // Connect to primary
@@ -658,7 +659,7 @@ db.createUser({
 })
 ```
 
-### 1.4 Verification
+### 1.4 検証
 
 ```bash
 # Test connection with credentials
@@ -667,13 +668,13 @@ mongosh "mongodb://blogapp:BlogApp2024Workshop!@10.0.3.4:27017,10.0.3.5:27017/bl
 
 ---
 
-## Phase 2: Backend Tier Deployment
+## Phase 2: Backend tier デプロイ
 
-> **Important:** Environment variables are now automatically injected by Bicep. You only need to deploy application code.
+> **Important:** 環境変数は Bicep によって自動注入されます。必要なのはアプリケーション コードのデプロイのみです。
 
-### 2.1 Verify Pre-installed Node.js/PM2 and Environment
+### 2.1 事前インストール済み Node.js/PM2 と環境の確認
 
-**On both App VMs - Verification only:**
+**両方の App VM 上で確認のみ:**
 
 ```bash
 # Check Node.js version (should be v20.x)
@@ -691,9 +692,9 @@ cat /opt/blogapp/.env
 # Should show: NODE_ENV, PORT, AZURE_TENANT_ID, AZURE_CLIENT_ID
 ```
 
-### 2.2 Clean Up Placeholder Health Server
+### 2.2 プレースホルダ ヘルスサーバのクリーンアップ
 
-The Bicep CustomScript starts a placeholder health server. After deploying the real application, this process will be in "errored" state (port conflict). Clean it up:
+Bicep の CustomScript はプレースホルダのヘルスサーバを開始します。実際のアプリケーションをデプロイした後、このプロセスは "errored"（ポート競合）になります。クリーンアップしてください。
 
 ```bash
 # Check PM2 status - you may see blogapp-health in "errored" state
@@ -706,9 +707,9 @@ pm2 delete blogapp-health 2>/dev/null || true
 pm2 save
 ```
 
-### 2.3 Deploy Application Code
+### 2.3 アプリケーション コードのデプロイ
 
-**Option A: Clone from Git (Easy method, if repo is accessible):**
+**Option A: Git から clone（簡単、リポジトリにアクセス可能な場合）:**
 
 ```bash
 cd /opt/blogapp
@@ -717,7 +718,7 @@ cp -r temp/materials/backend/* ./
 rm -rf temp
 ```
 
-**Option B: Upload via Bastion tunnel:**
+**Option B: Bastion トンネル経由でアップロード:**
 
 ```bash
 # On local machine - create tunnel
@@ -732,9 +733,9 @@ az network bastion tunnel \
 scp -P 2222 -r ./materials/backend/* azureuser@127.0.0.1:/opt/blogapp/
 ```
 
-### 2.4 Install Dependencies and Build
+### 2.4 依存関係のインストールとビルド
 
-**On both App VMs:**
+**両方の App VM 上:**
 
 ```bash
 cd /opt/blogapp
@@ -748,20 +749,20 @@ npm ci --include=dev
 npm run build
 ```
 
-> **Why `--include=dev`?** The Bicep CustomScript sets `NODE_ENV=production` in `/etc/environment`. When `NODE_ENV=production`, npm automatically skips `devDependencies` during install. Since TypeScript is a devDependency needed for compilation, we must explicitly include it.
+> **なぜ `--include=dev` が必要？** Bicep の CustomScript は `/etc/environment` に `NODE_ENV=production` を設定します。`NODE_ENV=production` のとき、npm はインストール時に `devDependencies` を自動的にスキップします。TypeScript はコンパイルに必要な devDependency のため、明示的に含める必要があります。
 
-### 2.5 Verify MongoDB Connection String
+### 2.5 MongoDB 接続文字列の確認
 
-> **Note:** The MongoDB connection string is now automatically injected by Bicep. This step is for verification only.
+> **Note:** MongoDB の接続文字列は Bicep によって自動注入されます。このステップは確認用です。
 
-**Verify `/opt/blogapp/.env` contains MONGODB_URI:**
+**`/opt/blogapp/.env` に MONGODB_URI が含まれていることを確認:**
 
 ```bash
 # Verify complete .env file
 cat /opt/blogapp/.env
 ```
 
-Expected `.env` (all values injected by Bicep):
+期待される `.env`（すべての値は Bicep により注入）:
 ```env
 NODE_ENV=production
 PORT=3000
@@ -771,12 +772,12 @@ ENTRA_TENANT_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 ENTRA_CLIENT_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 ```
 
-> **If MONGODB_URI is missing or incorrect:** Check that `mongoDbUri` parameter is set in your `main.local.bicepparam` file and redeploy, or manually append:
+> **MONGODB_URI が無い/不正な場合:** `main.local.bicepparam` の `mongoDbUri` パラメータが設定されているか確認して再デプロイするか、手動で追記します:
 > ```bash
 > echo 'MONGODB_URI=mongodb://blogapp:BlogApp2024Workshop@10.0.3.4:27017,10.0.3.5:27017/blogapp?replicaSet=blogapp-rs0&authSource=admin' | sudo tee -a /opt/blogapp/.env
 > ```
 
-### 2.6 Start Application with PM2
+### 2.6 PM2 でアプリケーションを起動
 
 ```bash
 cd /opt/blogapp
@@ -793,7 +794,7 @@ pm2 list
 pm2 logs blogapp-api --lines 20
 ```
 
-### 2.7 Health Check Verification
+### 2.7 ヘルスチェック検証
 
 ```bash
 # Test local health endpoint
@@ -805,13 +806,13 @@ curl http://10.0.2.10:3000/health
 
 ---
 
-## Phase 3: Frontend Tier Deployment
+## Phase 3: Frontend tier デプロイ
 
-> **Important:** The frontend now uses runtime configuration via `/config.json` (already created by Bicep). No build-time environment variables needed!
+> **Important:** フロントエンドは実行時に `/config.json` を利用するようになりました（Bicep により既に作成済み）。ビルド時の環境変数は不要です。
 
-### 3.1 Verify Pre-installed NGINX and Config
+### 3.1 事前インストール済み NGINX と設定の確認
 
-**On both Web VMs - Verification only:**
+**両方の Web VM 上で確認のみ:**
 
 ```bash
 # Check NGINX is running
@@ -829,9 +830,9 @@ cat /var/www/html/config.json
 # Should show: VITE_ENTRA_CLIENT_ID, VITE_ENTRA_TENANT_ID, VITE_API_BASE_URL
 ```
 
-### 3.2 Build Frontend Application (Local Development Machine, not Azure VMs)
+### 3.2 フロントエンド アプリケーションのビルド（ローカル開発マシン。Azure VM 上ではない）
 
-> **Note:** No environment variables needed at build time! The frontend fetches `/config.json` at runtime.
+> **Note:** ビルド時の環境変数は不要です。フロントエンドは実行時に `/config.json` を取得します。
 
 ```bash
 cd materials/frontend
@@ -844,9 +845,9 @@ npm run build
 ls -la dist/
 ```
 
-### 3.3 Deploy Static Files
+### 3.3 静的ファイルのデプロイ
 
-**Option A: Clone from Git and build on VM (recommended - uses NAT Gateway for outbound):**
+**Option A: Git から clone して VM でビルド（推奨。NAT Gateway によりアウトバウンドが可能）:**
 
 ```bash
 cd /tmp
@@ -875,7 +876,7 @@ sudo chown -R www-data:www-data /var/www/html/
 cd /tmp && rm -rf temp
 ```
 
-**Option B: Upload pre-built files via Bastion tunnel:**
+**Option B: Bastion トンネル経由で事前ビルド成果物をアップロード:**
 
 ```bash
 # Create tunnel to vm-web-az1-prod
@@ -897,18 +898,18 @@ sudo cp /tmp/config.json.bak /var/www/html/config.json
 sudo chown -R www-data:www-data /var/www/html/
 ```
 
-### 3.4 Verify NGINX Configuration (AUTOMATED)
+### 3.4 NGINX 設定の検証（自動化）
 
-> **Note:** NGINX is now **fully configured by Bicep** with:
-> - Internal Load Balancer proxy (`10.0.2.10:3000`)
-> - Security headers (X-Frame-Options, X-Content-Type-Options, etc.)
-> - Gzip compression
-> - Static asset caching
-> - SPA routing
+> **Note:** NGINX は Bicep により **完全に設定済み**です:
+> - Internal Load Balancer へのプロキシ（`10.0.2.10:3000`）
+> - セキュリティヘッダ（X-Frame-Options、X-Content-Type-Options など）
+> - Gzip 圧縮
+> - 静的アセットのキャッシュ
+> - SPA ルーティング
 >
-> **No manual configuration needed!**
+> **手動設定は不要です。**
 
-**Verify the configuration:**
+**設定の確認:**
 
 ```bash
 # Check that API proxy is using Internal Load Balancer
@@ -923,9 +924,9 @@ sudo systemctl reload nginx
 ```
 
 <details>
-<summary>📋 Full NGINX configuration (for reference)</summary>
+<summary>📋 NGINX の完全設定（参考）</summary>
 
-This is automatically created by Bicep. You should NOT need to modify it.
+Bicep により自動作成されます。基本的に変更は不要です。
 
 ```nginx
 server {
@@ -982,7 +983,7 @@ server {
 
 </details>
 
-### 3.5 Verification
+### 3.5 検証
 
 ```bash
 # Test NGINX health endpoint (returns "healthy" from NGINX itself)
@@ -1001,33 +1002,33 @@ curl -s http://localhost/login | head -5
 
 ---
 
-## Phase 4: End-to-End Verification
+## Phase 4: エンドツーエンド検証
 
-> **Note:** Application Gateway is **fully automated by Bicep** - no manual setup required! It provides:
-> - SSL/TLS termination with your self-signed certificate
-> - HTTP→HTTPS redirect (port 80 → port 443)
-> - Health probes to Web tier VMs
-> - Azure DNS label for predictable FQDN
+> **Note:** Application Gateway は Bicep により **完全に自動化**されており、手動設定は不要です。以下を提供します:
+> - 自己署名証明書での SSL/TLS 終端
+> - HTTP→HTTPS リダイレクト（port 80 → port 443）
+> - Web tier VM へのヘルスプローブ
+> - 予測可能な FQDN のための Azure DNS ラベル
 
-### 4.1 Health Check Matrix
+### 4.1 ヘルスチェック マトリクス
 
-| Endpoint | Expected | Command |
+| エンドポイント | 期待値 | コマンド |
 |----------|----------|---------|
 | DB Primary | RS Primary | `mongosh 10.0.3.4 --eval 'rs.isMaster().ismaster'` |
 | DB Secondary | RS Secondary | `mongosh 10.0.3.5 --eval 'rs.isMaster().secondary'` |
 | Backend VM1 | `{"status":"healthy"}` | `curl http://10.0.2.5:3000/health` |
 | Backend VM2 | `{"status":"healthy"}` | `curl http://10.0.2.4:3000/health` |
 | Internal LB | `{"status":"healthy"}` | `curl http://10.0.2.10:3000/health` |
-| Frontend VM1 (NGINX) | `healthy` | `curl http://10.0.1.4/health` |
-| Frontend VM2 (NGINX) | `healthy` | `curl http://10.0.1.5/health` |
-| Application Gateway (HTML) | HTML page | `curl -k https://<YOUR_APPGW_FQDN>/` |
-| Application Gateway (API) | JSON array | `curl -k https://<YOUR_APPGW_FQDN>/api/posts` |
+| Frontend VM1（NGINX） | `healthy` | `curl http://10.0.1.4/health` |
+| Frontend VM2（NGINX） | `healthy` | `curl http://10.0.1.5/health` |
+| Application Gateway（HTML） | HTML page | `curl -k https://<YOUR_APPGW_FQDN>/` |
+| Application Gateway（API） | JSON array | `curl -k https://<YOUR_APPGW_FQDN>/api/posts` |
 
-> **Note:** Backend health endpoint is at `/health`, not `/api/health`. The NGINX proxy maps `/api/*` to backend `/api/*`, so `/api/health` would try to reach a non-existent backend route. Use `/api/posts` to verify end-to-end API connectivity.
+> **Note:** バックエンドのヘルスエンドポイントは `/health`（`/api/health` ではない）です。NGINX のプロキシは `/api/*` をバックエンドの `/api/*` にマップするため、`/api/health` は存在しないバックエンド ルートに到達してしまいます。エンドツーエンドの API 接続確認には `/api/posts` を使用してください。
 
-### 4.2 Verify Application Gateway
+### 4.2 Application Gateway の検証
 
-**Get your Application Gateway FQDN:**
+**Application Gateway の FQDN を取得:**
 ```bash
 # Get the FQDN
 az network public-ip show \
@@ -1036,7 +1037,7 @@ az network public-ip show \
   --query dnsSettings.fqdn -o tsv
 ```
 
-**Test HTTPS access (with self-signed certificate):**
+**HTTPS アクセスのテスト（自己署名証明書）:**
 ```bash
 # Test via FQDN (use -k to skip certificate verification for self-signed cert)
 curl -k https://<YOUR_APPGW_FQDN>/
@@ -1049,12 +1050,12 @@ curl -I http://<YOUR_APPGW_FQDN>/
 curl -k https://<YOUR_APPGW_FQDN>/api/posts
 ```
 
-**Access in browser:**
-1. Open `https://<YOUR_APPGW_FQDN>/` in your browser
-2. Accept the self-signed certificate warning (expected for workshop)
-3. You should see the blog application login page
+**ブラウザでアクセス:**
+1. ブラウザで `https://<YOUR_APPGW_FQDN>/` を開きます
+2. 自己署名証明書の警告を受け入れます（ワークショップ用途では想定どおり）
+3. ブログアプリケーションのログインページが表示されます
 
-### 4.3 Application Test
+### 4.3 アプリケーション テスト
 
 ```bash
 # Test full stack via Application Gateway FQDN
@@ -1063,124 +1064,124 @@ curl -k https://<YOUR_APPGW_FQDN>/api/posts
 
 ---
 
-## Deployment Checklist (Revised)
+## デプロイ チェックリスト（改訂版）
 
-### Pre-Deployment Configuration
-- [ ] `main.local.bicepparam` created with your values
-- [ ] `sshPublicKey` parameter set
-- [ ] `adminObjectId` parameter set
-- [ ] `entraTenantId` parameter set
-- [ ] `entraClientId` (backend) parameter set
-- [ ] `entraFrontendClientId` parameter set
+### デプロイ前設定
+- [ ] `main.local.bicepparam` を作成し値を設定
+- [ ] `sshPublicKey` パラメータを設定
+- [ ] `adminObjectId` パラメータを設定
+- [ ] `entraTenantId` パラメータを設定
+- [ ] `entraClientId`（backend）パラメータを設定
+- [ ] `entraFrontendClientId` パラメータを設定
 
-### Infrastructure Deployment (Phase 0)
-- [ ] Resource group created
-- [ ] Bicep deployment completed
-- [ ] **Redirect URIs configured in Entra ID** (requires public IP from deployment)
-- [ ] Post-deployment script template copied to `.local` version
-- [ ] Post-deployment script configured with your values
-- [ ] Post-deployment script executed successfully
-- [ ] MongoDB replica set initialized (automated)
-- [ ] MongoDB users created (automated)
-- [ ] App tier env vars verified (automated)
-- [ ] Web tier config.json verified (automated)
+### インフラ デプロイ（Phase 0）
+- [ ] リソース グループを作成
+- [ ] Bicep デプロイが完了
+- [ ] **Entra ID のリダイレクト URI を設定**（デプロイにより Public IP が必要）
+- [ ] ポストデプロイ スクリプトのテンプレートを `.local` へコピー
+- [ ] ポストデプロイ スクリプトに値を設定
+- [ ] ポストデプロイ スクリプトが正常終了
+- [ ] MongoDB レプリカセット初期化（自動）
+- [ ] MongoDB ユーザー作成（自動）
+- [ ] App tier の環境変数検証（自動）
+- [ ] Web tier の config.json 検証（自動）
 
-### Backend Tier (Code Deployment Only)
-- [ ] ~~Node.js installed~~ (Bicep)
-- [ ] ~~PM2 installed~~ (Bicep)
-- [ ] ~~Environment variables configured~~ (Bicep - except MongoDB URI)
-- [ ] Placeholder health server stopped
-- [ ] Application code deployed
-- [ ] Dependencies installed (`npm ci`)
-- [ ] TypeScript built (`npm run build`)
-- [ ] MongoDB connection string added to .env
-- [ ] PM2 process running
-- [ ] Health check passing
+### Backend tier（コード デプロイのみ）
+- [ ] ~~Node.js installed~~（Bicep）
+- [ ] ~~PM2 installed~~（Bicep）
+- [ ] ~~Environment variables configured~~（Bicep - MongoDB URI 以外）
+- [ ] プレースホルダ ヘルスサーバを停止
+- [ ] アプリケーション コードをデプロイ
+- [ ] 依存関係をインストール（`npm ci`）
+- [ ] TypeScript をビルド（`npm run build`）
+- [ ] MongoDB 接続文字列を .env に追加
+- [ ] PM2 プロセスが稼働
+- [ ] ヘルスチェックが通る
 
-### Frontend Tier (Static Files Only)
-- [ ] ~~NGINX installed~~ (Bicep)
-- [ ] ~~config.json created~~ (Bicep)
-- [ ] Frontend built locally (no env vars needed!)
-- [ ] Static files uploaded (preserve config.json!)
-- [ ] NGINX config verified
-- [ ] Health check passing
-- [ ] API proxy working
+### Frontend tier（静的ファイルのみ）
+- [ ] ~~NGINX installed~~（Bicep）
+- [ ] ~~config.json created~~（Bicep）
+- [ ] フロントエンドをローカルでビルド（env 不要）
+- [ ] 静的ファイルをアップロード（config.json を保持）
+- [ ] NGINX 設定を検証
+- [ ] ヘルスチェックが通る
+- [ ] API プロキシが動作
 
 ---
 
-## Estimated Deployment Time (Revised)
+## 推定デプロイ時間（改訂版）
 
-| Phase | Duration | Notes |
+| フェーズ | 所要時間 | 備考 |
 |-------|----------|-------|
-| Bicep Deployment | 15-30 min | Full infrastructure provisioning |
-| Post-Deployment Script | 2-5 min | Automated MongoDB setup |
-| Backend Deployment | 5-10 min | Code upload + build + start (env vars pre-configured!) |
-| Frontend Deployment | 5-10 min | Build + upload only (no env config needed!) |
-| Verification | 5-10 min | All tiers |
-| **Total** | **30-65 min** | Mostly infrastructure provisioning time |
+| Bicep デプロイ | 15-30 分 | インフラ一式のプロビジョニング |
+| ポストデプロイ スクリプト | 2-5 分 | MongoDB セットアップ自動化 |
+| Backend デプロイ | 5-10 分 | コード転送 + ビルド + 起動（環境変数は事前設定） |
+| Frontend デプロイ | 5-10 分 | ビルド + アップロードのみ（環境設定不要） |
+| 検証 | 5-10 分 | 全 tier |
+| **合計** | **30-65 分** | 主にインフラのプロビジョニング時間 |
 
 ---
 
-## Key Improvements in This Strategy
+## この戦略の主要な改善点
 
-| Previous Approach | Current Approach |
+| 従来アプローチ | 現在アプローチ |
 |-------------------|------------------|
-| Manually create `.env` files with Entra IDs | Bicep injects env vars automatically |
-| Build frontend with `.env.production` | Frontend fetches `/config.json` at runtime |
-| Manual MongoDB replica set initialization | Automated via post-deployment scripts |
-| Manual MongoDB user creation | Automated via post-deployment scripts |
-| Students edit multiple config files | Students only edit `main.bicepparam` |
-| Single-platform scripts | Cross-platform (Bash + PowerShell) |
-| Hardcoded values in scripts | Template pattern with `.local` copies (gitignored) |
+| Entra ID を含む `.env` を手動作成 | Bicep が環境変数を自動注入 |
+| `.env.production` を使ってフロントエンドをビルド | フロントエンドは実行時に `/config.json` を取得 |
+| MongoDB レプリカセット初期化を手動実行 | ポストデプロイ スクリプトで自動化 |
+| MongoDB ユーザー作成を手動実行 | ポストデプロイ スクリプトで自動化 |
+| 学習者が複数の設定ファイルを編集 | 学習者は `main.bicepparam` のみ編集 |
+| 単一プラットフォームのスクリプト | クロスプラットフォーム（Bash + PowerShell） |
+| スクリプト内に値をハードコード | `.local` コピーを使うテンプレート パターン（gitignored） |
 
-### Technical Implementation Details
+### 技術的な実装詳細
 
-**Bicep Script Injection Pattern:**
-- External shell scripts stored in `modules/compute/scripts/`
-- `loadTextContent()` loads script content at deployment time
-- `replace()` chains substitute `__PLACEHOLDER__` values with Bicep parameters
-- Avoids ARM `format()` function issues with bash/JSON curly braces
+**Bicep スクリプト注入パターン:**
+- 外部シェルスクリプトを `modules/compute/scripts/` に保存
+- `loadTextContent()` がデプロイ時にスクリプトを読み込み
+- `replace()` をチェーンして `__PLACEHOLDER__` を Bicep パラメータで置換
+- bash/JSON の波括弧による ARM `format()` 問題を回避
 
-**Post-Deployment Script Template Pattern:**
-- Template files (`*.template.sh`, `*.template.ps1`) committed to repo
-- Local copies (`*.local.sh`, `*.local.ps1`) created by user with their values
-- `.gitignore` excludes `*.local.sh` and `*.local.ps1` to protect credentials
+**ポストデプロイ スクリプトのテンプレート パターン:**
+- テンプレート（`*.template.sh`, `*.template.ps1`）はリポジトリにコミット
+- ローカルコピー（`*.local.sh`, `*.local.ps1`）は利用者が値を入れて作成
+- `.gitignore` で `*.local.sh` と `*.local.ps1` を除外し、資格情報を保護
 
-### Benefits for Workshop
+### ワークショップにおける利点
 
-1. **Single Point of Configuration**: All Azure-specific values in `main.bicepparam`
-2. **No Rebuild Required**: Change Entra IDs by redeploying Bicep, not rebuilding apps
-3. **Automated Database Setup**: One script handles all MongoDB configuration
-4. **Verification Built-in**: Post-deployment script verifies all config injection
-5. **Cross-Platform Support**: Workshop students on Windows or macOS/Linux can use native scripts
+1. **単一の設定ポイント**: Azure 固有の値は `main.bicepparam` に集約
+2. **リビルド不要**: Entra ID の変更は Bicep 再デプロイで反映（アプリの再ビルド不要）
+3. **DB セットアップ自動化**: 1 つのスクリプトで MongoDB 設定一式を実行
+4. **検証の組み込み**: ポストデプロイ スクリプトが設定注入を検証
+5. **クロスプラットフォーム対応**: Windows / macOS/Linux いずれでもネイティブ スクリプトで実行
 
 ---
 
-## Automation Scripts Reference
+## 自動化スクリプト参照
 
-| Script | Purpose | Usage |
+| スクリプト | 用途 | 使い方 |
 |--------|---------|-------|
-| `scripts/post-deployment-setup.template.sh` | Template for MongoDB setup + verification (macOS/Linux) | Copy to `.local.sh`, edit placeholders |
-| `scripts/post-deployment-setup.template.ps1` | Template for MongoDB setup + verification (Windows) | Copy to `.local.ps1`, edit placeholders |
-| `scripts/post-deployment-setup.local.sh` | Your configured script (macOS/Linux) | `./scripts/post-deployment-setup.local.sh` |
-| `scripts/post-deployment-setup.local.ps1` | Your configured script (Windows) | `.\scripts\post-deployment-setup.local.ps1` |
+| `scripts/post-deployment-setup.template.sh` | MongoDB セットアップ + 検証のテンプレート（macOS/Linux） | `.local.sh` にコピーしてプレースホルダを編集 |
+| `scripts/post-deployment-setup.template.ps1` | MongoDB セットアップ + 検証のテンプレート（Windows） | `.local.ps1` にコピーしてプレースホルダを編集 |
+| `scripts/post-deployment-setup.local.sh` | 設定済みスクリプト（macOS/Linux） | `./scripts/post-deployment-setup.local.sh` |
+| `scripts/post-deployment-setup.local.ps1` | 設定済みスクリプト（Windows） | `.\scripts\post-deployment-setup.local.ps1` |
 
-### Script Configuration Placeholders
+### スクリプト設定用プレースホルダ
 
-| Placeholder | Description | Example Value |
+| プレースホルダ | 説明 | 例 |
 |-------------|-------------|---------------|
-| `<RESOURCE_GROUP>` | Azure resource group name | `rg-blogapp-prod` |
-| `<BASTION_NAME>` | Bastion host name | `bastion-blogapp-prod` |
-| `<MONGODB_ADMIN_PASSWORD>` | Admin user password | `AdminP@ss2024!` |
-| `<MONGODB_APP_PASSWORD>` | App user password | `BlogApp2024Workshop!` |
+| `<RESOURCE_GROUP>` | Azure リソース グループ名 | `rg-blogapp-prod` |
+| `<BASTION_NAME>` | Bastion ホスト名 | `bastion-blogapp-prod` |
+| `<MONGODB_ADMIN_PASSWORD>` | 管理ユーザーのパスワード | `AdminP@ss2024!` |
+| `<MONGODB_APP_PASSWORD>` | アプリ ユーザーのパスワード | `BlogApp2024Workshop!` |
 
 ---
 
-## Troubleshooting
+## トラブルシューティング
 
-### Config Injection Issues
+### 設定注入の問題
 
-**App tier env vars not set:**
+**App tier の環境変数が設定されない:**
 ```bash
 # Re-run CustomScript extension
 az vm run-command invoke --resource-group <YOUR_RESOURCE_GROUP> \
@@ -1188,7 +1189,7 @@ az vm run-command invoke --resource-group <YOUR_RESOURCE_GROUP> \
   --scripts "cat /opt/blogapp/.env"
 ```
 
-**Web tier config.json missing:**
+**Web tier の config.json が無い:**
 ```bash
 # Check if file exists
 az vm run-command invoke --resource-group <YOUR_RESOURCE_GROUP> \
@@ -1196,9 +1197,9 @@ az vm run-command invoke --resource-group <YOUR_RESOURCE_GROUP> \
   --scripts "cat /var/www/html/config.json"
 ```
 
-### MongoDB Issues
+### MongoDB の問題
 
-**Replica set not initialized:**
+**レプリカセットが初期化されていない:**
 ```bash
 # macOS/Linux - Run post-deployment script again
 ./scripts/post-deployment-setup.local.sh
@@ -1207,20 +1208,20 @@ az vm run-command invoke --resource-group <YOUR_RESOURCE_GROUP> \
 .\scripts\post-deployment-setup.local.ps1
 ```
 
-**Users not created:**
+**ユーザーが作成されない:**
 ```bash
 # Script will skip if already exists, safe to re-run
 ./scripts/post-deployment-setup.local.sh  # macOS/Linux
 .\scripts\post-deployment-setup.local.ps1  # Windows
 ```
 
-### Bicep Template Curly Brace Issues
+### Bicep テンプレートの波括弧問題
 
-If you see ARM errors like "Input string was not in a correct format" when modifying CustomScript extensions:
+CustomScript 拡張機能を変更した際、ARM エラー（例: "Input string was not in a correct format"）が出る場合:
 
-**Problem:** ARM's `format()` function treats `{` not followed by a digit as invalid placeholders.
+**問題:** ARM の `format()` 関数は、数字が続かない `{` を無効なプレースホルダとして扱います。
 
-**Solution:** Use external script files with `loadTextContent()` and `replace()`:
+**解決策:** `loadTextContent()` と `replace()` を使って外部スクリプトを適用します:
 ```bicep
 // Instead of format() with embedded scripts:
 var scriptContent = loadTextContent('scripts/my-script.sh')
@@ -1230,22 +1231,22 @@ var finalScript = replace(
 )
 ```
 
-See `modules/compute/scripts/nginx-install.sh` and `nodejs-install.sh` for examples.
+例として `modules/compute/scripts/nginx-install.sh` と `nodejs-install.sh` を参照してください。
 
 ---
 
-## Architecture Reference
+## アーキテクチャ参照
 
-See also:
-- [AzureArchitectureDesign.md](../../design/AzureArchitectureDesign.md) - Infrastructure design and parameter flow
-- [FrontendApplicationDesign.md](../../design/FrontendApplicationDesign.md) - Runtime config pattern details
-- [BackendApplicationDesign.md](../../design/BackendApplicationDesign.md) - Backend environment configuration
+以下も参照してください:
+- [AzureArchitectureDesign.md](../../design/AzureArchitectureDesign.md) - インフラ設計とパラメータ フロー
+- [FrontendApplicationDesign.md](../../design/FrontendApplicationDesign.md) - 実行時設定パターンの詳細
+- [BackendApplicationDesign.md](../../design/BackendApplicationDesign.md) - バックエンドの環境設定
 
 ---
 
-## Appendix: Deployment Verification Commands
+## 付録: デプロイ検証コマンド
 
-### Infrastructure Deployment
+### インフラ デプロイ
 
 ```
 Resource Group: <YOUR_RESOURCE_GROUP>
@@ -1253,23 +1254,23 @@ Location: <YOUR_REGION>
 Deployment Status: (check after deployment)
 ```
 
-### Config Injection Verification (via az vm run-command)
+### 設定注入の検証（az vm run-command）
 
-**App Tier VMs - `/opt/blogapp/.env`:**
+**App tier VM - `/opt/blogapp/.env`:**
 
 | VM | NODE_ENV | PORT | AZURE_TENANT_ID | AZURE_CLIENT_ID |
 |----|----------|------|-----------------|-----------------|
 | vm-app-az1-prod | production | 3000 | ✅ Injected | ✅ Injected |
 | vm-app-az2-prod | production | 3000 | ✅ Injected | ✅ Injected |
 
-**Web Tier VMs - `/var/www/html/config.json`:**
+**Web tier VM - `/var/www/html/config.json`:**
 
 | VM | VITE_ENTRA_CLIENT_ID | VITE_ENTRA_TENANT_ID | VITE_API_BASE_URL |
 |----|----------------------|----------------------|-------------------|
 | vm-web-az1-prod | ✅ Injected | ✅ Injected | "" (relative) |
 | vm-web-az2-prod | ✅ Injected | ✅ Injected | "" (relative) |
 
-### Verification Commands
+### 検証コマンド
 
 ```bash
 # App tier verification
@@ -1287,8 +1288,8 @@ az vm run-command invoke -g <YOUR_RESOURCE_GROUP> -n vm-web-az2-prod \
   --command-id RunShellScript --scripts "cat /var/www/html/config.json"
 ```
 
-### Remaining Tasks
+### 残作業
 
-1. **Run post-deployment script** to initialize MongoDB replica set
-2. **Deploy backend application code** to App tier VMs
-3. **Deploy frontend static files** to Web tier VMs
+1. **ポストデプロイ スクリプトを実行**して MongoDB レプリカセットを初期化
+2. App tier VM に **バックエンド アプリケーション コードをデプロイ**
+3. Web tier VM に **フロントエンド静的ファイルをデプロイ**

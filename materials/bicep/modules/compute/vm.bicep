@@ -57,6 +57,9 @@ param dataDisks array = []
 @description('Resource ID of Load Balancer backend pool (optional, for web tier)')
 param loadBalancerBackendPoolId string = ''
 
+@description('Static private IP address (optional, uses Dynamic if empty)')
+param privateIPAddress string = ''
+
 @description('Enable Azure Monitor Agent extension')
 param enableMonitoring bool = true
 
@@ -116,7 +119,9 @@ resource nic 'Microsoft.Network/networkInterfaces@2023-11-01' = if (!skipVmCreat
       {
         name: 'ipconfig1'
         properties: {
-          privateIPAllocationMethod: 'Dynamic'
+          // Use Static allocation if privateIPAddress is provided, otherwise Dynamic
+          privateIPAllocationMethod: !empty(privateIPAddress) ? 'Static' : 'Dynamic'
+          privateIPAddress: !empty(privateIPAddress) ? privateIPAddress : null
           subnet: {
             id: subnetId
           }
