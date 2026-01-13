@@ -17,9 +17,10 @@ Engilish version: [README.md](./README.md)
   - [1.4 アーキテクチャ概要](#14-アーキテクチャ概要)
 - [2. デプロイ方法](#2-デプロイ方法)
   - [2.1 前提条件](#21-前提条件)
-  - [2.2 ローカル開発環境](#22-ローカル開発環境)
+  - [2.2 ローカル開発（オプション）](#22-ローカル開発環境オプション)
   - [2.3 Azure デプロイ](#23-azure-デプロイ)
 - [3. 回復性テスト](#3-回復性テスト)
+- [4. 運用ガイド](#4-運用ガイド)
 
 ---
 
@@ -74,66 +75,9 @@ Engilish version: [README.md](./README.md)
 
 ### 1.4 アーキテクチャ概要
 
-#### ローカル開発アーキテクチャ
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    ローカル開発環境                              │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│   ブラウザ ──► フロントエンド (Vite :5173) ──► バックエンド (Express :3000)  │
-│                     │                          │                 │
-│                     │                          │                 │
-│                     ▼                          ▼                 │
-│             Microsoft Entra ID         MongoDB (Docker :27017)   │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
-```
-
 #### Azure（本番）アーキテクチャ
 
-```
-┌──────────────────────────────────────────────────────────────────────────────┐
-│                              Azureアーキテクチャ                              │
-├──────────────────────────────────────────────────────────────────────────────┤
-│                                                                               │
-│   インターネット                                                              │
-│      │                                                                        │
-│      ▼                                                                        │
-│   ┌─────────────────────────────────┐                                        │
-│   │   Application Gateway (HTTPS)   │  ◄── SSL/TLS終端                       │
-│   │   - DNS ラベル付きパブリックIP   │      自己署名証明書                      │
-│   │   - HTTP→HTTPSリダイレクト       │                                        │
-│   └─────────────────────────────────┘                                        │
-│                  │                                                            │
-│                  ▼                                                            │
-│   ┌─────────────────────────────────┐     ┌────────────────┐                │
-│   │        Webティア (NGINX)         │     │  Azure Bastion │                │
-│   │   VM-AZ1        VM-AZ2          │     │  (セキュアSSH)  │                │
-│   │   10.0.1.4      10.0.1.5        │     └────────────────┘                │
-│   └─────────────────────────────────┘                                        │
-│                  │                                                            │
-│                  ▼                                                            │
-│   ┌─────────────────────────────────┐                                        │
-│   │   内部ロードバランサー (:3000)    │                                        │
-│   └─────────────────────────────────┘                                        │
-│                  │                                                            │
-│                  ▼                                                            │
-│   ┌─────────────────────────────────┐                                        │
-│   │       Appティア (Node.js)        │                                        │
-│   │   VM-AZ1        VM-AZ2          │                                        │
-│   │   10.0.2.5      10.0.2.4        │                                        │
-│   └─────────────────────────────────┘                                        │
-│                  │                                                            │
-│                  ▼                                                            │
-│   ┌─────────────────────────────────┐                                        │
-│   │     データベースティア (MongoDB)  │                                        │
-│   │   プライマリ     セカンダリ       │  ◄── レプリカセット                    │
-│   │   10.0.3.4      10.0.3.5        │      (自動フェイルオーバー)              │
-│   └─────────────────────────────────┘                                        │
-│                                                                               │
-└──────────────────────────────────────────────────────────────────────────────┘
-```
+![Architecture Diagram](assets/Architecture/architecture.png)
 
 **使用する主要な Azure サービス:**
 
@@ -152,11 +96,13 @@ Engilish version: [README.md](./README.md)
 
 ## 2. デプロイ方法
 
-このセクションでは、アプリケーションのデプロイ方法を説明します。目的に合った環境を選択してください。
+このセクションでは、アプリケーションを Azure にデプロイする方法を説明します。
+
+> **📝 ローカル開発環境をお探しですか？**
+> ローカルマシンでアプリケーションを実行するには、[ローカル開発ガイド](materials/docs/local-development-guide.ja.md)を参照してください。
 
 | 環境 | ユースケース | 所要時間 |
 |-------------|----------|---------------|
-| **ローカル開発** | コード変更、デバッグ、学習 | 15〜30分 |
 | **Azure** | 本番デプロイ、ワークショップ演習 | 45〜90分 |
 
 ### 2.1 前提条件
@@ -169,36 +115,28 @@ Engilish version: [README.md](./README.md)
 
 | ツール | バージョン | 目的 | インストール |
 |------|---------|---------|--------------|
-| **Node.js** | 20.x LTS | JavaScriptランタイム | [ダウンロード](https://nodejs.org/) |
-| **npm** | 10.x以上 | パッケージマネージャー | Node.jsに含まれる |
 | **Git** | 2.x以上 | バージョン管理 | [ダウンロード](https://git-scm.com/) |
-| **Docker Desktop** | 最新版 | ローカルMongoDB | [ダウンロード](https://www.docker.com/products/docker-desktop/) |
 | **Azure CLI** | 2.60以上 | Azure管理 | [インストールガイド](https://docs.microsoft.com/cli/azure/install-azure-cli) |
 | **VS Code** | 最新版 | コードエディタ（推奨） | [ダウンロード](https://code.visualstudio.com/) |
+| **OpenSSL** | 最新版 | SSL証明書生成 | macOS/Linuxにプリインストール。[Windowsユーザーはダウンロード](https://slproweb.com/products/Win32OpenSSL.html) |
 
 **インストールの確認:**
 
 ```bash
-# Node.jsの確認
-node --version
-# 期待値: v20.x.x
-
-# npmの確認
-npm --version
-# 期待値: 10.x.x
-
 # Gitの確認
 git --version
 # 期待値: git version 2.x.x
 
-# Dockerの確認
-docker --version
-# 期待値: Docker version 24.x.x以降
-
 # Azure CLIの確認
 az --version
 # 期待値: azure-cli 2.60.x以降
+
+# OpenSSLの確認
+openssl version
+# 期待値: OpenSSL 3.x.x または LibreSSL 3.x.x
 ```
+
+> **📝 Node.jsとDockerが必要ですか？** これらは[ローカル開発](materials/docs/local-development-guide.ja.md)にのみ必要で、Azureデプロイには必要ありません。
 
 #### 2.1.2 必要なアカウント
 
@@ -239,9 +177,9 @@ az --version
 > **個人/無料Azureアカウントの場合:**
 > 自分でAzureアカウントを作成した場合、自動的にグローバル管理者となり、追加設定なしでアプリ登録を作成できます。
 
-#### 2.1.3 Microsoft Entra IDアプリ登録
+#### 2.1.4 Microsoft Entra IDアプリ登録
 
-Microsoft Entra ID で **2 つのアプリ登録** を作成する必要があります。これはローカル開発と Azure デプロイの両方で必要です。
+Microsoft Entra ID で **2 つのアプリ登録** を作成する必要があります。これは Azure デプロイに必要です（ローカル開発にも使用します）。
 
 > **なぜ2つのアプリ登録が必要？**
 > - **フロントエンドアプリ**: MSAL.js経由のユーザーログイン処理（ブラウザベース）
@@ -346,205 +284,16 @@ Microsoft Entra ID で **2 つのアプリ登録** を作成する必要があ�
 
 ---
 
-### 2.2 ローカル開発環境
+### 2.2 ローカル開発環境（オプション）
 
-以下の手順に従って、ローカルマシンでアプリケーションを実行します。
+> **📖 完全ガイド:** ローカル開発のセットアップについては、[ローカル開発ガイド](materials/docs/local-development-guide.ja.md)を参照してください。
 
-#### ステップ1: リポジトリのクローン
+ローカル開発には追加のツール（Node.js、Docker）が必要で、以下の用途に役立ちます：
+- コード変更とデバッグ
+- Azureデプロイ前の機能テスト
+- アプリケーションアーキテクチャの学習
 
-```bash
-# リポジトリをクローン
-git clone https://github.com/YOUR_USERNAME/AzureIaaSWorkshop.git
-
-# プロジェクトフォルダに移動
-cd AzureIaaSWorkshop
-```
-
-#### ステップ2: MongoDBの起動
-
-アプリケーションはレプリカセット構成のMongoDBを使用します。簡単なセットアップのためにDocker Compose構成を提供しています。
-
-```bash
-# dev-environmentフォルダに移動
-cd dev-environment
-
-# MongoDBコンテナを起動
-docker-compose up -d
-
-# MongoDBの準備が整うまで待機（約5秒）
-sleep 5
-
-# レプリカセットを初期化（初回のみ）
-docker exec -it blogapp-mongo-primary mongosh /scripts/init-replica-set.js
-```
-
-**MongoDBが実行されていることを確認:**
-
-```bash
-# コンテナのステータスを確認
-docker-compose ps
-
-# 期待される出力:
-# NAME                   STATUS          PORTS
-# blogapp-mongo-primary  running         0.0.0.0:27017->27017/tcp
-
-# MongoDB接続をテスト
-docker exec -it blogapp-mongo-primary mongosh --eval "db.adminCommand('ping')"
-# 期待値: { ok: 1 }
-```
-
-> **💡 トラブルシューティング:** コンテナの起動に失敗した場合は、以下を試してください：
-> ```bash
-> docker-compose down -v  # 既存のボリュームを削除
-> docker-compose up -d    # 新規起動
-> ```
-
-#### ステップ3: バックエンドの構成と起動
-
-```bash
-# バックエンドフォルダに移動（プロジェクトルートから）
-cd materials/backend
-
-# サンプルから環境ファイルを作成
-cp .env.example .env
-```
-
-**`.env`ファイルを編集**し、Entra IDの値を設定:
-
-```bash
-# materials/backend/.env
-
-NODE_ENV=development
-PORT=3000
-
-# MongoDB（ローカルDocker）
-MONGODB_URI=mongodb://localhost:27017/blogapp?replicaSet=blogapp-rs0
-
-# Microsoft Entra ID - バックエンドAPIアプリ登録の値を使用
-ENTRA_TENANT_ID=ここにテナントIDを貼り付け
-ENTRA_CLIENT_ID=ここにバックエンドAPIクライアントIDを貼り付け
-
-# ロギング
-LOG_LEVEL=debug
-
-# CORS（フロントエンドからAPIを呼び出せるようにする）
-CORS_ORIGINS=http://localhost:5173,http://localhost:3000
-```
-
-**バックエンドを起動:**
-
-```bash
-# 依存関係をインストール
-npm install
-
-# 開発サーバーを起動（ホットリロード付き）
-npm run dev
-```
-
-**期待される出力:**
-```
-[INFO] Server running on port 3000
-[INFO] MongoDB connected successfully
-[INFO] Environment: development
-```
-
-**バックエンドが動作していることを確認:**
-
-```bash
-# 新しいターミナルで
-curl http://localhost:3000/health
-
-# 期待されるレスポンス:
-# {"status":"healthy","timestamp":"...","environment":"development"}
-```
-
-> **このターミナルを開いたまま**にしてください - バックエンドは実行し続ける必要があります。
-
-#### ステップ4: フロントエンドの構成と起動
-
-```bash
-# 新しいターミナルを開き、フロントエンドフォルダに移動
-cd materials/frontend
-
-# サンプルから環境ファイルを作成
-cp .env.example .env
-```
-
-**`.env`ファイルを編集**し、Entra IDの値を設定:
-
-```bash
-# materials/frontend/.env
-
-# フロントエンドアプリ登録（MSALログイン用）
-VITE_ENTRA_CLIENT_ID=ここにフロントエンドクライアントIDを貼り付け
-VITE_ENTRA_TENANT_ID=ここにテナントIDを貼り付け
-VITE_ENTRA_REDIRECT_URI=http://localhost:5173
-
-# バックエンドAPIアプリ登録（APIトークンのオーディエンス用）
-VITE_API_CLIENT_ID=ここにバックエンドAPIクライアントIDを貼り付け
-```
-
-**フロントエンドを起動:**
-
-```bash
-# 依存関係をインストール
-npm install
-
-# 開発サーバーを起動
-npm run dev
-```
-
-**期待される出力:**
-```
-  VITE v5.x.x  ready in xxx ms
-
-  ➜  Local:   http://localhost:5173/
-  ➜  Network: use --host to expose
-```
-
-#### ステップ5: アプリケーションのテスト
-
-1. **ブラウザを開き**、以下にアクセス: **http://localhost:5173**
-
-2. **ログインせずにテスト:**
-   - 投稿リストのあるホームページが表示されるはずです（最初は空の場合があります）
-   - これでフロントエンド → バックエンド → MongoDBの接続が動作していることを確認できます
-
-3. **ログインをテスト:**
-   - ヘッダーの**「ログイン」**ボタンをクリック
-   - Microsoftアカウントでサインイン
-   - プロンプトが表示されたら権限を承認
-   - ログイン後、ヘッダーに名前が表示されます
-
-4. **認証済み機能をテスト:**
-   - **「投稿を作成」**をクリックして新しいブログ投稿を書く
-   - 下書きとして保存または公開
-   - **「マイ投稿」**で投稿を確認
-
-**🎉 おめでとうございます！** ローカル開発環境の準備が整いました。
-
-#### クイックコマンドリファレンス
-
-```bash
-# すべてを起動（別々のターミナルで実行）
-cd dev-environment && docker-compose up -d      # ターミナル1: MongoDB
-cd materials/backend && npm run dev              # ターミナル2: バックエンド
-cd materials/frontend && npm run dev             # ターミナル3: フロントエンド
-
-# すべてを停止
-docker-compose stop                              # MongoDBを停止
-# バックエンド/フロントエンドのターミナルでCtrl+Cを押す
-
-# データベースをリセット（必要な場合）
-cd dev-environment
-docker-compose down -v
-docker-compose up -d
-sleep 5
-docker exec -it blogapp-mongo-primary mongosh /scripts/init-replica-set.js
-
-# サンプルデータを追加（オプション）
-cd materials/backend && npm run seed
-```
+Azureへのデプロイのみを行う場合は、次のセクションに進んでください。
 
 ---
 
@@ -1076,10 +825,18 @@ curl -k https://<YOUR_APPGW_FQDN>/api/posts
 
 ---
 
+## 4. 運用ガイド
+
+- [監視ガイド（Azure Monitor + Log Analytics）](./materials/docs/monitoring-guide.ja.md)
+- [BCDR ガイド（Azure Backup + Azure Site Recovery）](./materials/docs/disaster-recovery-guide.ja.md)
+
+---
+
 ## 追加リソース
 
 ### ドキュメント
 
+- [ローカル開発ガイド](materials/docs/local-development-guide.ja.md) - ローカルでアプリケーションを実行
 - [デプロイ戦略（詳細版）](AIdocs/dev-record/deployment-strategy.ja.md) - 完全なステップバイステップデプロイガイド
 - [Azureアーキテクチャ設計](design/AzureArchitectureDesign.md) - インフラストラクチャ仕様
 - [バックエンドアプリケーション設計](design/BackendApplicationDesign.md) - API設計と仕様

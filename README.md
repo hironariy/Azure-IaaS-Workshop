@@ -17,9 +17,10 @@ A hands-on workshop for learning Azure IaaS patterns through building and deploy
   - [1.4 Architecture Overview](#14-architecture-overview)
 - [2. How to Deploy](#2-how-to-deploy)
   - [2.1 Prerequisites](#21-prerequisites)
-  - [2.2 Local Development Environment](#22-local-development-environment)
+  - [2.2 Local Development (Optional)](#22-local-development-environment-optional)
   - [2.3 Azure Deployment](#23-azure-deployment)
 - [3. Resiliency Testing](#3-resiliency-testing)
+- [4. Operational Guides](#4-operational-guides)
 
 ---
 
@@ -74,66 +75,7 @@ The sample application is a **multi-user blog platform** with the following feat
 
 ### 1.4 Architecture Overview
 
-#### Local Development Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    Local Development                             │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│   Browser ──► Frontend (Vite :5173) ──► Backend (Express :3000)  │
-│                     │                          │                 │
-│                     │                          │                 │
-│                     ▼                          ▼                 │
-│             Microsoft Entra ID         MongoDB (Docker :27017)   │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-#### Azure Production Architecture
-
-```
-┌──────────────────────────────────────────────────────────────────────────────┐
-│                              Azure Architecture                               │
-├──────────────────────────────────────────────────────────────────────────────┤
-│                                                                               │
-│   Internet                                                                    │
-│      │                                                                        │
-│      ▼                                                                        │
-│   ┌─────────────────────────────────┐                                        │
-│   │   Application Gateway (HTTPS)   │  ◄── SSL/TLS Termination              │
-│   │   - Public IP with DNS label    │      Self-signed certificate          │
-│   │   - HTTP→HTTPS redirect         │                                        │
-│   └─────────────────────────────────┘                                        │
-│                  │                                                            │
-│                  ▼                                                            │
-│   ┌─────────────────────────────────┐     ┌────────────────┐                │
-│   │        Web Tier (NGINX)         │     │  Azure Bastion │                │
-│   │   VM-AZ1        VM-AZ2          │     │  (Secure SSH)  │                │
-│   │   10.0.1.4      10.0.1.5        │     └────────────────┘                │
-│   └─────────────────────────────────┘                                        │
-│                  │                                                            │
-│                  ▼                                                            │
-│   ┌─────────────────────────────────┐                                        │
-│   │   Internal Load Balancer (:3000)│                                        │
-│   └─────────────────────────────────┘                                        │
-│                  │                                                            │
-│                  ▼                                                            │
-│   ┌─────────────────────────────────┐                                        │
-│   │       App Tier (Node.js)        │                                        │
-│   │   VM-AZ1        VM-AZ2          │                                        │
-│   │   10.0.2.5      10.0.2.4        │                                        │
-│   └─────────────────────────────────┘                                        │
-│                  │                                                            │
-│                  ▼                                                            │
-│   ┌─────────────────────────────────┐                                        │
-│   │     Database Tier (MongoDB)     │                                        │
-│   │   Primary       Secondary       │  ◄── Replica Set                      │
-│   │   10.0.3.4      10.0.3.5        │      (Auto-failover)                  │
-│   └─────────────────────────────────┘                                        │
-│                                                                               │
-└──────────────────────────────────────────────────────────────────────────────┘
-```
+![Architecture Diagram](assets/Architecture/architecture.png)
 
 **Key Azure Services Used:**
 
@@ -152,12 +94,10 @@ The sample application is a **multi-user blog platform** with the following feat
 
 ## 2. How to Deploy
 
-This section explains how to deploy the application. Choose the environment that fits your needs:
+This section explains how to deploy the application to Azure.
 
-| Environment | Use Case | Time Required |
-|-------------|----------|---------------|
-| **Local Development** | Code changes, debugging, learning | 15-30 minutes |
-| **Azure** | Production deployment, workshop exercises | 45-90 minutes |
+> **📝 Looking for local development setup?**
+> See the [Local Development Guide](materials/docs/local-development-guide.md) for running the application on your local machine.
 
 ### 2.1 Prerequisites
 
@@ -169,36 +109,28 @@ Install these tools on your computer:
 
 | Tool | Version | Purpose | Installation |
 |------|---------|---------|--------------|
-| **Node.js** | 20.x LTS | JavaScript runtime | [Download](https://nodejs.org/) |
-| **npm** | 10.x+ | Package manager | Included with Node.js |
 | **Git** | 2.x+ | Version control | [Download](https://git-scm.com/) |
-| **Docker Desktop** | Latest | Local MongoDB | [Download](https://www.docker.com/products/docker-desktop/) |
 | **Azure CLI** | 2.60+ | Azure management | [Install Guide](https://docs.microsoft.com/cli/azure/install-azure-cli) |
 | **VS Code** | Latest | Code editor (recommended) | [Download](https://code.visualstudio.com/) |
+| **OpenSSL** | Latest | SSL certificate generation | Pre-installed on macOS/Linux, [Download for Windows](https://slproweb.com/products/Win32OpenSSL.html) |
 
 **Verify your installation:**
 
 ```bash
-# Check Node.js
-node --version
-# Expected: v20.x.x
-
-# Check npm
-npm --version
-# Expected: 10.x.x
-
 # Check Git
 git --version
 # Expected: git version 2.x.x
 
-# Check Docker
-docker --version
-# Expected: Docker version 24.x.x or newer
-
 # Check Azure CLI
 az --version
 # Expected: azure-cli 2.60.x or newer
+
+# Check OpenSSL
+openssl version
+# Expected: OpenSSL 3.x.x or LibreSSL 3.x.x
 ```
+
+> **📝 Need Node.js and Docker?** These are only required for [local development](materials/docs/local-development-guide.md), not for Azure deployment.
 
 #### 2.1.2 Required Accounts
 
@@ -239,9 +171,9 @@ You need access to the following:
 > **For Personal/Free Azure Accounts:**
 > If you created your own Azure account, you are automatically the Global Administrator and can create app registrations without any additional setup.
 
-#### 2.1.3 Microsoft Entra ID App Registrations
+#### 2.1.4 Microsoft Entra ID App Registrations
 
-You need to create **two app registrations** in Microsoft Entra ID. This is required for both local development and Azure deployment.
+You need to create **two app registrations** in Microsoft Entra ID. This is required for Azure deployment (and also for local development).
 
 > **Why two app registrations?**
 > - **Frontend App**: Handles user login via MSAL.js (browser-based)
@@ -346,205 +278,16 @@ You need to create **two app registrations** in Microsoft Entra ID. This is requ
 
 ---
 
-### 2.2 Local Development Environment
+### 2.2 Local Development Environment (Optional)
 
-Follow these steps to run the application on your local machine.
+> **📖 Full Guide:** For local development setup, see the [Local Development Guide](materials/docs/local-development-guide.md).
 
-#### Step 1: Clone the Repository
+Local development requires additional tools (Node.js, Docker) and is useful for:
+- Making code changes and debugging
+- Testing features before Azure deployment
+- Learning the application architecture
 
-```bash
-# Clone the repository
-git clone https://github.com/YOUR_USERNAME/AzureIaaSWorkshop.git
-
-# Navigate to project folder
-cd AzureIaaSWorkshop
-```
-
-#### Step 2: Start MongoDB
-
-The application uses MongoDB with a replica set. We provide a Docker Compose configuration for easy setup.
-
-```bash
-# Navigate to dev-environment folder
-cd dev-environment
-
-# Start MongoDB container
-docker-compose up -d
-
-# Wait for MongoDB to be ready (about 5 seconds)
-sleep 5
-
-# Initialize the replica set (first time only)
-docker exec -it blogapp-mongo-primary mongosh /scripts/init-replica-set.js
-```
-
-**Verify MongoDB is running:**
-
-```bash
-# Check container status
-docker-compose ps
-
-# Expected output:
-# NAME                   STATUS          PORTS
-# blogapp-mongo-primary  running         0.0.0.0:27017->27017/tcp
-
-# Test MongoDB connection
-docker exec -it blogapp-mongo-primary mongosh --eval "db.adminCommand('ping')"
-# Expected: { ok: 1 }
-```
-
-> **💡 Troubleshooting:** If the container fails to start, try:
-> ```bash
-> docker-compose down -v  # Remove existing volumes
-> docker-compose up -d    # Start fresh
-> ```
-
-#### Step 3: Configure and Start Backend
-
-```bash
-# Navigate to backend folder (from project root)
-cd materials/backend
-
-# Create environment file from example
-cp .env.example .env
-```
-
-**Edit `.env` file** with your Entra ID values:
-
-```bash
-# materials/backend/.env
-
-NODE_ENV=development
-PORT=3000
-
-# MongoDB (local Docker)
-MONGODB_URI=mongodb://localhost:27017/blogapp?replicaSet=blogapp-rs0
-
-# Microsoft Entra ID - Use values from your Backend API app registration
-ENTRA_TENANT_ID=paste-your-tenant-id-here
-ENTRA_CLIENT_ID=paste-your-backend-api-client-id-here
-
-# Logging
-LOG_LEVEL=debug
-
-# CORS (allow frontend to call API)
-CORS_ORIGINS=http://localhost:5173,http://localhost:3000
-```
-
-**Start the backend:**
-
-```bash
-# Install dependencies
-npm install
-
-# Start development server (with hot reload)
-npm run dev
-```
-
-**Expected output:**
-```
-[INFO] Server running on port 3000
-[INFO] MongoDB connected successfully
-[INFO] Environment: development
-```
-
-**Verify backend is working:**
-
-```bash
-# In a new terminal
-curl http://localhost:3000/health
-
-# Expected response:
-# {"status":"healthy","timestamp":"...","environment":"development"}
-```
-
-> **Keep this terminal open** - the backend needs to stay running.
-
-#### Step 4: Configure and Start Frontend
-
-```bash
-# Open a new terminal and navigate to frontend folder
-cd materials/frontend
-
-# Create environment file from example
-cp .env.example .env
-```
-
-**Edit `.env` file** with your Entra ID values:
-
-```bash
-# materials/frontend/.env
-
-# Frontend App Registration (for MSAL login)
-VITE_ENTRA_CLIENT_ID=paste-your-frontend-client-id-here
-VITE_ENTRA_TENANT_ID=paste-your-tenant-id-here
-VITE_ENTRA_REDIRECT_URI=http://localhost:5173
-
-# Backend API App Registration (for API token audience)
-VITE_API_CLIENT_ID=paste-your-backend-api-client-id-here
-```
-
-**Start the frontend:**
-
-```bash
-# Install dependencies
-npm install
-
-# Start development server
-npm run dev
-```
-
-**Expected output:**
-```
-  VITE v5.x.x  ready in xxx ms
-
-  ➜  Local:   http://localhost:5173/
-  ➜  Network: use --host to expose
-```
-
-#### Step 5: Test the Application
-
-1. **Open your browser** and go to: **http://localhost:5173**
-
-2. **Test without login:**
-   - You should see the home page with a list of posts (may be empty initially)
-   - This verifies frontend → backend → MongoDB connection is working
-
-3. **Test login:**
-   - Click the **"Login"** button in the header
-   - Sign in with your Microsoft account
-   - Accept the permissions when prompted
-   - After login, your name should appear in the header
-
-4. **Test authenticated features:**
-   - Click **"Create Post"** to write a new blog post
-   - Save as draft or publish
-   - View your posts in **"My Posts"**
-
-**🎉 Congratulations!** Your local development environment is ready.
-
-#### Quick Commands Reference
-
-```bash
-# Start everything (run in separate terminals)
-cd dev-environment && docker-compose up -d      # Terminal 1: MongoDB
-cd materials/backend && npm run dev              # Terminal 2: Backend
-cd materials/frontend && npm run dev             # Terminal 3: Frontend
-
-# Stop everything
-docker-compose stop                              # Stop MongoDB
-# Press Ctrl+C in backend/frontend terminals
-
-# Reset database (if needed)
-cd dev-environment
-docker-compose down -v
-docker-compose up -d
-sleep 5
-docker exec -it blogapp-mongo-primary mongosh /scripts/init-replica-set.js
-
-# Add sample data (optional)
-cd materials/backend && npm run seed
-```
+If you just want to deploy to Azure, you can skip to the next section.
 
 ---
 
@@ -1076,10 +819,18 @@ After completing these tests, you will understand:
 
 ---
 
+## 4. Operational Guides
+
+- [Monitoring Guide (Azure Monitor + Log Analytics)](./materials/docs/monitoring-guide.md)
+- [BCDR Guide (Azure Backup + Azure Site Recovery)](./materials/docs/disaster-recovery-guide.md)
+
+---
+
 ## Additional Resources
 
 ### Documentation
 
+- [Local Development Guide](materials/docs/local-development-guide.md) - Run the application locally
 - [Deployment Strategy (Detailed)](AIdocs/dev-record/deployment-strategy.md) - Complete step-by-step deployment guide
 - [Azure Architecture Design](design/AzureArchitectureDesign.md) - Infrastructure specifications
 - [Backend Application Design](design/BackendApplicationDesign.md) - API design and specifications
