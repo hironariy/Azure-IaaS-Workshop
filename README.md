@@ -171,7 +171,25 @@ You need access to the following:
 > **For Personal/Free Azure Accounts:**
 > If you created your own Azure account, you are automatically the Global Administrator and can create app registrations without any additional setup.
 
-#### 2.1.4 Microsoft Entra ID App Registrations
+#### 2.1.4 Clone the Repository
+
+Clone the workshop repository to your local machine:
+
+```bash
+# Clone the official repository
+git clone https://github.com/hironariy/Azure-IaaS-Workshop.git
+
+# Navigate to the project folder
+cd Azure-IaaS-Workshop
+```
+
+> **💡 For Workshop Participants:** If you forked this repository to your own GitHub account, clone your fork instead:
+> ```bash
+> git clone https://github.com/YOUR_USERNAME/Azure-IaaS-Workshop.git
+> cd Azure-IaaS-Workshop
+> ```
+
+#### 2.1.5 Microsoft Entra ID App Registrations
 
 You need to create **two app registrations** in Microsoft Entra ID. This is required for Azure deployment (and also for local development).
 

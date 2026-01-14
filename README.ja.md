@@ -177,7 +177,25 @@ openssl version
 > **個人/無料Azureアカウントの場合:**
 > 自分でAzureアカウントを作成した場合、自動的にグローバル管理者となり、追加設定なしでアプリ登録を作成できます。
 
-#### 2.1.4 Microsoft Entra IDアプリ登録
+#### 2.1.4 リポジトリのクローン
+
+ワークショップのリポジトリをローカルマシンにクローンします：
+
+```bash
+# 公式リポジトリをクローン
+git clone https://github.com/hironariy/Azure-IaaS-Workshop.git
+
+# プロジェクトフォルダに移動
+cd Azure-IaaS-Workshop
+```
+
+> **💡 ワークショップ参加者向け:** このリポジトリを自分のGitHubアカウントにフォークした場合は、フォークしたリポジトリをクローンしてください：
+> ```bash
+> git clone https://github.com/YOUR_USERNAME/Azure-IaaS-Workshop.git
+> cd Azure-IaaS-Workshop
+> ```
+
+#### 2.1.5 Microsoft Entra IDアプリ登録
 
 Microsoft Entra ID で **2 つのアプリ登録** を作成する必要があります。これは Azure デプロイに必要です（ローカル開発にも使用します）。
 
