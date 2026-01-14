@@ -197,7 +197,7 @@ openssl version
 
 | アカウント | 目的 | 取得方法 |
 |---------|---------|------------|
-| **Microsoft Azure** | クラウドプラットフォーム | [無料アカウント](https://azure.microsoft.com/free/) |
+| **Microsoft Azure** | クラウドプラットフォーム | [無料アカウント](https://azure.microsoft.com/free/)。ワークショップの参加者はアクティブなサブスクリプションと所有者ロールが必要です。 |
 | **Microsoft Entra ID** | 認証 | Azureサブスクリプションに含まれる |
 | **GitHub**（オプション） | リポジトリのクローン | [サインアップ](https://github.com/join) |
 

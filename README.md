@@ -191,7 +191,7 @@ You need access to the following:
 
 | Account | Purpose | How to Get |
 |---------|---------|------------|
-| **Microsoft Azure** | Cloud platform | [Free Account](https://azure.microsoft.com/free/) |
+| **Microsoft Azure** | Cloud platform | [Free Account](https://azure.microsoft.com/free/). Workshop attendees must have an active subscription with owner role.|
 | **Microsoft Entra ID** | Authentication | Included with Azure subscription |
 | **GitHub** (optional) | Clone repository | [Sign Up](https://github.com/join) |
 
