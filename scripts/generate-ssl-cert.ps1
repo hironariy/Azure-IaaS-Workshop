@@ -85,6 +85,9 @@ if (-not (Test-Path $OutputDir)) {
     New-Item -ItemType Directory -Path $OutputDir -Force | Out-Null
 }
 
+# Resolve to absolute path for .NET methods compatibility
+$OutputDir = (Resolve-Path $OutputDir).Path
+
 $pfxPath = Join-Path $OutputDir "cert.pfx"
 $base64Path = Join-Path $OutputDir "cert-base64.txt"
 
