@@ -835,6 +835,7 @@ mongosh "mongodb://blogapp:BlogApp2024Workshop!@10.0.3.4:27017,10.0.3.5:27017/bl
 
 **On both App VMs - Verification only:**
 
+**macOS/Linux (SSH via Bastion):**
 ```bash
 # Check Node.js version (should be v20.x)
 node --version
@@ -851,10 +852,30 @@ cat /opt/blogapp/.env
 # Should show: NODE_ENV, PORT, AZURE_TENANT_ID, AZURE_CLIENT_ID
 ```
 
+**Windows PowerShell (Invoke-AzVMRunCommand):**
+```powershell
+$ResourceGroup = "<YOUR_RESOURCE_GROUP>"
+
+# Check Node.js/PM2 and environment on vm-app-az1-prod
+Invoke-AzVMRunCommand `
+  -ResourceGroupName $ResourceGroup `
+  -VMName "vm-app-az1-prod" `
+  -CommandId "RunShellScript" `
+  -ScriptString "node --version; pm2 --version; pm2 list; ls -la /opt/blogapp/; cat /opt/blogapp/.env"
+
+# Repeat for vm-app-az2-prod
+Invoke-AzVMRunCommand `
+  -ResourceGroupName $ResourceGroup `
+  -VMName "vm-app-az2-prod" `
+  -CommandId "RunShellScript" `
+  -ScriptString "node --version; pm2 --version; pm2 list; ls -la /opt/blogapp/; cat /opt/blogapp/.env"
+```
+
 ### 2.2 Clean Up Placeholder Health Server
 
 The Bicep CustomScript starts a placeholder health server. After deploying the real application, this process will be in "errored" state (port conflict). Clean it up:
 
+**macOS/Linux (SSH via Bastion):**
 ```bash
 # Check PM2 status - you may see blogapp-health in "errored" state
 pm2 list
@@ -864,6 +885,31 @@ pm2 delete blogapp-health 2>/dev/null || true
 
 # Save PM2 process list
 pm2 save
+```
+
+**Windows PowerShell (Invoke-AzVMRunCommand):**
+```powershell
+$ResourceGroup = "<YOUR_RESOURCE_GROUP>"
+
+$cleanupScript = @'
+pm2 list
+pm2 delete blogapp-health 2>/dev/null || true
+pm2 save
+'@
+
+# Clean up on vm-app-az1-prod
+Invoke-AzVMRunCommand `
+  -ResourceGroupName $ResourceGroup `
+  -VMName "vm-app-az1-prod" `
+  -CommandId "RunShellScript" `
+  -ScriptString $cleanupScript
+
+# Repeat for vm-app-az2-prod
+Invoke-AzVMRunCommand `
+  -ResourceGroupName $ResourceGroup `
+  -VMName "vm-app-az2-prod" `
+  -CommandId "RunShellScript" `
+  -ScriptString $cleanupScript
 ```
 
 ### 2.3 Deploy Application Code
@@ -931,6 +977,7 @@ Invoke-AzVMRunCommand `
 
 **On both App VMs:**
 
+**macOS/Linux (SSH via Bastion):**
 ```bash
 cd /opt/blogapp
 
@@ -943,6 +990,31 @@ npm ci --include=dev
 npm run build
 ```
 
+**Windows PowerShell (Invoke-AzVMRunCommand):**
+```powershell
+$ResourceGroup = "<YOUR_RESOURCE_GROUP>"
+
+$buildScript = @'
+cd /opt/blogapp
+npm ci --include=dev
+npm run build
+'@
+
+# Build on vm-app-az1-prod
+Invoke-AzVMRunCommand `
+  -ResourceGroupName $ResourceGroup `
+  -VMName "vm-app-az1-prod" `
+  -CommandId "RunShellScript" `
+  -ScriptString $buildScript
+
+# Repeat for vm-app-az2-prod
+Invoke-AzVMRunCommand `
+  -ResourceGroupName $ResourceGroup `
+  -VMName "vm-app-az2-prod" `
+  -CommandId "RunShellScript" `
+  -ScriptString $buildScript
+```
+
 > **Why `--include=dev`?** The Bicep CustomScript sets `NODE_ENV=production` in `/etc/environment`. When `NODE_ENV=production`, npm automatically skips `devDependencies` during install. Since TypeScript is a devDependency needed for compilation, we must explicitly include it.
 
 ### 2.5 Verify MongoDB Connection String
@@ -951,9 +1023,21 @@ npm run build
 
 **Verify `/opt/blogapp/.env` contains MONGODB_URI:**
 
+**macOS/Linux (SSH via Bastion):**
 ```bash
 # Verify complete .env file
 cat /opt/blogapp/.env
+```
+
+**Windows PowerShell (Invoke-AzVMRunCommand):**
+```powershell
+$ResourceGroup = "<YOUR_RESOURCE_GROUP>"
+
+Invoke-AzVMRunCommand `
+  -ResourceGroupName $ResourceGroup `
+  -VMName "vm-app-az1-prod" `
+  -CommandId "RunShellScript" `
+  -ScriptString "cat /opt/blogapp/.env"
 ```
 
 Expected `.env` (all values injected by Bicep):
@@ -973,6 +1057,7 @@ ENTRA_CLIENT_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 
 ### 2.6 Start Application with PM2
 
+**macOS/Linux (SSH via Bastion):**
 ```bash
 cd /opt/blogapp
 
@@ -988,14 +1073,61 @@ pm2 list
 pm2 logs blogapp-api --lines 20
 ```
 
+**Windows PowerShell (Invoke-AzVMRunCommand):**
+```powershell
+$ResourceGroup = "<YOUR_RESOURCE_GROUP>"
+
+$startScript = @'
+cd /opt/blogapp
+pm2 start dist/src/app.js --name blogapp-api
+pm2 save
+pm2 list
+pm2 logs blogapp-api --lines 20
+'@
+
+# Start on vm-app-az1-prod
+Invoke-AzVMRunCommand `
+  -ResourceGroupName $ResourceGroup `
+  -VMName "vm-app-az1-prod" `
+  -CommandId "RunShellScript" `
+  -ScriptString $startScript
+
+# Repeat for vm-app-az2-prod
+Invoke-AzVMRunCommand `
+  -ResourceGroupName $ResourceGroup `
+  -VMName "vm-app-az2-prod" `
+  -CommandId "RunShellScript" `
+  -ScriptString $startScript
+```
+
 ### 2.7 Health Check Verification
 
+**macOS/Linux (SSH via Bastion):**
 ```bash
 # Test local health endpoint
 curl http://localhost:3000/health
 
 # Test from other VM (via Internal LB IP)
 curl http://10.0.2.10:3000/health
+```
+
+**Windows PowerShell (Invoke-AzVMRunCommand):**
+```powershell
+$ResourceGroup = "<YOUR_RESOURCE_GROUP>"
+
+# Health check on vm-app-az1-prod
+Invoke-AzVMRunCommand `
+  -ResourceGroupName $ResourceGroup `
+  -VMName "vm-app-az1-prod" `
+  -CommandId "RunShellScript" `
+  -ScriptString "curl http://localhost:3000/health; curl http://10.0.2.10:3000/health"
+
+# Health check on vm-app-az2-prod
+Invoke-AzVMRunCommand `
+  -ResourceGroupName $ResourceGroup `
+  -VMName "vm-app-az2-prod" `
+  -CommandId "RunShellScript" `
+  -ScriptString "curl http://localhost:3000/health; curl http://10.0.2.10:3000/health"
 ```
 
 ---

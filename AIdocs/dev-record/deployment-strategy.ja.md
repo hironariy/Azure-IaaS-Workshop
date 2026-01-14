@@ -836,6 +836,7 @@ mongosh "mongodb://blogapp:BlogApp2024Workshop!@10.0.3.4:27017,10.0.3.5:27017/bl
 
 **両方の App VM 上で確認のみ:**
 
+**macOS/Linux (Bastion 経由 SSH):**
 ```bash
 # Check Node.js version (should be v20.x)
 node --version
@@ -852,10 +853,30 @@ cat /opt/blogapp/.env
 # Should show: NODE_ENV, PORT, AZURE_TENANT_ID, AZURE_CLIENT_ID
 ```
 
+**Windows PowerShell (Invoke-AzVMRunCommand):**
+```powershell
+$ResourceGroup = "<YOUR_RESOURCE_GROUP>"
+
+# vm-app-az1-prod で Node.js/PM2 と環境を確認
+Invoke-AzVMRunCommand `
+  -ResourceGroupName $ResourceGroup `
+  -VMName "vm-app-az1-prod" `
+  -CommandId "RunShellScript" `
+  -ScriptString "node --version; pm2 --version; pm2 list; ls -la /opt/blogapp/; cat /opt/blogapp/.env"
+
+# vm-app-az2-prod でも同様に実行
+Invoke-AzVMRunCommand `
+  -ResourceGroupName $ResourceGroup `
+  -VMName "vm-app-az2-prod" `
+  -CommandId "RunShellScript" `
+  -ScriptString "node --version; pm2 --version; pm2 list; ls -la /opt/blogapp/; cat /opt/blogapp/.env"
+```
+
 ### 2.2 プレースホルダ ヘルスサーバのクリーンアップ
 
 Bicep の CustomScript はプレースホルダのヘルスサーバを開始します。実際のアプリケーションをデプロイした後、このプロセスは "errored"（ポート競合）になります。クリーンアップしてください。
 
+**macOS/Linux (Bastion 経由 SSH):**
 ```bash
 # Check PM2 status - you may see blogapp-health in "errored" state
 pm2 list
@@ -865,6 +886,31 @@ pm2 delete blogapp-health 2>/dev/null || true
 
 # Save PM2 process list
 pm2 save
+```
+
+**Windows PowerShell (Invoke-AzVMRunCommand):**
+```powershell
+$ResourceGroup = "<YOUR_RESOURCE_GROUP>"
+
+$cleanupScript = @'
+pm2 list
+pm2 delete blogapp-health 2>/dev/null || true
+pm2 save
+'@
+
+# vm-app-az1-prod でクリーンアップ
+Invoke-AzVMRunCommand `
+  -ResourceGroupName $ResourceGroup `
+  -VMName "vm-app-az1-prod" `
+  -CommandId "RunShellScript" `
+  -ScriptString $cleanupScript
+
+# vm-app-az2-prod でも同様に実行
+Invoke-AzVMRunCommand `
+  -ResourceGroupName $ResourceGroup `
+  -VMName "vm-app-az2-prod" `
+  -CommandId "RunShellScript" `
+  -ScriptString $cleanupScript
 ```
 
 ### 2.3 アプリケーション コードのデプロイ
@@ -932,6 +978,7 @@ Invoke-AzVMRunCommand `
 
 **両方の App VM 上:**
 
+**macOS/Linux (Bastion 経由 SSH):**
 ```bash
 cd /opt/blogapp
 
@@ -944,6 +991,31 @@ npm ci --include=dev
 npm run build
 ```
 
+**Windows PowerShell (Invoke-AzVMRunCommand):**
+```powershell
+$ResourceGroup = "<YOUR_RESOURCE_GROUP>"
+
+$buildScript = @'
+cd /opt/blogapp
+npm ci --include=dev
+npm run build
+'@
+
+# vm-app-az1-prod でビルド
+Invoke-AzVMRunCommand `
+  -ResourceGroupName $ResourceGroup `
+  -VMName "vm-app-az1-prod" `
+  -CommandId "RunShellScript" `
+  -ScriptString $buildScript
+
+# vm-app-az2-prod でも同様に実行
+Invoke-AzVMRunCommand `
+  -ResourceGroupName $ResourceGroup `
+  -VMName "vm-app-az2-prod" `
+  -CommandId "RunShellScript" `
+  -ScriptString $buildScript
+```
+
 > **なぜ `--include=dev` が必要？** Bicep の CustomScript は `/etc/environment` に `NODE_ENV=production` を設定します。`NODE_ENV=production` のとき、npm はインストール時に `devDependencies` を自動的にスキップします。TypeScript はコンパイルに必要な devDependency のため、明示的に含める必要があります。
 
 ### 2.5 MongoDB 接続文字列の確認
@@ -952,9 +1024,21 @@ npm run build
 
 **`/opt/blogapp/.env` に MONGODB_URI が含まれていることを確認:**
 
+**macOS/Linux (Bastion 経由 SSH):**
 ```bash
 # Verify complete .env file
 cat /opt/blogapp/.env
+```
+
+**Windows PowerShell (Invoke-AzVMRunCommand):**
+```powershell
+$ResourceGroup = "<YOUR_RESOURCE_GROUP>"
+
+Invoke-AzVMRunCommand `
+  -ResourceGroupName $ResourceGroup `
+  -VMName "vm-app-az1-prod" `
+  -CommandId "RunShellScript" `
+  -ScriptString "cat /opt/blogapp/.env"
 ```
 
 期待される `.env`（すべての値は Bicep により注入）:
@@ -974,6 +1058,7 @@ ENTRA_CLIENT_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 
 ### 2.6 PM2 でアプリケーションを起動
 
+**macOS/Linux (Bastion 経由 SSH):**
 ```bash
 cd /opt/blogapp
 
@@ -989,14 +1074,61 @@ pm2 list
 pm2 logs blogapp-api --lines 20
 ```
 
+**Windows PowerShell (Invoke-AzVMRunCommand):**
+```powershell
+$ResourceGroup = "<YOUR_RESOURCE_GROUP>"
+
+$startScript = @'
+cd /opt/blogapp
+pm2 start dist/src/app.js --name blogapp-api
+pm2 save
+pm2 list
+pm2 logs blogapp-api --lines 20
+'@
+
+# vm-app-az1-prod で起動
+Invoke-AzVMRunCommand `
+  -ResourceGroupName $ResourceGroup `
+  -VMName "vm-app-az1-prod" `
+  -CommandId "RunShellScript" `
+  -ScriptString $startScript
+
+# vm-app-az2-prod でも同様に実行
+Invoke-AzVMRunCommand `
+  -ResourceGroupName $ResourceGroup `
+  -VMName "vm-app-az2-prod" `
+  -CommandId "RunShellScript" `
+  -ScriptString $startScript
+```
+
 ### 2.7 ヘルスチェック検証
 
+**macOS/Linux (Bastion 経由 SSH):**
 ```bash
 # Test local health endpoint
 curl http://localhost:3000/health
 
 # Test from other VM (via Internal LB IP)
 curl http://10.0.2.10:3000/health
+```
+
+**Windows PowerShell (Invoke-AzVMRunCommand):**
+```powershell
+$ResourceGroup = "<YOUR_RESOURCE_GROUP>"
+
+# vm-app-az1-prod でヘルスチェック
+Invoke-AzVMRunCommand `
+  -ResourceGroupName $ResourceGroup `
+  -VMName "vm-app-az1-prod" `
+  -CommandId "RunShellScript" `
+  -ScriptString "curl http://localhost:3000/health; curl http://10.0.2.10:3000/health"
+
+# vm-app-az2-prod でヘルスチェック
+Invoke-AzVMRunCommand `
+  -ResourceGroupName $ResourceGroup `
+  -VMName "vm-app-az2-prod" `
+  -CommandId "RunShellScript" `
+  -ScriptString "curl http://localhost:3000/health; curl http://10.0.2.10:3000/health"
 ```
 
 ---
