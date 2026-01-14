@@ -5,18 +5,12 @@
 // Reference: /design/AzureArchitectureDesign.md
 //
 // Deployment Order (managed by Bicep dependency resolution):
-//   1. Monitoring - Log Analytics Workspace (deploys first, needs time for table init)
-//   2. Network - NSGs → NAT Gateway → VNet
-//   3. Monitoring - Data Collection Rule (after VNet, ensures LA tables are ready)
-//   4. Network - Bastion (parallel with VMs, only depends on VNet)
-//   5. Network - Application Gateway, Internal Load Balancer
-//   6. Storage - Storage Account
-//   7. Compute - Web/App/DB tier VMs (parallel deployment possible)
-//   8. Security - Key Vault (after all VMs for principal ID access)
-//
-// Performance Notes:
-//   - Bastion deploys in parallel with VMs (no mutual dependency)
-//   - DCR deploys after VNet to allow Log Analytics tables to initialize
+//   1. Monitoring (Log Analytics, Data Collection Rule)
+//   2. Security (Key Vault - after all VMs)
+//   3. Storage (Storage Account)
+//   4. Network (NSGs → NAT Gateway → VNet → Bastion, Load Balancer)
+//   5. Compute (Web tier → App tier → DB tier)
+//   Note: DB tier explicitly depends on VNet to ensure NAT Gateway is attached
 //
 // Usage:
 //   az deployment group create \
@@ -178,11 +172,9 @@ var dbSubnetPrefix = '10.0.3.0/24'
 var bastionSubnetPrefix = '10.0.255.0/26'
 
 // =============================================================================
-// Module 1: Monitoring - Log Analytics Workspace & Data Collection Rule
+// Module 1: Monitoring (Log Analytics + Data Collection Rule)
 // =============================================================================
-// Deploy monitoring resources first
-// DCR must be deployed immediately after Log Analytics (same deployment phase)
-// to avoid table initialization timing issues
+// Deploy first - VMs need this for Azure Monitor Agent
 // =============================================================================
 
 module logAnalytics 'modules/monitoring/log-analytics.bicep' = if (deployMonitoring) {
@@ -196,17 +188,20 @@ module logAnalytics 'modules/monitoring/log-analytics.bicep' = if (deployMonitor
   }
 }
 
-module dataCollectionRule 'modules/monitoring/data-collection-rule.bicep' = if (deployMonitoring) {
-  name: 'deploy-dcr'
-  params: {
-    location: location
-    environment: environment
-    workloadName: workloadName
-    // Use safe-dereference even for co-conditional modules (Bicep linter requirement)
-    logAnalyticsWorkspaceId: logAnalytics.?outputs.?workspaceId ?? ''
-    tags: allTags
-  }
-}
+// =============================================================================
+// NOTE: Data Collection Rule (DCR) is NOT deployed via Bicep
+// =============================================================================
+// DCR deployment requires Log Analytics tables (Syslog, Perf) to exist, but
+// these tables are created asynchronously and may not be ready at deployment time.
+//
+// Solution: Create DCR post-deployment using Azure CLI/PowerShell
+//   - macOS/Linux: ./scripts/configure-dcr.sh <resource-group>
+//   - Windows: .\scripts\configure-dcr.ps1 -ResourceGroupName <resource-group>
+//
+// The script waits for tables to initialize, then creates the full DCR with:
+//   - Syslog collection (auth, daemon, syslog facilities)
+//   - Performance counters (CPU, Memory, Disk, Network)
+// =============================================================================
 
 // =============================================================================
 // Module 2: Network Security Groups
@@ -279,7 +274,11 @@ module natGateway 'modules/network/nat-gateway.bicep' = if (deployNatGateway) {
 
 module vnet 'modules/network/vnet.bicep' = {
   name: 'deploy-vnet'
-  // Note: Implicit dependency on natGateway via natGateway.outputs.natGatewayId parameter
+  // Explicit dependency: VNet must wait for NAT Gateway to be fully deployed
+  // before creating subnets with NAT Gateway association
+  dependsOn: [
+    natGateway
+  ]
   params: {
     location: location
     environment: environment
@@ -304,8 +303,6 @@ module vnet 'modules/network/vnet.bicep' = {
 // =============================================================================
 // Secure SSH access without public IPs on VMs
 // Standard SKU enables native client support (SSH from local terminal)
-// Note: Bastion only depends on VNet (bastionSubnetId), not on VMs
-//       This allows Bastion and VMs to deploy in parallel for faster deployment
 // =============================================================================
 
 module bastion 'modules/network/bastion.bicep' = if (deployBastion) {
@@ -343,7 +340,7 @@ module applicationGateway 'modules/network/application-gateway.bicep' = {
 }
 
 // =============================================================================
-// Module 7b: Internal Load Balancer (App Tier)
+// Module 5b: Internal Load Balancer (App Tier)
 // =============================================================================
 // Internal Load Balancer for App tier
 // Prepares architecture for future VMSS auto-scaling migration
@@ -363,12 +360,14 @@ module internalLoadBalancer 'modules/network/internal-load-balancer.bicep' = {
 }
 
 // =============================================================================
-// Key Vault Note: Deployed AFTER all VMs (see Module 12)
+// Module 6: Key Vault
+// =============================================================================
+// Key Vault is now deployed AFTER all VMs (see Module 11)
 // This ensures VM principal IDs are available for role assignments
 // =============================================================================
 
 // =============================================================================
-// Module 8: Storage Account
+// Module 7: Storage Account
 // =============================================================================
 // Blob storage for static assets
 // =============================================================================
@@ -387,7 +386,7 @@ module storageAccount 'modules/storage/storage-account.bicep' = if (deployStorag
 }
 
 // =============================================================================
-// Module 9: Web Tier VMs
+// Module 8: Web Tier VMs
 // =============================================================================
 // 2 NGINX VMs across Availability Zones
 // Application Gateway manages backend pool using VM private IPs
@@ -406,7 +405,7 @@ module webTier 'modules/compute/web-tier.bicep' = {
     vmSize: webVmSize
     enableMonitoring: deployMonitoring
     logAnalyticsWorkspaceId: logAnalytics.?outputs.?workspaceId ?? ''  // Safe-dereference for conditional module
-    dataCollectionRuleId: dataCollectionRule.?outputs.?dcrId ?? ''      // Safe-dereference for conditional module
+    dataCollectionRuleId: ''  // DCR created post-deployment via scripts/configure-dcr.sh
     entraTenantId: entraTenantId
     entraClientId: entraClientId
     entraFrontendClientId: entraFrontendClientId
@@ -417,7 +416,7 @@ module webTier 'modules/compute/web-tier.bicep' = {
 }
 
 // =============================================================================
-// Module 10: App Tier VMs
+// Module 9: App Tier VMs
 // =============================================================================
 // 2 Express/Node.js VMs across Availability Zones
 // Connected to Internal Load Balancer (VMSS-ready architecture)
@@ -436,7 +435,7 @@ module appTier 'modules/compute/app-tier.bicep' = {
     vmSize: appVmSize
     enableMonitoring: deployMonitoring
     logAnalyticsWorkspaceId: logAnalytics.?outputs.?workspaceId ?? ''  // Safe-dereference for conditional module
-    dataCollectionRuleId: dataCollectionRule.?outputs.?dcrId ?? ''      // Safe-dereference for conditional module
+    dataCollectionRuleId: ''  // DCR created post-deployment via scripts/configure-dcr.sh
     entraTenantId: entraTenantId
     entraClientId: entraClientId
     forceUpdateTag: forceUpdateTagApp
@@ -446,15 +445,20 @@ module appTier 'modules/compute/app-tier.bicep' = {
 }
 
 // =============================================================================
-// Module 11: DB Tier VMs
+// Module 10: DB Tier VMs
 // =============================================================================
 // 2 MongoDB VMs across Availability Zones
 // =============================================================================
 
 module dbTier 'modules/compute/db-tier.bicep' = {
   name: 'deploy-db-tier'
-  // Note: Implicit dependency on vnet via vnet.outputs.dbSubnetId parameter
-  // This ensures: NAT Gateway → VNet (with NAT Gateway attached to subnets) → DB VMs
+  // Explicit dependency: DB VMs require internet access during provisioning
+  // to download MongoDB packages. NAT Gateway must be attached to DB subnet first.
+  // The vnet module already depends on natGateway, so this ensures:
+  // NAT Gateway → VNet (with NAT Gateway attached to subnets) → DB VMs
+  dependsOn: [
+    vnet  // Ensures NAT Gateway is attached to DB subnet before VM provisioning
+  ]
   params: {
     location: location
     environment: environment
@@ -466,7 +470,7 @@ module dbTier 'modules/compute/db-tier.bicep' = {
     dataDiskSizeGB: dbDataDiskSizeGB
     enableMonitoring: deployMonitoring
     logAnalyticsWorkspaceId: logAnalytics.?outputs.?workspaceId ?? ''  // Safe-dereference for conditional module
-    dataCollectionRuleId: dataCollectionRule.?outputs.?dcrId ?? ''      // Safe-dereference for conditional module
+    dataCollectionRuleId: ''  // DCR created post-deployment via scripts/configure-dcr.sh
     forceUpdateTag: forceUpdateTagDb
     skipVmCreation: skipVmCreationDb
     tags: allTags
@@ -474,7 +478,7 @@ module dbTier 'modules/compute/db-tier.bicep' = {
 }
 
 // =============================================================================
-// Module 12: Key Vault (deployed after all VMs)
+// Module 11: Key Vault (deployed after all VMs)
 // =============================================================================
 // Key Vault is deployed AFTER all VMs to ensure:
 // 1. All VM principal IDs are available for role assignments

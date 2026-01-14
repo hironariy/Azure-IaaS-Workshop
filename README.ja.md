@@ -571,7 +571,24 @@ chmod +x post-deployment-setup.local.sh
 ./post-deployment-setup.local.sh
 ```
 
-#### ステップ7: Entra IDリダイレクトURIの更新
+#### ステップ7: Azure Monitor（DCR）の構成
+
+VM 監視を有効にするために Data Collection Rule を作成します：
+
+**macOS/Linux:**
+```bash
+# プロジェクトルートから実行
+./scripts/configure-dcr.sh rg-blogapp-workshop
+```
+
+**Windows PowerShell:**
+```powershell
+.\scripts\configure-dcr.ps1 -ResourceGroupName rg-blogapp-workshop
+```
+
+> **📝 なぜ別ステップなのか？** 新しい Log Analytics ワークスペースはテーブルの初期化に 1〜5 分かかります。このスクリプトは待機してから、Syslog とパフォーマンス カウンターの収集を含む DCR を作成します。
+
+#### ステップ8: Entra IDリダイレクトURIの更新
 
 デプロイ後、本番URLでフロントエンドアプリ登録を更新します：
 
@@ -635,7 +652,7 @@ Update-MgApplication -ApplicationId $app.Id -Spa @{RedirectUris = $redirectUris}
 Write-Host "リダイレクトURIを更新しました"
 ```
 
-#### ステップ8: アプリケーションコードのデプロイ
+#### ステップ9: アプリケーションコードのデプロイ
 
 **App VMにバックエンドをデプロイ:**
 
@@ -645,7 +662,7 @@ Bastion 経由で各 App VM に接続し、バックエンドコードをデプ�
 
 Bastion 経由で各 Web VM に接続し、フロントエンドコードをデプロイします。詳細な手順は [deployment-strategy.ja.md](AIdocs/dev-record/deployment-strategy.ja.md) のフェーズ 3 を参照してください。
 
-#### ステップ9: デプロイの確認
+#### ステップ10: デプロイの確認
 
 ```bash
 # HTTPSアクセスをテスト（自己署名証明書には-kを使用）

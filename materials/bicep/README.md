@@ -404,6 +404,86 @@ Solution: Ensure the SSH key is in the correct format (`ssh-rsa AAAA...`).
 1. Verify `deployMonitoring = true`
 2. Check Azure Monitor Agent extension installed on VMs
 3. Wait 5-10 minutes for data to appear
+4. **Important**: Run the DCR configuration script after deployment (see below)
+
+---
+
+## 🔧 DCR Configuration (Post-Deployment Required)
+
+The Data Collection Rule (DCR) is **not deployed via Bicep**. Instead, you must create it using Azure CLI after the infrastructure deployment completes.
+
+### Why Post-Deployment?
+
+When deploying a new Log Analytics workspace, built-in tables (Syslog, Perf) take 1-5 minutes to initialize. If DCR deployment tries to reference these tables before they exist, Azure returns:
+
+```
+Error: InvalidOutputTable
+Message: Table for output stream 'Microsoft-Syslog' is not available
+```
+
+By creating the DCR post-deployment, we:
+1. ✅ Avoid the InvalidOutputTable error
+2. ✅ Give students hands-on experience with Azure CLI
+3. ✅ Allow customization of monitoring configuration
+
+### Create DCR After Deployment
+
+After Bicep deployment completes, run the configuration script to create DCR and associate it with VMs:
+
+**Bash (macOS/Linux):**
+```bash
+./scripts/configure-dcr.sh <resource-group-name>
+
+# Example:
+./scripts/configure-dcr.sh rg-blogapp-prod
+```
+
+**PowerShell (Windows):**
+```powershell
+.\scripts\configure-dcr.ps1 -ResourceGroupName <resource-group-name>
+
+# Example:
+.\scripts\configure-dcr.ps1 -ResourceGroupName rg-blogapp-prod
+```
+
+### What the Script Does
+
+The script performs these operations:
+
+1. **Waits 60 seconds** for Log Analytics tables to initialize
+2. **Creates DCR** with Syslog and Performance Counter data sources
+3. **Associates DCR** with all VMs in the resource group
+
+| Data Source | Description |
+|-------------|-------------|
+| **Syslog** | System logs from auth, authpriv, daemon, syslog, user facilities |
+| **Performance Counters** | CPU, Memory, Disk, Network metrics at 60-second intervals |
+
+### Manual Configuration (Alternative)
+
+If you prefer to create DCR manually via Azure Portal:
+
+1. Go to **Azure Portal** → **Monitor** → **Data Collection Rules**
+2. Click **+ Create**
+3. Configure:
+   - Name: `dcr-blogapp-prod`
+   - Platform Type: Linux
+   - Add data sources: Linux Syslog, Performance Counters
+   - Add destinations: Your Log Analytics workspace
+4. Associate with VMs in the resource group
+5. Save changes
+
+### Verify Configuration
+
+```bash
+# Check DCR data sources are configured
+az monitor data-collection rule show \
+  -g <resource-group-name> \
+  -n dcr-blogapp-prod \
+  --query 'dataSources'
+```
+
+---
 
 ## 📚 AWS to Azure Comparison
 

@@ -564,7 +564,24 @@ chmod +x post-deployment-setup.local.sh
 ./post-deployment-setup.local.sh
 ```
 
-#### Step 7: Update Entra ID Redirect URIs
+#### Step 7: Configure Azure Monitor (DCR)
+
+Create the Data Collection Rule to enable VM monitoring:
+
+**macOS/Linux:**
+```bash
+# From project root
+./scripts/configure-dcr.sh rg-blogapp-workshop
+```
+
+**Windows PowerShell:**
+```powershell
+.\scripts\configure-dcr.ps1 -ResourceGroupName rg-blogapp-workshop
+```
+
+> **📝 Why is this separate?** New Log Analytics workspaces need 1-5 minutes for tables to initialize. The script waits for this and then creates the DCR with Syslog and Performance Counter collection.
+
+#### Step 8: Update Entra ID Redirect URIs
 
 After deployment, update your frontend app registration with the production URL:
 
@@ -627,7 +644,7 @@ Update-MgApplication -ApplicationId $app.Id -Spa @{RedirectUris = $redirectUris}
 > 3. Under **Single-page application**, add `https://<YOUR_FQDN>` and `https://<YOUR_FQDN>/`
 > 4. Click **Save**
 
-#### Step 8: Deploy Application Code
+#### Step 9: Deploy Application Code
 
 **Deploy Backend to App VMs:**
 
@@ -637,7 +654,7 @@ Connect to each App VM via Bastion and deploy the backend code. See [deployment-
 
 Connect to each Web VM via Bastion and deploy the frontend code. See [deployment-strategy.md](AIdocs/dev-record/deployment-strategy.md) Phase 3 for detailed steps.
 
-#### Step 9: Verify Deployment
+#### Step 10: Verify Deployment
 
 ```bash
 # Test HTTPS access (use -k for self-signed certificate)
