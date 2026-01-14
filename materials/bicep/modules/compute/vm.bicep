@@ -389,19 +389,19 @@ resource customScriptExisting 'Microsoft.Compute/virtualMachines/extensions@2023
 // =============================================================================
 
 @description('Resource ID of the Virtual Machine')
-output vmId string = skipVmCreation ? existingVm.id : vm.id
+output vmId string = skipVmCreation ? existingVm!.id : vm!.id
 
 @description('Name of the Virtual Machine')
-output vmName string = skipVmCreation ? existingVm.name : vm.name
+output vmName string = skipVmCreation ? existingVm!.name : vm!.name
 
 @description('Private IP address of the VM')
-output privateIpAddress string = skipVmCreation ? existingNic.properties.ipConfigurations[0].properties.privateIPAddress : nic.properties.ipConfigurations[0].properties.privateIPAddress
+output privateIpAddress string = skipVmCreation ? existingNic!.properties.ipConfigurations[0].properties.privateIPAddress : nic!.properties.ipConfigurations[0].properties.privateIPAddress
 
 @description('Principal ID of the VM managed identity (for RBAC assignments)')
-output principalId string = skipVmCreation ? existingVm.identity.principalId : vm.identity.principalId
+output principalId string = skipVmCreation ? existingVm!.identity.principalId : vm!.identity.principalId
 
 @description('Resource ID of the Network Interface')
-output nicId string = skipVmCreation ? existingNic.id : nic.id
+output nicId string = skipVmCreation ? existingNic!.id : nic!.id
 
 @description('Availability Zone of the VM')
 output zone string = availabilityZone

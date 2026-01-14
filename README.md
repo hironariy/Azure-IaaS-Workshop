@@ -126,9 +126,28 @@ Install these tools on your computer:
 | Tool | Version | Purpose | Installation |
 |------|---------|---------|--------------|
 | **Azure PowerShell** | 12.0+ | Azure management | [Install Guide](https://docs.microsoft.com/powershell/azure/install-azure-powershell) |
+| **Bicep CLI** | Latest | Infrastructure as Code | [Install Guide](https://learn.microsoft.com/azure/azure-resource-manager/bicep/install#windows) |
 | **OpenSSL** | Latest | SSL certificate generation | [Download](https://slproweb.com/products/Win32OpenSSL.html) |
 
 > **📝 Why Azure PowerShell for Windows?** Azure CLI on Windows can have compatibility issues with Bicep. Azure PowerShell provides a more reliable experience on Windows.
+
+> **⚠️ Important: Bicep CLI Required for Windows**  
+> Unlike Azure CLI (which auto-installs Bicep), Azure PowerShell requires manual Bicep CLI installation.
+> 
+> **Recommended installation method (winget):**
+> ```powershell
+> winget install -e --id Microsoft.Bicep
+> ```
+> 
+> **Alternative methods:**
+> - **Chocolatey:** `choco install bicep`
+> - **Windows Installer:** [Download bicep-setup-win-x64.exe](https://github.com/Azure/bicep/releases/latest/download/bicep-setup-win-x64.exe)
+> 
+> After installation, close and reopen your terminal, then verify:
+> ```powershell
+> bicep --version
+> # Expected: Bicep CLI version 0.x.x
+> ```
 
 **Verify your installation:**
 
@@ -156,6 +175,10 @@ git --version
 # Check Azure PowerShell
 Get-Module -Name Az -ListAvailable | Select-Object Name, Version
 # Expected: Az 12.x.x or newer
+
+# Check Bicep CLI
+bicep --version
+# Expected: Bicep CLI version 0.x.x
 
 # Check OpenSSL
 openssl version

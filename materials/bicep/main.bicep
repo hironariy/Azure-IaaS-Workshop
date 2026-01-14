@@ -271,11 +271,7 @@ module natGateway 'modules/network/nat-gateway.bicep' = if (deployNatGateway) {
 
 module vnet 'modules/network/vnet.bicep' = {
   name: 'deploy-vnet'
-  // Explicit dependency: VNet must wait for NAT Gateway to be fully deployed
-  // before creating subnets with NAT Gateway association
-  dependsOn: [
-    natGateway
-  ]
+  // Note: Implicit dependency on natGateway via natGateway.outputs.natGatewayId parameter
   params: {
     location: location
     environment: environment
@@ -449,13 +445,8 @@ module appTier 'modules/compute/app-tier.bicep' = {
 
 module dbTier 'modules/compute/db-tier.bicep' = {
   name: 'deploy-db-tier'
-  // Explicit dependency: DB VMs require internet access during provisioning
-  // to download MongoDB packages. NAT Gateway must be attached to DB subnet first.
-  // The vnet module already depends on natGateway, so this ensures:
-  // NAT Gateway → VNet (with NAT Gateway attached to subnets) → DB VMs
-  dependsOn: [
-    vnet  // Ensures NAT Gateway is attached to DB subnet before VM provisioning
-  ]
+  // Note: Implicit dependency on vnet via vnet.outputs.dbSubnetId parameter
+  // This ensures: NAT Gateway → VNet (with NAT Gateway attached to subnets) → DB VMs
   params: {
     location: location
     environment: environment

@@ -132,9 +132,28 @@ Engilish version: [README.md](./README.md)
 | ツール | バージョン | 目的 | インストール |
 |------|---------|---------|--------------|
 | **Azure PowerShell** | 12.0以上 | Azure管理 | [インストールガイド](https://docs.microsoft.com/powershell/azure/install-azure-powershell) |
+| **Bicep CLI** | 最新版 | Infrastructure as Code | [インストールガイド](https://learn.microsoft.com/azure/azure-resource-manager/bicep/install#windows) |
 | **OpenSSL** | 最新版 | SSL証明書生成 | [ダウンロード](https://slproweb.com/products/Win32OpenSSL.html) |
 
 > **📝 WindowsでAzure PowerShellを使う理由:** Windows上のAzure CLIはBicepとの互換性に問題がある場合があります。Azure PowerShellはWindowsでより安定した体験を提供します。
+
+> **⚠️ 重要: WindowsではBicep CLIが必要です**  
+> Azure CLI（Bicepを自動インストール）とは異なり、Azure PowerShellではBicep CLIを手動でインストールする必要があります。
+> 
+> **推奨インストール方法（winget）:**
+> ```powershell
+> winget install -e --id Microsoft.Bicep
+> ```
+> 
+> **代替方法:**
+> - **Chocolatey:** `choco install bicep`
+> - **Windowsインストーラー:** [bicep-setup-win-x64.exeをダウンロード](https://github.com/Azure/bicep/releases/latest/download/bicep-setup-win-x64.exe)
+> 
+> インストール後、ターミナルを閉じて再度開き、確認してください:
+> ```powershell
+> bicep --version
+> # 期待値: Bicep CLI version 0.x.x
+> ```
 
 **インストールの確認:**
 
@@ -162,6 +181,10 @@ git --version
 # Azure PowerShellの確認
 Get-Module -Name Az -ListAvailable | Select-Object Name, Version
 # 期待値: Az 12.x.x以降
+
+# Bicep CLIの確認
+bicep --version
+# 期待値: Bicep CLI version 0.x.x
 
 # OpenSSLの確認
 openssl version
