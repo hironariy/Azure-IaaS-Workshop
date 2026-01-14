@@ -227,7 +227,7 @@ Write-LogInfo "Step 6: Verifying configuration..."
 
 # Verify replica set status
 Write-LogInfo "Checking replica set status..."
-$rsVerifyCmd = "mongosh --quiet --eval 'rs.status().members.forEach(m => print(m.name + `\": `\" + m.stateStr))'"
+$rsVerifyCmd = 'mongosh --quiet --eval "rs.status().members.forEach(m => print(m.name + \": \" + m.stateStr))"'
 Invoke-BastionSsh -VmId $DbVm1Id -Command $rsVerifyCmd
 
 # -----------------------------------------------------------------------------
