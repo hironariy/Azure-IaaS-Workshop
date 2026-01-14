@@ -45,6 +45,7 @@ param tags object = {}
 // Variables
 // =============================================================================
 var dcrName = 'dcr-${workloadName}-${environment}'
+var dceName = 'dce-${workloadName}-${environment}'
 
 var defaultTags = {
   Environment: environment
@@ -52,6 +53,24 @@ var defaultTags = {
   ManagedBy: 'Bicep'
 }
 var allTags = union(defaultTags, tags)
+
+// =============================================================================
+// Data Collection Endpoint (optional for built-in streams, added here to avoid
+// table validation issues in some regions/tenants)
+// =============================================================================
+
+resource dataCollectionEndpoint 'Microsoft.Insights/dataCollectionEndpoints@2023-03-11' = {
+  name: dceName
+  location: location
+  tags: allTags
+  kind: 'Linux'
+  properties: {
+    description: 'Data Collection Endpoint for ${workloadName} workshop VMs'
+    networkAcls: {
+      publicNetworkAccess: 'Enabled'
+    }
+  }
+}
 
 // =============================================================================
 // Data Collection Rule
@@ -75,6 +94,7 @@ resource dataCollectionRule 'Microsoft.Insights/dataCollectionRules@2023-03-11' 
   kind: 'Linux'  // For Ubuntu VMs
   properties: {
     description: 'Data Collection Rule for ${workloadName} workshop VMs'
+    dataCollectionEndpointId: dataCollectionEndpoint.id
     
     // Data sources - what to collect
     dataSources: {
@@ -150,8 +170,8 @@ resource dataCollectionRule 'Microsoft.Insights/dataCollectionRules@2023-03-11' 
     }
     
     // Data flows - map sources to destinations
-    // For built-in streams, simply specify streams and destinations
-    // Azure Monitor automatically handles routing to appropriate tables
+    // Using transformKql with outputStream ensures Azure creates the tables
+    // even when the workspace is brand new and tables haven't been initialized
     dataFlows: [
       {
         streams: [
@@ -160,6 +180,8 @@ resource dataCollectionRule 'Microsoft.Insights/dataCollectionRules@2023-03-11' 
         destinations: [
           'logAnalyticsDestination'
         ]
+        transformKql: 'source'
+        outputStream: 'Microsoft-Syslog'
       }
       {
         streams: [
@@ -168,6 +190,8 @@ resource dataCollectionRule 'Microsoft.Insights/dataCollectionRules@2023-03-11' 
         destinations: [
           'logAnalyticsDestination'
         ]
+        transformKql: 'source'
+        outputStream: 'Microsoft-Perf'
       }
     ]
   }
@@ -182,3 +206,6 @@ output dcrId string = dataCollectionRule.id
 
 @description('Name of the Data Collection Rule')
 output dcrName string = dataCollectionRule.name
+
+@description('Resource ID of the Data Collection Endpoint')
+output dceId string = dataCollectionEndpoint.id
