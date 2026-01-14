@@ -5,12 +5,18 @@
 // Reference: /design/AzureArchitectureDesign.md
 //
 // Deployment Order (managed by Bicep dependency resolution):
-//   1. Monitoring (Log Analytics, Data Collection Rule)
-//   2. Security (Key Vault - after all VMs)
-//   3. Storage (Storage Account)
-//   4. Network (NSGs → NAT Gateway → VNet → Bastion, Load Balancer)
-//   5. Compute (Web tier → App tier → DB tier)
-//   Note: DB tier explicitly depends on VNet to ensure NAT Gateway is attached
+//   1. Monitoring - Log Analytics Workspace (deploys first, needs time for table init)
+//   2. Network - NSGs → NAT Gateway → VNet
+//   3. Monitoring - Data Collection Rule (after VNet, ensures LA tables are ready)
+//   4. Network - Bastion (parallel with VMs, only depends on VNet)
+//   5. Network - Application Gateway, Internal Load Balancer
+//   6. Storage - Storage Account
+//   7. Compute - Web/App/DB tier VMs (parallel deployment possible)
+//   8. Security - Key Vault (after all VMs for principal ID access)
+//
+// Performance Notes:
+//   - Bastion deploys in parallel with VMs (no mutual dependency)
+//   - DCR deploys after VNet to allow Log Analytics tables to initialize
 //
 // Usage:
 //   az deployment group create \
@@ -172,9 +178,10 @@ var dbSubnetPrefix = '10.0.3.0/24'
 var bastionSubnetPrefix = '10.0.255.0/26'
 
 // =============================================================================
-// Module 1: Monitoring (Log Analytics + Data Collection Rule)
+// Module 1: Monitoring - Log Analytics Workspace
 // =============================================================================
-// Deploy first - VMs need this for Azure Monitor Agent
+// Deploy first - Log Analytics workspace needs time to initialize tables
+// before Data Collection Rule can reference them
 // =============================================================================
 
 module logAnalytics 'modules/monitoring/log-analytics.bicep' = if (deployMonitoring) {
@@ -184,18 +191,6 @@ module logAnalytics 'modules/monitoring/log-analytics.bicep' = if (deployMonitor
     environment: environment
     workloadName: workloadName
     retentionInDays: 30
-    tags: allTags
-  }
-}
-
-module dataCollectionRule 'modules/monitoring/data-collection-rule.bicep' = if (deployMonitoring) {
-  name: 'deploy-dcr'
-  params: {
-    location: location
-    environment: environment
-    workloadName: workloadName
-    // Use safe-dereference even for co-conditional modules (Bicep linter requirement)
-    logAnalyticsWorkspaceId: logAnalytics.?outputs.?workspaceId ?? ''
     tags: allTags
   }
 }
@@ -292,10 +287,32 @@ module vnet 'modules/network/vnet.bicep' = {
 }
 
 // =============================================================================
-// Module 4: Azure Bastion
+// Module 4: Data Collection Rule (for Azure Monitor Agent)
+// =============================================================================
+// Deploy after VNet to give Log Analytics workspace time to initialize tables
+// (Syslog, Perf tables need ~30-60 seconds to become available after workspace creation)
+// VMs deployed later will reference DCR for Azure Monitor Agent configuration
+// =============================================================================
+
+module dataCollectionRule 'modules/monitoring/data-collection-rule.bicep' = if (deployMonitoring) {
+  name: 'deploy-dcr'
+  params: {
+    location: location
+    environment: environment
+    workloadName: workloadName
+    // Use safe-dereference even for co-conditional modules (Bicep linter requirement)
+    logAnalyticsWorkspaceId: logAnalytics.?outputs.?workspaceId ?? ''
+    tags: allTags
+  }
+}
+
+// =============================================================================
+// Module 5: Azure Bastion
 // =============================================================================
 // Secure SSH access without public IPs on VMs
 // Standard SKU enables native client support (SSH from local terminal)
+// Note: Bastion only depends on VNet (bastionSubnetId), not on VMs
+//       This allows Bastion and VMs to deploy in parallel for faster deployment
 // =============================================================================
 
 module bastion 'modules/network/bastion.bicep' = if (deployBastion) {
@@ -311,7 +328,7 @@ module bastion 'modules/network/bastion.bicep' = if (deployBastion) {
 }
 
 // =============================================================================
-// Module 5: Application Gateway (Web Tier - External)
+// Module 7: Application Gateway (Web Tier - External)
 // =============================================================================
 // Application Gateway v2 for Web tier (public-facing with SSL/TLS termination)
 // Provides Layer 7 load balancing with HTTPS support via self-signed certificate
@@ -333,7 +350,7 @@ module applicationGateway 'modules/network/application-gateway.bicep' = {
 }
 
 // =============================================================================
-// Module 5b: Internal Load Balancer (App Tier)
+// Module 7b: Internal Load Balancer (App Tier)
 // =============================================================================
 // Internal Load Balancer for App tier
 // Prepares architecture for future VMSS auto-scaling migration
@@ -353,14 +370,12 @@ module internalLoadBalancer 'modules/network/internal-load-balancer.bicep' = {
 }
 
 // =============================================================================
-// Module 6: Key Vault
-// =============================================================================
-// Key Vault is now deployed AFTER all VMs (see Module 11)
+// Key Vault Note: Deployed AFTER all VMs (see Module 12)
 // This ensures VM principal IDs are available for role assignments
 // =============================================================================
 
 // =============================================================================
-// Module 7: Storage Account
+// Module 8: Storage Account
 // =============================================================================
 // Blob storage for static assets
 // =============================================================================
@@ -379,7 +394,7 @@ module storageAccount 'modules/storage/storage-account.bicep' = if (deployStorag
 }
 
 // =============================================================================
-// Module 8: Web Tier VMs
+// Module 9: Web Tier VMs
 // =============================================================================
 // 2 NGINX VMs across Availability Zones
 // Application Gateway manages backend pool using VM private IPs
@@ -409,7 +424,7 @@ module webTier 'modules/compute/web-tier.bicep' = {
 }
 
 // =============================================================================
-// Module 9: App Tier VMs
+// Module 10: App Tier VMs
 // =============================================================================
 // 2 Express/Node.js VMs across Availability Zones
 // Connected to Internal Load Balancer (VMSS-ready architecture)
@@ -438,7 +453,7 @@ module appTier 'modules/compute/app-tier.bicep' = {
 }
 
 // =============================================================================
-// Module 10: DB Tier VMs
+// Module 11: DB Tier VMs
 // =============================================================================
 // 2 MongoDB VMs across Availability Zones
 // =============================================================================
@@ -466,7 +481,7 @@ module dbTier 'modules/compute/db-tier.bicep' = {
 }
 
 // =============================================================================
-// Module 11: Key Vault (deployed after all VMs)
+// Module 12: Key Vault (deployed after all VMs)
 // =============================================================================
 // Key Vault is deployed AFTER all VMs to ensure:
 // 1. All VM principal IDs are available for role assignments

@@ -13,7 +13,11 @@
 // This DCR collects:
 //   - Syslog (auth, daemon, syslog facilities)
 //   - Performance counters (CPU, Memory, Disk, Network)
-//   - Custom application logs (optional)
+//
+// Note on Data Collection Endpoint (DCE):
+//   - DCE is NOT required for built-in streams (Microsoft-Syslog, Microsoft-Perf)
+//   - AMA sends to Azure Monitor public endpoints by default
+//   - DCE is only needed for: custom logs, private link scenarios, IIS logs
 //
 // AWS Comparison:
 //   - DCR ≈ CloudWatch Agent configuration file
@@ -56,9 +60,12 @@ var allTags = union(defaultTags, tags)
 //   1. Syslog - system logs for troubleshooting
 //   2. Performance counters - resource utilization metrics
 //
-// Important: We use the 2023-03-11 API version which properly handles
-// table creation in Log Analytics. The dataFlows use 'outputStream' to
-// specify the exact destination table name.
+// For built-in streams (Microsoft-Syslog, Microsoft-Perf):
+//   - Do NOT specify transformKql or outputStream
+//   - Azure automatically routes to Syslog and Perf tables
+//   - Tables are auto-created when first data arrives
+//   - Specifying outputStream triggers deployment-time validation that can fail
+//     on new workspaces where tables haven't been initialized yet
 // =============================================================================
 
 resource dataCollectionRule 'Microsoft.Insights/dataCollectionRules@2023-03-11' = {
@@ -78,7 +85,6 @@ resource dataCollectionRule 'Microsoft.Insights/dataCollectionRules@2023-03-11' 
           streams: [
             'Microsoft-Syslog'
           ]
-          // Collect from these facilities at these log levels
           facilityNames: [
             'auth'
             'authpriv'
@@ -144,9 +150,8 @@ resource dataCollectionRule 'Microsoft.Insights/dataCollectionRules@2023-03-11' 
     }
     
     // Data flows - map sources to destinations
-    // For built-in streams (Microsoft-Syslog, Microsoft-Perf), the destination
-    // tables are automatically created and managed by Azure Monitor.
-    // Do NOT specify outputStream for built-in streams - they route automatically.
+    // For built-in streams, simply specify streams and destinations
+    // Azure Monitor automatically handles routing to appropriate tables
     dataFlows: [
       {
         streams: [
@@ -155,8 +160,6 @@ resource dataCollectionRule 'Microsoft.Insights/dataCollectionRules@2023-03-11' 
         destinations: [
           'logAnalyticsDestination'
         ]
-        // Note: No transformKql or outputStream needed for built-in streams
-        // Data automatically routes to the Syslog table
       }
       {
         streams: [
@@ -165,8 +168,6 @@ resource dataCollectionRule 'Microsoft.Insights/dataCollectionRules@2023-03-11' 
         destinations: [
           'logAnalyticsDestination'
         ]
-        // Note: No transformKql or outputStream needed for built-in streams
-        // Data automatically routes to the Perf table
       }
     ]
   }
