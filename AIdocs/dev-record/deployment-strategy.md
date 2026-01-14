@@ -831,6 +831,12 @@ mongosh "mongodb://blogapp:BlogApp2024Workshop!@10.0.3.4:27017,10.0.3.5:27017/bl
 
 > **Important:** Environment variables are now automatically injected by Bicep. You only need to deploy application code.
 
+> **Windows Users:** For deployment operations (2.3-2.6), you need to SSH into VMs via Bastion. Options:
+> 1. **Azure Portal Bastion (Recommended):** Go to Azure Portal → Your VM → Connect → Bastion → Enter username `azureuser` and your SSH private key
+> 2. **Azure CLI on Windows:** Install Azure CLI, then use `az network bastion ssh` commands shown in macOS/Linux sections
+> 
+> `Invoke-AzVMRunCommand` is suitable for verification commands (2.1, 2.2, 2.7) but not for multi-step deployments.
+
 ### 2.1 Verify Pre-installed Node.js/PM2 and Environment
 
 **On both App VMs - Verification only:**
@@ -941,45 +947,23 @@ az network bastion tunnel \
 scp -P 2222 -r ./materials/backend/* azureuser@127.0.0.1:/opt/blogapp/
 ```
 
-**Windows PowerShell (Azure PowerShell) - Using Invoke-AzVMRunCommand:**
-```powershell
-$ResourceGroup = "<YOUR_RESOURCE_GROUP>"
+**Windows Users - Connect via Azure Portal Bastion:**
 
-# Since Bastion tunnel is not available in pure PowerShell, use Invoke-AzVMRunCommand
-# to clone and deploy directly from the VM (Option A approach)
+1. Go to **Azure Portal** → **Virtual machines** → **vm-app-az1-prod**
+2. Click **Connect** → **Bastion**
+3. Authentication type: **SSH Private Key from Local File**
+4. Username: `azureuser`
+5. Local File: Select your SSH private key file (e.g., `id_rsa`)
+6. Click **Connect** - a browser-based terminal opens
+7. Run the deployment commands shown in Option A above
+8. Repeat for **vm-app-az2-prod**
 
-# Deploy backend to vm-app-az1-prod
-$deployScript = @'
-cd /opt/blogapp
-git clone https://github.com/<repo>/Azure-IaaS-Workshop.git temp
-cp -r temp/materials/backend/* ./
-rm -rf temp
-npm ci --include=dev
-npm run build
-pm2 delete blogapp-health 2>/dev/null || true
-pm2 start dist/src/app.js --name blogapp-api
-pm2 save
-'@
-
-Invoke-AzVMRunCommand `
-  -ResourceGroupName $ResourceGroup `
-  -VMName "vm-app-az1-prod" `
-  -CommandId "RunShellScript" `
-  -ScriptString $deployScript
-
-# Repeat for vm-app-az2-prod
-Invoke-AzVMRunCommand `
-  -ResourceGroupName $ResourceGroup `
-  -VMName "vm-app-az2-prod" `
-  -CommandId "RunShellScript" `
-  -ScriptString $deployScript
-```
+> **Tip:** If you have Azure CLI installed on Windows, you can use the same `az network bastion ssh` commands as macOS/Linux.
 
 ### 2.4 Install Dependencies and Build
 
-**On both App VMs:**
+**On both App VMs (via SSH):**
 
-**macOS/Linux (SSH via Bastion):**
 ```bash
 cd /opt/blogapp
 
@@ -992,30 +976,7 @@ npm ci --include=dev
 npm run build
 ```
 
-**Windows PowerShell (Invoke-AzVMRunCommand):**
-```powershell
-$ResourceGroup = "<YOUR_RESOURCE_GROUP>"
-
-$buildScript = @'
-cd /opt/blogapp
-npm ci --include=dev
-npm run build
-'@
-
-# Build on vm-app-az1-prod
-Invoke-AzVMRunCommand `
-  -ResourceGroupName $ResourceGroup `
-  -VMName "vm-app-az1-prod" `
-  -CommandId "RunShellScript" `
-  -ScriptString $buildScript
-
-# Repeat for vm-app-az2-prod
-Invoke-AzVMRunCommand `
-  -ResourceGroupName $ResourceGroup `
-  -VMName "vm-app-az2-prod" `
-  -CommandId "RunShellScript" `
-  -ScriptString $buildScript
-```
+> **Windows Users:** Connect via Azure Portal Bastion (see section 2.3) and run the commands above.
 
 > **Why `--include=dev`?** The Bicep CustomScript sets `NODE_ENV=production` in `/etc/environment`. When `NODE_ENV=production`, npm automatically skips `devDependencies` during install. Since TypeScript is a devDependency needed for compilation, we must explicitly include it.
 
@@ -1059,7 +1020,8 @@ ENTRA_CLIENT_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 
 ### 2.6 Start Application with PM2
 
-**macOS/Linux (SSH via Bastion):**
+**On both App VMs (via SSH):**
+
 ```bash
 cd /opt/blogapp
 
@@ -1075,33 +1037,7 @@ pm2 list
 pm2 logs blogapp-api --lines 20
 ```
 
-**Windows PowerShell (Invoke-AzVMRunCommand):**
-```powershell
-$ResourceGroup = "<YOUR_RESOURCE_GROUP>"
-
-# Note: Using 'pm2 show' instead of 'pm2 list' for detailed single-process output
-$startScript = @'
-cd /opt/blogapp
-pm2 start dist/src/app.js --name blogapp-api
-pm2 save
-pm2 show blogapp-api
-pm2 logs blogapp-api --lines 20
-'@
-
-# Start on vm-app-az1-prod
-Invoke-AzVMRunCommand `
-  -ResourceGroupName $ResourceGroup `
-  -VMName "vm-app-az1-prod" `
-  -CommandId "RunShellScript" `
-  -ScriptString $startScript
-
-# Repeat for vm-app-az2-prod
-Invoke-AzVMRunCommand `
-  -ResourceGroupName $ResourceGroup `
-  -VMName "vm-app-az2-prod" `
-  -CommandId "RunShellScript" `
-  -ScriptString $startScript
-```
+> **Windows Users:** Connect via Azure Portal Bastion (see section 2.3) and run the commands above.
 
 ### 2.7 Health Check Verification
 

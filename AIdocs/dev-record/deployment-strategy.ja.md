@@ -832,6 +832,12 @@ mongosh "mongodb://blogapp:BlogApp2024Workshop!@10.0.3.4:27017,10.0.3.5:27017/bl
 
 > **Important:** 環境変数は Bicep によって自動注入されます。必要なのはアプリケーション コードのデプロイのみです。
 
+> **Windows ユーザーへ:** デプロイ操作（2.3-2.6）には Bastion 経由で VM に SSH 接続する必要があります。オプション:
+> 1. **Azure Portal Bastion（推奨）:** Azure Portal → VM → 接続 → Bastion → ユーザー名 `azureuser` と SSH 秘密鍵を入力
+> 2. **Windows 上の Azure CLI:** Azure CLI をインストールし、macOS/Linux セクションの `az network bastion ssh` コマンドを使用
+> 
+> `Invoke-AzVMRunCommand` は確認コマンド（2.1, 2.2, 2.7）には適していますが、複数ステップのデプロイには適していません。
+
 ### 2.1 事前インストール済み Node.js/PM2 と環境の確認
 
 **両方の App VM 上で確認のみ:**
@@ -942,45 +948,23 @@ az network bastion tunnel \
 scp -P 2222 -r ./materials/backend/* azureuser@127.0.0.1:/opt/blogapp/
 ```
 
-**Windows PowerShell (Azure PowerShell) - Invoke-AzVMRunCommand を使用:**
-```powershell
-$ResourceGroup = "<YOUR_RESOURCE_GROUP>"
+**Windows ユーザー - Azure Portal Bastion で接続:**
 
-# Bastion トンネルは純粋な PowerShell では利用できないため、Invoke-AzVMRunCommand を使用して
-# VM から直接 clone とデプロイを行います（Option A のアプローチ）
+1. **Azure Portal** → **Virtual machines** → **vm-app-az1-prod** へ移動
+2. **接続** → **Bastion** をクリック
+3. 認証の種類: **ローカル ファイルからの SSH 秘密鍵**
+4. ユーザー名: `azureuser`
+5. ローカル ファイル: SSH 秘密鍵ファイルを選択（例: `id_rsa`）
+6. **接続** をクリック - ブラウザベースのターミナルが開きます
+7. 上記の Option A のデプロイコマンドを実行
+8. **vm-app-az2-prod** でも同様に実行
 
-# Backend を vm-app-az1-prod にデプロイ
-$deployScript = @'
-cd /opt/blogapp
-git clone https://github.com/<repo>/Azure-IaaS-Workshop.git temp
-cp -r temp/materials/backend/* ./
-rm -rf temp
-npm ci --include=dev
-npm run build
-pm2 delete blogapp-health 2>/dev/null || true
-pm2 start dist/src/app.js --name blogapp-api
-pm2 save
-'@
-
-Invoke-AzVMRunCommand `
-  -ResourceGroupName $ResourceGroup `
-  -VMName "vm-app-az1-prod" `
-  -CommandId "RunShellScript" `
-  -ScriptString $deployScript
-
-# vm-app-az2-prod にも同様に実行
-Invoke-AzVMRunCommand `
-  -ResourceGroupName $ResourceGroup `
-  -VMName "vm-app-az2-prod" `
-  -CommandId "RunShellScript" `
-  -ScriptString $deployScript
-```
+> **ヒント:** Windows に Azure CLI がインストールされている場合、macOS/Linux と同じ `az network bastion ssh` コマンドを使用できます。
 
 ### 2.4 依存関係のインストールとビルド
 
-**両方の App VM 上:**
+**両方の App VM 上（SSH 経由）:**
 
-**macOS/Linux (Bastion 経由 SSH):**
 ```bash
 cd /opt/blogapp
 
@@ -993,30 +977,7 @@ npm ci --include=dev
 npm run build
 ```
 
-**Windows PowerShell (Invoke-AzVMRunCommand):**
-```powershell
-$ResourceGroup = "<YOUR_RESOURCE_GROUP>"
-
-$buildScript = @'
-cd /opt/blogapp
-npm ci --include=dev
-npm run build
-'@
-
-# vm-app-az1-prod でビルド
-Invoke-AzVMRunCommand `
-  -ResourceGroupName $ResourceGroup `
-  -VMName "vm-app-az1-prod" `
-  -CommandId "RunShellScript" `
-  -ScriptString $buildScript
-
-# vm-app-az2-prod でも同様に実行
-Invoke-AzVMRunCommand `
-  -ResourceGroupName $ResourceGroup `
-  -VMName "vm-app-az2-prod" `
-  -CommandId "RunShellScript" `
-  -ScriptString $buildScript
-```
+> **Windows ユーザー:** Azure Portal Bastion で接続し（セクション 2.3 参照）、上記のコマンドを実行してください。
 
 > **なぜ `--include=dev` が必要？** Bicep の CustomScript は `/etc/environment` に `NODE_ENV=production` を設定します。`NODE_ENV=production` のとき、npm はインストール時に `devDependencies` を自動的にスキップします。TypeScript はコンパイルに必要な devDependency のため、明示的に含める必要があります。
 
@@ -1060,7 +1021,8 @@ ENTRA_CLIENT_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 
 ### 2.6 PM2 でアプリケーションを起動
 
-**macOS/Linux (Bastion 経由 SSH):**
+**両方の App VM 上（SSH 経由）:**
+
 ```bash
 cd /opt/blogapp
 
@@ -1076,33 +1038,7 @@ pm2 list
 pm2 logs blogapp-api --lines 20
 ```
 
-**Windows PowerShell (Invoke-AzVMRunCommand):**
-```powershell
-$ResourceGroup = "<YOUR_RESOURCE_GROUP>"
-
-# Note: 'pm2 list' の代わりに 'pm2 show' を使用（単一プロセスの詳細出力）
-$startScript = @'
-cd /opt/blogapp
-pm2 start dist/src/app.js --name blogapp-api
-pm2 save
-pm2 show blogapp-api
-pm2 logs blogapp-api --lines 20
-'@
-
-# vm-app-az1-prod で起動
-Invoke-AzVMRunCommand `
-  -ResourceGroupName $ResourceGroup `
-  -VMName "vm-app-az1-prod" `
-  -CommandId "RunShellScript" `
-  -ScriptString $startScript
-
-# vm-app-az2-prod でも同様に実行
-Invoke-AzVMRunCommand `
-  -ResourceGroupName $ResourceGroup `
-  -VMName "vm-app-az2-prod" `
-  -CommandId "RunShellScript" `
-  -ScriptString $startScript
-```
+> **Windows ユーザー:** Azure Portal Bastion で接続し（セクション 2.3 参照）、上記のコマンドを実行してください。
 
 ### 2.7 ヘルスチェック検証
 
