@@ -553,6 +553,7 @@ New-AzResourceGroupDeployment `
 
 デプロイ後のスクリプトは MongoDB レプリカセットを初期化し、データベース ユーザーを作成します。
 
+**macOS/Linux:**
 ```bash
 # scriptsフォルダに移動
 cd scripts
@@ -569,6 +570,24 @@ chmod +x post-deployment-setup.local.sh
 
 # スクリプトを実行
 ./post-deployment-setup.local.sh
+```
+
+**Windows PowerShell:**
+```powershell
+# scriptsフォルダに移動
+cd scripts
+
+# ローカルスクリプトを作成
+Copy-Item post-deployment-setup.template.ps1 post-deployment-setup.local.ps1
+
+# スクリプトを編集し、プレースホルダーを置き換え:
+# - <RESOURCE_GROUP> → rg-blogapp-workshop
+# - <BASTION_NAME> → bastion-blogapp-prod
+# - <MONGODB_ADMIN_PASSWORD> → 選択した管理者パスワード
+# - <MONGODB_APP_PASSWORD> → 選択したアプリパスワード
+
+# スクリプトを実行
+.\post-deployment-setup.local.ps1
 ```
 
 #### ステップ7: Azure Monitor（DCR）の構成

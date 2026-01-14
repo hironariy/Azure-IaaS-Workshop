@@ -546,6 +546,7 @@ New-AzResourceGroupDeployment `
 
 The post-deployment script initializes MongoDB replica set and creates database users.
 
+**macOS/Linux:**
 ```bash
 # Navigate to scripts folder
 cd scripts
@@ -562,6 +563,24 @@ chmod +x post-deployment-setup.local.sh
 
 # Run the script
 ./post-deployment-setup.local.sh
+```
+
+**Windows PowerShell:**
+```powershell
+# Navigate to scripts folder
+cd scripts
+
+# Create your local script
+Copy-Item post-deployment-setup.template.ps1 post-deployment-setup.local.ps1
+
+# Edit the script and replace placeholders:
+# - <RESOURCE_GROUP> → rg-blogapp-workshop
+# - <BASTION_NAME> → bastion-blogapp-prod
+# - <MONGODB_ADMIN_PASSWORD> → Your chosen admin password
+# - <MONGODB_APP_PASSWORD> → Your chosen app password
+
+# Run the script
+.\post-deployment-setup.local.ps1
 ```
 
 #### Step 7: Configure Azure Monitor (DCR)
@@ -595,9 +614,12 @@ FQDN=$(az network public-ip show \
 
 echo "Your Application URL: https://$FQDN"
 
+# Set your Frontend Client ID (from Step 4 / entraFrontendClientId)
+FRONTEND_CLIENT_ID="your-frontend-client-id"  # ← Replace with your actual value
+
 # Update redirect URIs
 az rest --method PATCH \
-  --uri "https://graph.microsoft.com/v1.0/applications(appId='your-frontend-client-id')" \
+  --uri "https://graph.microsoft.com/v1.0/applications(appId='$FRONTEND_CLIENT_ID')" \
   --headers "Content-Type=application/json" \
   --body "{
     \"spa\": {
@@ -619,14 +641,16 @@ $FQDN = $pip.DnsSettings.Fqdn
 
 Write-Host "Your Application URL: https://$FQDN"
 
+# Set your Frontend Client ID (from Step 4 / entraFrontendClientId)
+$FrontendClientId = "your-frontend-client-id"  # ← Replace with your actual value
+
 # Update redirect URIs using Microsoft Graph PowerShell
 # First, install Microsoft Graph module if not installed:
 # Install-Module Microsoft.Graph -Scope CurrentUser
 
 Connect-MgGraph -Scopes "Application.ReadWrite.All"
 
-$appId = "your-frontend-client-id"
-$app = Get-MgApplication -Filter "AppId eq '$appId'"
+$app = Get-MgApplication -Filter "AppId eq '$FrontendClientId'"
 
 $redirectUris = @(
     "https://$FQDN",
