@@ -135,8 +135,6 @@ Engilish version: [README.md](./README.md)
 | **Bicep CLI** | 最新版 | Infrastructure as Code | [インストールガイド](https://learn.microsoft.com/azure/azure-resource-manager/bicep/install#windows) |
 | **OpenSSL** | 最新版 | SSL証明書生成 | [ダウンロード](https://slproweb.com/products/Win32OpenSSL.html) |
 
-> **📝 WindowsでAzure PowerShellを使う理由:** Azure PowerShellはWindowsでより安定した体験を提供します。
-
 > **⚠️ 重要: WindowsではBicep CLIが必要です**  
 > Azure CLI（Bicepを自動インストール）とは異なり、Azure PowerShellではBicep CLIを手動でインストールする必要があります。
 > 

@@ -129,8 +129,6 @@ Install these tools on your computer:
 | **Bicep CLI** | Latest | Infrastructure as Code | [Install Guide](https://learn.microsoft.com/azure/azure-resource-manager/bicep/install#windows) |
 | **OpenSSL** | Latest | SSL certificate generation | [Download](https://slproweb.com/products/Win32OpenSSL.html) |
 
-> **📝 Why Azure PowerShell for Windows?** Azure PowerShell provides a more reliable experience on Windows.
-
 > **⚠️ Important: Bicep CLI Required for Windows**  
 > Unlike Azure CLI (which auto-installs Bicep), Azure PowerShell requires manual Bicep CLI installation.
 > 
