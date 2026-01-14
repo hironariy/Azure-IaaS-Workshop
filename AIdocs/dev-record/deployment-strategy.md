@@ -20,12 +20,12 @@ This document outlines the deployment strategy for the multi-tier blog applicati
 
 | Component | Status | Resource Group |
 |-----------|--------|----------------|
-| Infrastructure | ⏳ Pending | `<YOUR_RESOURCE_GROUP>` |
+| Infrastructure | ✅ Verified | `<YOUR_RESOURCE_GROUP>` |
 | Config Injection (App tier) | ✅ Verified on all VMs | `/etc/environment`, `/opt/blogapp/.env` |
 | Config Injection (Web tier) | ✅ Verified on all VMs | `/var/www/html/config.json` |
-| MongoDB Replica Set | ⏳ Pending | Run `post-deployment-setup.local.sh` |
-| Backend Application | ⏳ Pending | Deploy code after MongoDB setup |
-| Frontend Application | ⏳ Pending | Deploy static files |
+| MongoDB Replica Set | ✅ Verified | `post-deployment-setup.local.sh` |
+| Backend Application | ✅ Verified | Deployed and running |
+| Frontend Application | ✅ Verified | Static files deployed |
 
 ### Deployment Flow Overview
 
@@ -1024,22 +1024,7 @@ cat /var/www/html/config.json
 # Should show: VITE_ENTRA_CLIENT_ID, VITE_ENTRA_TENANT_ID, VITE_API_BASE_URL
 ```
 
-### 3.2 Build Frontend Application (Local Development Machine, not Azure VMs)
-
-> **Note:** No environment variables needed at build time! The frontend fetches `/config.json` at runtime.
-
-```bash
-cd materials/frontend
-
-# Install dependencies and build (no .env.production needed!)
-npm ci
-npm run build
-
-# Verify build output
-ls -la dist/
-```
-
-### 3.3 Deploy Static Files
+### 3.2 Deploy Static Files
 
 **Option A: Clone from Git and build on VM (recommended - uses NAT Gateway for outbound):**
 
@@ -1070,7 +1055,15 @@ sudo chown -R www-data:www-data /var/www/html/
 cd /tmp && rm -rf temp
 ```
 
-**Option B: Upload pre-built files via Bastion tunnel:**
+**Option B: Build locally and upload via Bastion tunnel:**
+
+> **First, build on your local machine:**
+> ```bash
+> cd materials/frontend
+> npm ci
+> npm run build
+> # Build output will be in dist/
+> ```
 
 **macOS/Linux (Azure CLI):**
 ```bash
@@ -1137,7 +1130,7 @@ Invoke-AzVMRunCommand `
   -ScriptString $deployScript
 ```
 
-### 3.4 Verify NGINX Configuration (AUTOMATED)
+### 3.3 Verify NGINX Configuration (AUTOMATED)
 
 > **Note:** NGINX is now **fully configured by Bicep** with:
 > - Internal Load Balancer proxy (`10.0.2.10:3000`)
@@ -1222,7 +1215,7 @@ server {
 
 </details>
 
-### 3.5 Verification
+### 3.4 Verification
 
 ```bash
 # Test NGINX health endpoint (returns "healthy" from NGINX itself)

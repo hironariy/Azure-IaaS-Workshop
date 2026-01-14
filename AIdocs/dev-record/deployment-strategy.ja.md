@@ -21,12 +21,12 @@ English version: [Deployment Strategy for Blog Application to Azure VMs](./deplo
 
 | コンポーネント | 状態 | リソース グループ |
 |-----------|--------|----------------|
-| インフラ | ⏳ Pending | `<YOUR_RESOURCE_GROUP>` |
+| インフラ | ✅ 検証済み | `<YOUR_RESOURCE_GROUP>` |
 | 設定注入（App tier） | ✅ 全 VM で検証済み | `/etc/environment`, `/opt/blogapp/.env` |
 | 設定注入（Web tier） | ✅ 全 VM で検証済み | `/var/www/html/config.json` |
-| MongoDB レプリカセット | ⏳ Pending | `post-deployment-setup.local.sh` を実行 |
-| バックエンド アプリケーション | ⏳ Pending | MongoDB セットアップ後にコードをデプロイ |
-| フロントエンド アプリケーション | ⏳ Pending | 静的ファイルをデプロイ |
+| MongoDB レプリカセット | ✅ 検証済み | `post-deployment-setup.local.sh` |
+| バックエンド アプリケーション | ✅ 検証済み | デプロイ済み・稼働中 |
+| フロントエンド アプリケーション | ✅ 検証済み | 静的ファイル デプロイ済み |
 
 ### デプロイ フロー概要
 
@@ -1025,22 +1025,7 @@ cat /var/www/html/config.json
 # Should show: VITE_ENTRA_CLIENT_ID, VITE_ENTRA_TENANT_ID, VITE_API_BASE_URL
 ```
 
-### 3.2 フロントエンド アプリケーションのビルド（ローカル開発マシン。Azure VM 上ではない）
-
-> **Note:** ビルド時の環境変数は不要です。フロントエンドは実行時に `/config.json` を取得します。
-
-```bash
-cd materials/frontend
-
-# Install dependencies and build (no .env.production needed!)
-npm ci
-npm run build
-
-# Verify build output
-ls -la dist/
-```
-
-### 3.3 静的ファイルのデプロイ
+### 3.2 静的ファイルのデプロイ
 
 **Option A: Git から clone して VM でビルド（推奨。NAT Gateway によりアウトバウンドが可能）:**
 
@@ -1071,7 +1056,15 @@ sudo chown -R www-data:www-data /var/www/html/
 cd /tmp && rm -rf temp
 ```
 
-**Option B: Bastion トンネル経由で事前ビルド成果物をアップロード:**
+**Option B: ローカルでビルドして Bastion トンネル経由でアップロード:**
+
+> **まず、ローカルマシンでビルド:**
+> ```bash
+> cd materials/frontend
+> npm ci
+> npm run build
+> # ビルド出力は dist/ に作成されます
+> ```
 
 **macOS/Linux (Azure CLI):**
 ```bash
@@ -1223,7 +1216,7 @@ server {
 
 </details>
 
-### 3.5 検証
+### 3.4 検証
 
 ```bash
 # Test NGINX health endpoint (returns "healthy" from NGINX itself)
