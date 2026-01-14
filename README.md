@@ -35,7 +35,7 @@ This workshop is designed for engineers who want to learn **Azure Infrastructure
 - Developers preparing for Azure certifications (AZ-104, AZ-305)
 - Teams migrating from AWS to Azure
 
-**Workshop Duration:** 2 days (approximately 16 hours)
+**Workshop Duration:**　approximately 4 hours
 
 ### 1.2 What You Will Learn
 
