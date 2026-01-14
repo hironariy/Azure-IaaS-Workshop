@@ -113,15 +113,32 @@ Engilish version: [README.md](./README.md)
 
 コンピュータに以下のツールをインストールしてください：
 
+**全プラットフォーム共通:**
+
 | ツール | バージョン | 目的 | インストール |
 |------|---------|---------|--------------|
 | **Git** | 2.x以上 | バージョン管理 | [ダウンロード](https://git-scm.com/) |
-| **Azure CLI** | 2.60以上 | Azure管理 | [インストールガイド](https://docs.microsoft.com/cli/azure/install-azure-cli) |
 | **VS Code** | 最新版 | コードエディタ（推奨） | [ダウンロード](https://code.visualstudio.com/) |
-| **OpenSSL** | 最新版 | SSL証明書生成 | macOS/Linuxにプリインストール。[Windowsユーザーはダウンロード](https://slproweb.com/products/Win32OpenSSL.html) |
+
+**macOS/Linux:**
+
+| ツール | バージョン | 目的 | インストール |
+|------|---------|---------|--------------|
+| **Azure CLI** | 2.60以上 | Azure管理 | [インストールガイド](https://docs.microsoft.com/cli/azure/install-azure-cli) |
+| **OpenSSL** | 最新版 | SSL証明書生成 | プリインストール済み |
+
+**Windows:**
+
+| ツール | バージョン | 目的 | インストール |
+|------|---------|---------|--------------|
+| **Azure PowerShell** | 12.0以上 | Azure管理 | [インストールガイド](https://docs.microsoft.com/powershell/azure/install-azure-powershell) |
+| **OpenSSL** | 最新版 | SSL証明書生成 | [ダウンロード](https://slproweb.com/products/Win32OpenSSL.html) |
+
+> **📝 WindowsでAzure PowerShellを使う理由:** Windows上のAzure CLIはBicepとの互換性に問題がある場合があります。Azure PowerShellはWindowsでより安定した体験を提供します。
 
 **インストールの確認:**
 
+**macOS/Linux:**
 ```bash
 # Gitの確認
 git --version
@@ -134,6 +151,21 @@ az --version
 # OpenSSLの確認
 openssl version
 # 期待値: OpenSSL 3.x.x または LibreSSL 3.x.x
+```
+
+**Windows PowerShell:**
+```powershell
+# Gitの確認
+git --version
+# 期待値: git version 2.x.x
+
+# Azure PowerShellの確認
+Get-Module -Name Az -ListAvailable | Select-Object Name, Version
+# 期待値: Az 12.x.x以降
+
+# OpenSSLの確認
+openssl version
+# 期待値: OpenSSL 3.x.x
 ```
 
 > **📝 Node.jsとDockerが必要ですか？** これらは[ローカル開発](materials/docs/local-development-guide.ja.md)にのみ必要で、Azureデプロイには必要ありません。
@@ -323,6 +355,7 @@ Azureへのデプロイのみを行う場合は、次のセクションに進ん
 
 #### ステップ1: Azureにログイン
 
+**macOS/Linux (bash/zsh):**
 ```bash
 # Azureにログイン
 az login
@@ -332,6 +365,18 @@ az account show
 
 # （オプション）複数のサブスクリプションがある場合、特定のサブスクリプションを設定
 az account set --subscription "サブスクリプション名"
+```
+
+**Windows PowerShell:**
+```powershell
+# Azureにログイン
+Connect-AzAccount
+
+# ログインしていることを確認
+Get-AzContext
+
+# （オプション）複数のサブスクリプションがある場合、特定のサブスクリプションを設定
+Set-AzContext -Subscription "サブスクリプション名"
 ```
 
 #### ステップ2: SSL証明書の生成
@@ -367,6 +412,7 @@ cd Azure-IaaS-Workshop
 
 デプロイにはいくつかの値が必要です。取得方法は以下の通りです。
 
+**macOS/Linux (bash/zsh):**
 ```bash
 # テナントIDを取得
 az account show --query tenantId -o tsv
@@ -381,14 +427,39 @@ cat ~/.ssh/id_rsa.pub
 ssh-keygen -t rsa -b 4096 -C "your_email@example.com"
 ```
 
+**Windows PowerShell:**
+```powershell
+# テナントIDを取得
+(Get-AzContext).Tenant.Id
+
+# オブジェクトIDを取得（Key Vaultアクセス用）
+(Get-AzADUser -SignedIn).Id
+
+# SSH公開鍵を取得（または生成）
+Get-Content ~/.ssh/id_rsa.pub
+
+# SSH鍵がない場合は生成:
+ssh-keygen -t rsa -b 4096 -C "your_email@example.com"
+```
+
 #### ステップ4: Bicepパラメータの構成
 
+**macOS/Linux:**
 ```bash
 # bicepフォルダに移動
 cd materials/bicep
 
 # ローカルパラメータファイルを作成
 cp main.bicepparam main.local.bicepparam
+```
+
+**Windows PowerShell:**
+```powershell
+# bicepフォルダに移動
+cd materials\bicep
+
+# ローカルパラメータファイルを作成
+Copy-Item main.bicepparam main.local.bicepparam
 ```
 
 **`main.local.bicepparam` を編集**し、値を設定します。
@@ -426,6 +497,7 @@ param appGatewayDnsLabel = 'blogapp-yourname-1234'
 
 #### ステップ5: Azureにデプロイ
 
+**macOS/Linux (bash/zsh):**
 ```bash
 # リソースグループを作成
 az group create --name rg-blogapp-workshop --location japanwest
@@ -435,6 +507,19 @@ az deployment group create \
   --resource-group rg-blogapp-workshop \
   --template-file materials/bicep/main.bicep \
   --parameters materials/bicep/main.local.bicepparam
+```
+
+**Windows (Azure PowerShell):**
+```powershell
+# リソースグループを作成
+New-AzResourceGroup -Name "rg-blogapp-workshop" -Location "japanwest"
+
+# インフラストラクチャをデプロイ（15〜30分かかります）
+New-AzResourceGroupDeployment `
+  -ResourceGroupName "rg-blogapp-workshop" `
+  -TemplateFile "materials/bicep/main.bicep" `
+  -TemplateParameterFile "materials/bicep/main.local.bicepparam" `
+  -Verbose
 ```
 
 **デプロイが完了するまで待機してください。** 進捗は以下で監視できます：
@@ -467,6 +552,7 @@ chmod +x post-deployment-setup.local.sh
 
 デプロイ後、本番URLでフロントエンドアプリ登録を更新します：
 
+**macOS/Linux (bash/zsh):**
 ```bash
 # Application Gateway FQDNを取得
 FQDN=$(az network public-ip show \
@@ -490,6 +576,40 @@ az rest --method PATCH \
       ]
     }
   }"
+```
+
+**Windows (Azure PowerShell + Microsoft Graph PowerShell):**
+
+Microsoft Graph PowerShellモジュールをインストール（初回のみ）：
+```powershell
+Install-Module Microsoft.Graph -Scope CurrentUser -Force
+```
+
+リダイレクトURIを更新：
+```powershell
+# Application Gateway FQDNを取得
+$pip = Get-AzPublicIpAddress -ResourceGroupName "rg-blogapp-workshop" -Name "pip-agw-blogapp-prod"
+$FQDN = $pip.DnsSettings.Fqdn
+
+Write-Host "アプリケーションURL: https://$FQDN"
+
+# Microsoft Graphに接続
+Connect-MgGraph -Scopes "Application.ReadWrite.All"
+
+# アプリ登録のオブジェクトIDを取得（AppIdではなくオブジェクトID）
+$app = Get-MgApplication -Filter "appId eq 'フロントエンドクライアントID'"
+
+# リダイレクトURIを更新
+$redirectUris = @(
+    "https://$FQDN",
+    "https://$FQDN/",
+    "http://localhost:5173",
+    "http://localhost:5173/"
+)
+
+Update-MgApplication -ApplicationId $app.Id -Spa @{RedirectUris = $redirectUris}
+
+Write-Host "リダイレクトURIを更新しました"
 ```
 
 #### ステップ8: アプリケーションコードのデプロイ
@@ -523,9 +643,16 @@ echo "開く: https://$FQDN"
 
 継続的なAzure料金を避けるため、終了時にすべてのリソースを削除してください：
 
+**macOS/Linux (bash/zsh):**
 ```bash
 # リソースグループと内部のすべてのリソースを削除
 az group delete --name rg-blogapp-workshop --yes --no-wait
+```
+
+**Windows (Azure PowerShell):**
+```powershell
+# リソースグループと内部のすべてのリソースを削除（バックグラウンドで実行）
+Remove-AzResourceGroup -Name "rg-blogapp-workshop" -Force -AsJob
 ```
 
 ---

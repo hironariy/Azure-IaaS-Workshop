@@ -107,15 +107,32 @@ Before starting, make sure you have the following tools and accounts set up.
 
 Install these tools on your computer:
 
+**All Platforms:**
+
 | Tool | Version | Purpose | Installation |
 |------|---------|---------|--------------|
 | **Git** | 2.x+ | Version control | [Download](https://git-scm.com/) |
-| **Azure CLI** | 2.60+ | Azure management | [Install Guide](https://docs.microsoft.com/cli/azure/install-azure-cli) |
 | **VS Code** | Latest | Code editor (recommended) | [Download](https://code.visualstudio.com/) |
-| **OpenSSL** | Latest | SSL certificate generation | Pre-installed on macOS/Linux, [Download for Windows](https://slproweb.com/products/Win32OpenSSL.html) |
+
+**macOS/Linux:**
+
+| Tool | Version | Purpose | Installation |
+|------|---------|---------|--------------|
+| **Azure CLI** | 2.60+ | Azure management | [Install Guide](https://docs.microsoft.com/cli/azure/install-azure-cli) |
+| **OpenSSL** | Latest | SSL certificate generation | Pre-installed |
+
+**Windows:**
+
+| Tool | Version | Purpose | Installation |
+|------|---------|---------|--------------|
+| **Azure PowerShell** | 12.0+ | Azure management | [Install Guide](https://docs.microsoft.com/powershell/azure/install-azure-powershell) |
+| **OpenSSL** | Latest | SSL certificate generation | [Download](https://slproweb.com/products/Win32OpenSSL.html) |
+
+> **📝 Why Azure PowerShell for Windows?** Azure CLI on Windows can have compatibility issues with Bicep. Azure PowerShell provides a more reliable experience on Windows.
 
 **Verify your installation:**
 
+**macOS/Linux:**
 ```bash
 # Check Git
 git --version
@@ -128,6 +145,21 @@ az --version
 # Check OpenSSL
 openssl version
 # Expected: OpenSSL 3.x.x or LibreSSL 3.x.x
+```
+
+**Windows PowerShell:**
+```powershell
+# Check Git
+git --version
+# Expected: git version 2.x.x
+
+# Check Azure PowerShell
+Get-Module -Name Az -ListAvailable | Select-Object Name, Version
+# Expected: Az 12.x.x or newer
+
+# Check OpenSSL
+openssl version
+# Expected: OpenSSL 3.x.x
 ```
 
 > **📝 Need Node.js and Docker?** These are only required for [local development](materials/docs/local-development-guide.md), not for Azure deployment.
@@ -317,6 +349,7 @@ Follow these steps to deploy the application to Azure.
 
 #### Step 1: Login to Azure
 
+**macOS/Linux (bash/zsh):**
 ```bash
 # Login to Azure
 az login
@@ -326,6 +359,18 @@ az account show
 
 # (Optional) Set specific subscription if you have multiple
 az account set --subscription "Your Subscription Name"
+```
+
+**Windows PowerShell:**
+```powershell
+# Login to Azure
+Connect-AzAccount
+
+# Verify you're logged in
+Get-AzContext
+
+# (Optional) Set specific subscription if you have multiple
+Set-AzContext -Subscription "Your Subscription Name"
 ```
 
 #### Step 2: Generate SSL Certificate
@@ -361,6 +406,7 @@ This creates:
 
 You'll need several values for the deployment. Here's how to get them:
 
+**macOS/Linux (bash/zsh):**
 ```bash
 # Get your Tenant ID
 az account show --query tenantId -o tsv
@@ -375,14 +421,39 @@ cat ~/.ssh/id_rsa.pub
 ssh-keygen -t rsa -b 4096 -C "your_email@example.com"
 ```
 
+**Windows PowerShell:**
+```powershell
+# Get your Tenant ID
+(Get-AzContext).Tenant.Id
+
+# Get your Object ID (for Key Vault access)
+(Get-AzADUser -SignedIn).Id
+
+# Get your SSH public key (or generate one)
+Get-Content ~/.ssh/id_rsa.pub
+
+# If you don't have an SSH key, generate one:
+ssh-keygen -t rsa -b 4096 -C "your_email@example.com"
+```
+
 #### Step 4: Configure Bicep Parameters
 
+**macOS/Linux:**
 ```bash
 # Navigate to bicep folder
 cd materials/bicep
 
 # Create your local parameter file
 cp main.bicepparam main.local.bicepparam
+```
+
+**Windows PowerShell:**
+```powershell
+# Navigate to bicep folder
+cd materials\bicep
+
+# Create your local parameter file
+Copy-Item main.bicepparam main.local.bicepparam
 ```
 
 **Edit `main.local.bicepparam`** with your values:
@@ -420,6 +491,7 @@ param appGatewayDnsLabel = 'blogapp-yourname-1234'
 
 #### Step 5: Deploy to Azure
 
+**macOS/Linux (bash/zsh):**
 ```bash
 # Create resource group
 az group create --name rg-blogapp-workshop --location japanwest
@@ -429,6 +501,18 @@ az deployment group create \
   --resource-group rg-blogapp-workshop \
   --template-file materials/bicep/main.bicep \
   --parameters materials/bicep/main.local.bicepparam
+```
+
+**Windows PowerShell:**
+```powershell
+# Create resource group
+New-AzResourceGroup -Name rg-blogapp-workshop -Location japanwest
+
+# Deploy infrastructure (this takes 15-30 minutes)
+New-AzResourceGroupDeployment `
+  -ResourceGroupName rg-blogapp-workshop `
+  -TemplateFile materials\bicep\main.bicep `
+  -TemplateParameterFile materials\bicep\main.local.bicepparam
 ```
 
 **Wait for deployment to complete.** You can monitor progress in:
@@ -461,6 +545,7 @@ chmod +x post-deployment-setup.local.sh
 
 After deployment, update your frontend app registration with the production URL:
 
+**macOS/Linux (bash/zsh):**
 ```bash
 # Get your Application Gateway FQDN
 FQDN=$(az network public-ip show \
@@ -485,6 +570,39 @@ az rest --method PATCH \
     }
   }"
 ```
+
+**Windows PowerShell:**
+```powershell
+# Get your Application Gateway FQDN
+$pip = Get-AzPublicIpAddress -ResourceGroupName rg-blogapp-workshop -Name pip-agw-blogapp-prod
+$FQDN = $pip.DnsSettings.Fqdn
+
+Write-Host "Your Application URL: https://$FQDN"
+
+# Update redirect URIs using Microsoft Graph PowerShell
+# First, install Microsoft Graph module if not installed:
+# Install-Module Microsoft.Graph -Scope CurrentUser
+
+Connect-MgGraph -Scopes "Application.ReadWrite.All"
+
+$appId = "your-frontend-client-id"
+$app = Get-MgApplication -Filter "AppId eq '$appId'"
+
+$redirectUris = @(
+    "https://$FQDN",
+    "https://$FQDN/",
+    "http://localhost:5173",
+    "http://localhost:5173/"
+)
+
+Update-MgApplication -ApplicationId $app.Id -Spa @{RedirectUris = $redirectUris}
+```
+
+> **💡 Alternative:** You can also update redirect URIs manually in Azure Portal:
+> 1. Go to **Microsoft Entra ID** → **App registrations** → **BlogApp Frontend (Dev)**
+> 2. Click **Authentication** in the left menu
+> 3. Under **Single-page application**, add `https://<YOUR_FQDN>` and `https://<YOUR_FQDN>/`
+> 4. Click **Save**
 
 #### Step 8: Deploy Application Code
 
@@ -517,9 +635,16 @@ echo "Open: https://$FQDN"
 
 To avoid ongoing Azure charges, delete all resources when you're finished:
 
+**macOS/Linux (bash/zsh):**
 ```bash
 # Delete resource group and all resources inside
 az group delete --name rg-blogapp-workshop --yes --no-wait
+```
+
+**Windows PowerShell:**
+```powershell
+# Delete resource group and all resources inside
+Remove-AzResourceGroup -Name rg-blogapp-workshop -Force -AsJob
 ```
 
 ---
