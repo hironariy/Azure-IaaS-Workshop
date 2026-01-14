@@ -178,10 +178,11 @@ var dbSubnetPrefix = '10.0.3.0/24'
 var bastionSubnetPrefix = '10.0.255.0/26'
 
 // =============================================================================
-// Module 1: Monitoring - Log Analytics Workspace
+// Module 1: Monitoring - Log Analytics Workspace & Data Collection Rule
 // =============================================================================
-// Deploy first - Log Analytics workspace needs time to initialize tables
-// before Data Collection Rule can reference them
+// Deploy monitoring resources first
+// DCR must be deployed immediately after Log Analytics (same deployment phase)
+// to avoid table initialization timing issues
 // =============================================================================
 
 module logAnalytics 'modules/monitoring/log-analytics.bicep' = if (deployMonitoring) {
@@ -191,6 +192,18 @@ module logAnalytics 'modules/monitoring/log-analytics.bicep' = if (deployMonitor
     environment: environment
     workloadName: workloadName
     retentionInDays: 30
+    tags: allTags
+  }
+}
+
+module dataCollectionRule 'modules/monitoring/data-collection-rule.bicep' = if (deployMonitoring) {
+  name: 'deploy-dcr'
+  params: {
+    location: location
+    environment: environment
+    workloadName: workloadName
+    // Use safe-dereference even for co-conditional modules (Bicep linter requirement)
+    logAnalyticsWorkspaceId: logAnalytics.?outputs.?workspaceId ?? ''
     tags: allTags
   }
 }
@@ -287,27 +300,7 @@ module vnet 'modules/network/vnet.bicep' = {
 }
 
 // =============================================================================
-// Module 4: Data Collection Rule (for Azure Monitor Agent)
-// =============================================================================
-// Deploy after VNet to give Log Analytics workspace time to initialize tables
-// (Syslog, Perf tables need ~30-60 seconds to become available after workspace creation)
-// VMs deployed later will reference DCR for Azure Monitor Agent configuration
-// =============================================================================
-
-module dataCollectionRule 'modules/monitoring/data-collection-rule.bicep' = if (deployMonitoring) {
-  name: 'deploy-dcr'
-  params: {
-    location: location
-    environment: environment
-    workloadName: workloadName
-    // Use safe-dereference even for co-conditional modules (Bicep linter requirement)
-    logAnalyticsWorkspaceId: logAnalytics.?outputs.?workspaceId ?? ''
-    tags: allTags
-  }
-}
-
-// =============================================================================
-// Module 5: Azure Bastion
+// Module 4: Azure Bastion
 // =============================================================================
 // Secure SSH access without public IPs on VMs
 // Standard SKU enables native client support (SSH from local terminal)
@@ -328,7 +321,7 @@ module bastion 'modules/network/bastion.bicep' = if (deployBastion) {
 }
 
 // =============================================================================
-// Module 7: Application Gateway (Web Tier - External)
+// Module 5: Application Gateway (Web Tier - External)
 // =============================================================================
 // Application Gateway v2 for Web tier (public-facing with SSL/TLS termination)
 // Provides Layer 7 load balancing with HTTPS support via self-signed certificate
