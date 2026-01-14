@@ -249,6 +249,7 @@ echo "blogapp-$(openssl rand -hex 2)"
 
 ### 値の確認方法
 
+**macOS/Linux (Azure CLI):**
 ```bash
 # Get your Tenant ID
 az account show --query tenantId -o tsv
@@ -261,6 +262,21 @@ az ad app list --display-name "blogapp" --query "[].{name:displayName, appId:app
 
 # Get base64-encoded certificate (after running generate-ssl-cert.sh)
 cat cert-base64.txt
+```
+
+**Windows PowerShell (Azure PowerShell):**
+```powershell
+# Get your Tenant ID
+(Get-AzContext).Tenant.Id
+
+# Get your Object ID (for Key Vault access)
+(Get-AzADUser -SignedIn).Id
+
+# List app registrations to find Client IDs
+Get-AzADApplication -DisplayNameStartWith "blogapp" | Select-Object DisplayName, AppId
+
+# Get base64-encoded certificate (after running generate-ssl-cert.ps1)
+Get-Content cert-base64.txt
 ```
 
 ### Entra ID のリダイレクト URI 設定（SPA プラットフォーム）
@@ -286,6 +302,8 @@ cat cert-base64.txt
 | `location = 'eastus'` + `appGatewayDnsLabel = 'blogapp-abc'` | `blogapp-abc.eastus.cloudapp.azure.com` |
 
 **デプロイ後に確認（任意）:**
+
+**macOS/Linux:**
 ```bash
 # Confirm the FQDN matches your expectation
 az network public-ip show \
@@ -294,10 +312,18 @@ az network public-ip show \
   --query dnsSettings.fqdn -o tsv
 ```
 
+**Windows PowerShell:**
+```powershell
+# Confirm the FQDN matches your expectation
+$pip = Get-AzPublicIpAddress -ResourceGroupName <YOUR_RESOURCE_GROUP> -Name pip-agw-blogapp-prod
+$pip.DnsSettings.Fqdn
+```
+
 **SPA のリダイレクト URI を Microsoft Graph で更新:**
 
 > **Note:** `az ad app update` コマンドは `--spa-redirect-uris` をサポートしていません。Microsoft Graph API を直接使用する必要があります。
 
+**macOS/Linux (Azure CLI with REST):**
 ```bash
 # Replace <YOUR_FRONTEND_CLIENT_ID> with your frontend app's Client ID
 # Replace <YOUR_APPGW_FQDN> with the FQDN from the command above
@@ -317,6 +343,36 @@ az rest --method PATCH \
       "redirectUris": []
     }
   }'
+```
+
+**Windows PowerShell (Microsoft Graph PowerShell):**
+```powershell
+# Install Microsoft Graph module if not installed
+# Install-Module Microsoft.Graph -Scope CurrentUser
+
+# Connect to Microsoft Graph
+Connect-MgGraph -Scopes "Application.ReadWrite.All"
+
+# Set your Frontend Client ID (from your App Registration)
+$FrontendClientId = "<YOUR_FRONTEND_CLIENT_ID>"  # ← 実際の値に置き換えてください
+
+# Set your Application Gateway FQDN
+$FQDN = "<YOUR_APPGW_FQDN>"  # ← 実際の値に置き換えてください
+
+# Get the application object
+$app = Get-MgApplication -Filter "AppId eq '$FrontendClientId'"
+
+# Update redirect URIs
+$redirectUris = @(
+    "https://$FQDN",
+    "https://$FQDN/",
+    "http://localhost:5173",
+    "http://localhost:5173/"
+)
+
+Update-MgApplication -ApplicationId $app.Id -Spa @{RedirectUris = $redirectUris}
+
+Write-Host "リダイレクト URI の更新が完了しました"
 ```
 
 **実値の例:**
@@ -340,8 +396,16 @@ az rest --method PATCH \
 ```
 
 **SPA のリダイレクト URI を確認:**
+
+**macOS/Linux:**
 ```bash
 az ad app show --id <YOUR_FRONTEND_CLIENT_ID> --query "spa.redirectUris"
+```
+
+**Windows PowerShell:**
+```powershell
+$app = Get-MgApplication -Filter "AppId eq '<YOUR_FRONTEND_CLIENT_ID>'"
+$app.Spa.RedirectUris
 ```
 
 | リダイレクト URI | 目的 |
@@ -367,6 +431,7 @@ az ad app show --id <YOUR_FRONTEND_CLIENT_ID> --query "spa.redirectUris"
 
 ### 0.1 Bicep テンプレートのデプロイ
 
+**macOS/Linux (Azure CLI):**
 ```bash
 # Create resource group (choose your own name and region)
 az group create --name <YOUR_RESOURCE_GROUP> --location <YOUR_REGION>
@@ -380,10 +445,26 @@ az deployment group create \
 # Wait for deployment (15-30 minutes)
 ```
 
+**Windows PowerShell (Azure PowerShell):**
+```powershell
+# Create resource group (choose your own name and region)
+New-AzResourceGroup -Name <YOUR_RESOURCE_GROUP> -Location <YOUR_REGION>
+
+# Deploy infrastructure (initial deployment)
+# Note: Bicep CLI must be installed (winget install -e --id Microsoft.Bicep)
+New-AzResourceGroupDeployment `
+  -ResourceGroupName <YOUR_RESOURCE_GROUP> `
+  -TemplateFile materials/bicep/main.bicep `
+  -TemplateParameterFile materials/bicep/main.local.bicepparam
+
+# Wait for deployment (15-30 minutes)
+```
+
 ### 0.1.1 既存 VM の CustomScript を再実行（任意）
 
 特定 tier（例: NGINX 設定更新）の CustomScript を再実行したい場合、**tier 別の force update タグ** と `skipVmCreation` を併用して、SSH キー変更エラーを回避します。
 
+**macOS/Linux (Azure CLI):**
 ```bash
 # Force re-run on Web tier only (e.g., NGINX config update)
 # skipVmCreationWeb=true prevents "SSH key change not allowed" error
@@ -420,6 +501,47 @@ az deployment group create \
                forceUpdateTagWeb="$TIMESTAMP" \
                forceUpdateTagApp="$TIMESTAMP" \
                forceUpdateTagDb="$TIMESTAMP"
+```
+
+**Windows PowerShell (Azure PowerShell):**
+```powershell
+$Timestamp = Get-Date -Format "yyyyMMddHHmmss"
+
+# Force re-run on Web tier only (e.g., NGINX config update)
+New-AzResourceGroupDeployment `
+  -ResourceGroupName <YOUR_RESOURCE_GROUP> `
+  -TemplateFile materials/bicep/main.bicep `
+  -TemplateParameterFile materials/bicep/main.local.bicepparam `
+  -skipVmCreationWeb $true `
+  -forceUpdateTagWeb $Timestamp
+
+# Force re-run on App tier only (e.g., Node.js env update)
+New-AzResourceGroupDeployment `
+  -ResourceGroupName <YOUR_RESOURCE_GROUP> `
+  -TemplateFile materials/bicep/main.bicep `
+  -TemplateParameterFile materials/bicep/main.local.bicepparam `
+  -skipVmCreationApp $true `
+  -forceUpdateTagApp $Timestamp
+
+# Force re-run on DB tier only (rarely needed)
+New-AzResourceGroupDeployment `
+  -ResourceGroupName <YOUR_RESOURCE_GROUP> `
+  -TemplateFile materials/bicep/main.bicep `
+  -TemplateParameterFile materials/bicep/main.local.bicepparam `
+  -skipVmCreationDb $true `
+  -forceUpdateTagDb $Timestamp
+
+# Force re-run on ALL tiers (use with caution)
+New-AzResourceGroupDeployment `
+  -ResourceGroupName <YOUR_RESOURCE_GROUP> `
+  -TemplateFile materials/bicep/main.bicep `
+  -TemplateParameterFile materials/bicep/main.local.bicepparam `
+  -skipVmCreationWeb $true `
+  -skipVmCreationApp $true `
+  -skipVmCreationDb $true `
+  -forceUpdateTagWeb $Timestamp `
+  -forceUpdateTagApp $Timestamp `
+  -forceUpdateTagDb $Timestamp
 ```
 
 | パラメータ | 目的 |
@@ -485,6 +607,8 @@ Copy-Item scripts\post-deployment-setup.template.ps1 scripts\post-deployment-set
 
 Azure CLI を使用して、ネイティブ SSH クライアントで Bastion 経由で VM に接続します。
 
+**macOS/Linux (Azure CLI):**
+
 **App tier VM に接続:**
 ```bash
 # Connect to vm-app-az1-prod
@@ -528,6 +652,42 @@ az network bastion ssh \
 ```
 
 > **Note:** `~/.ssh/id_rsa` は、デプロイ時に使用した公開鍵に対応する秘密鍵のパスに置き換えてください。
+
+**Windows PowerShell (Azure PowerShell) - Invoke-AzVMRunCommand を使用:**
+
+> **Note:** Windows ユーザーは `Invoke-AzVMRunCommand` を使用して Bastion SSH なしで VM 上のコマンドを実行できます。これは PowerShell ユーザーにおすすめのアプローチです。
+
+```powershell
+$ResourceGroup = "<YOUR_RESOURCE_GROUP>"
+
+# Run command on App tier VM (vm-app-az1-prod)
+Invoke-AzVMRunCommand `
+  -ResourceGroupName $ResourceGroup `
+  -VMName "vm-app-az1-prod" `
+  -CommandId "RunShellScript" `
+  -ScriptString "cat /etc/environment | grep -E '(AZURE_|NODE_ENV|PORT)'; cat /opt/blogapp/.env"
+
+# Run command on App tier VM (vm-app-az2-prod)
+Invoke-AzVMRunCommand `
+  -ResourceGroupName $ResourceGroup `
+  -VMName "vm-app-az2-prod" `
+  -CommandId "RunShellScript" `
+  -ScriptString "cat /etc/environment | grep -E '(AZURE_|NODE_ENV|PORT)'; cat /opt/blogapp/.env"
+
+# Run command on Web tier VM (vm-web-az1-prod)
+Invoke-AzVMRunCommand `
+  -ResourceGroupName $ResourceGroup `
+  -VMName "vm-web-az1-prod" `
+  -CommandId "RunShellScript" `
+  -ScriptString "cat /var/www/html/config.json"
+
+# Run command on Web tier VM (vm-web-az2-prod)
+Invoke-AzVMRunCommand `
+  -ResourceGroupName $ResourceGroup `
+  -VMName "vm-web-az2-prod" `
+  -CommandId "RunShellScript" `
+  -ScriptString "cat /var/www/html/config.json"
+```
 
 #### VM 上で設定を検証
 
@@ -713,13 +873,14 @@ pm2 save
 
 ```bash
 cd /opt/blogapp
-git clone https://github.com/<repo>/AzureIaaSWorkshop.git temp
+git clone https://github.com/<repo>/Azure-IaaS-Workshop.git temp
 cp -r temp/materials/backend/* ./
 rm -rf temp
 ```
 
 **Option B: Bastion トンネル経由でアップロード:**
 
+**macOS/Linux (Azure CLI):**
 ```bash
 # On local machine - create tunnel
 az network bastion tunnel \
@@ -731,6 +892,40 @@ az network bastion tunnel \
 
 # In another terminal - SCP through tunnel
 scp -P 2222 -r ./materials/backend/* azureuser@127.0.0.1:/opt/blogapp/
+```
+
+**Windows PowerShell (Azure PowerShell) - Invoke-AzVMRunCommand を使用:**
+```powershell
+$ResourceGroup = "<YOUR_RESOURCE_GROUP>"
+
+# Bastion トンネルは純粋な PowerShell では利用できないため、Invoke-AzVMRunCommand を使用して
+# VM から直接 clone とデプロイを行います（Option A のアプローチ）
+
+# Backend を vm-app-az1-prod にデプロイ
+$deployScript = @'
+cd /opt/blogapp
+git clone https://github.com/<repo>/Azure-IaaS-Workshop.git temp
+cp -r temp/materials/backend/* ./
+rm -rf temp
+npm ci --include=dev
+npm run build
+pm2 delete blogapp-health 2>/dev/null || true
+pm2 start dist/src/app.js --name blogapp-api
+pm2 save
+'@
+
+Invoke-AzVMRunCommand `
+  -ResourceGroupName $ResourceGroup `
+  -VMName "vm-app-az1-prod" `
+  -CommandId "RunShellScript" `
+  -ScriptString $deployScript
+
+# vm-app-az2-prod にも同様に実行
+Invoke-AzVMRunCommand `
+  -ResourceGroupName $ResourceGroup `
+  -VMName "vm-app-az2-prod" `
+  -CommandId "RunShellScript" `
+  -ScriptString $deployScript
 ```
 
 ### 2.4 依存関係のインストールとビルド
@@ -853,7 +1048,7 @@ ls -la dist/
 cd /tmp
 
 # Clone repository (NAT Gateway provides outbound internet access)
-git clone https://github.com/<repo>/AzureIaaSWorkshop.git temp
+git clone https://github.com/<repo>/Azure-IaaS-Workshop.git temp
 
 # Install Node.js for build (if not already installed on Web tier)
 # Note: Web tier VMs have NGINX but not Node.js by default
@@ -878,6 +1073,7 @@ cd /tmp && rm -rf temp
 
 **Option B: Bastion トンネル経由で事前ビルド成果物をアップロード:**
 
+**macOS/Linux (Azure CLI):**
 ```bash
 # Create tunnel to vm-web-az1-prod
 az network bastion tunnel \
@@ -896,6 +1092,50 @@ sudo rm -rf /var/www/html/*
 sudo cp -r /tmp/frontend/* /var/www/html/
 sudo cp /tmp/config.json.bak /var/www/html/config.json
 sudo chown -R www-data:www-data /var/www/html/
+```
+
+**Windows PowerShell (Azure PowerShell) - Invoke-AzVMRunCommand を使用:**
+```powershell
+$ResourceGroup = "<YOUR_RESOURCE_GROUP>"
+
+# VM から直接 clone、ビルド、デプロイ（NAT Gateway を利用）
+$deployScript = @'
+cd /tmp
+git clone https://github.com/<repo>/Azure-IaaS-Workshop.git temp
+
+# Install Node.js for build (if not already installed on Web tier)
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt-get install -y nodejs
+
+# Build frontend
+cd temp/materials/frontend
+npm ci
+npm run build
+
+# Deploy to web root (preserve existing config.json!)
+sudo cp /var/www/html/config.json /tmp/config.json.bak
+sudo rm -rf /var/www/html/*
+sudo cp -r dist/* /var/www/html/
+sudo cp /tmp/config.json.bak /var/www/html/config.json
+sudo chown -R www-data:www-data /var/www/html/
+
+# Cleanup
+cd /tmp && rm -rf temp
+'@
+
+# vm-web-az1-prod にデプロイ
+Invoke-AzVMRunCommand `
+  -ResourceGroupName $ResourceGroup `
+  -VMName "vm-web-az1-prod" `
+  -CommandId "RunShellScript" `
+  -ScriptString $deployScript
+
+# vm-web-az2-prod にデプロイ
+Invoke-AzVMRunCommand `
+  -ResourceGroupName $ResourceGroup `
+  -VMName "vm-web-az2-prod" `
+  -CommandId "RunShellScript" `
+  -ScriptString $deployScript
 ```
 
 ### 3.4 NGINX 設定の検証（自動化）
@@ -1029,6 +1269,8 @@ curl -s http://localhost/login | head -5
 ### 4.2 Application Gateway の検証
 
 **Application Gateway の FQDN を取得:**
+
+**macOS/Linux:**
 ```bash
 # Get the FQDN
 az network public-ip show \
@@ -1037,7 +1279,16 @@ az network public-ip show \
   --query dnsSettings.fqdn -o tsv
 ```
 
+**Windows PowerShell:**
+```powershell
+# Get the FQDN
+$pip = Get-AzPublicIpAddress -ResourceGroupName <YOUR_RESOURCE_GROUP> -Name pip-agw-blogapp-prod
+$pip.DnsSettings.Fqdn
+```
+
 **HTTPS アクセスのテスト（自己署名証明書）:**
+
+**macOS/Linux:**
 ```bash
 # Test via FQDN (use -k to skip certificate verification for self-signed cert)
 curl -k https://<YOUR_APPGW_FQDN>/
@@ -1048,6 +1299,21 @@ curl -I http://<YOUR_APPGW_FQDN>/
 # Test API endpoint through Application Gateway
 # Note: Use /api/posts (not /api/health) - backend health is at /health, not /api/health
 curl -k https://<YOUR_APPGW_FQDN>/api/posts
+```
+
+**Windows PowerShell:**
+```powershell
+# Test via FQDN (skip certificate verification for self-signed cert)
+[System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
+
+# Test HTTPS access
+Invoke-RestMethod -Uri "https://<YOUR_APPGW_FQDN>/" -SkipCertificateCheck
+
+# Test API endpoint through Application Gateway
+Invoke-RestMethod -Uri "https://<YOUR_APPGW_FQDN>/api/posts" -SkipCertificateCheck
+
+# Test HTTP→HTTPS redirect
+Invoke-WebRequest -Uri "http://<YOUR_APPGW_FQDN>/" -MaximumRedirection 0 -ErrorAction SilentlyContinue
 ```
 
 **ブラウザでアクセス:**
