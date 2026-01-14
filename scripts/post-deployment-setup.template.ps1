@@ -12,10 +12,10 @@
 #   3. Run: .\scripts\post-deployment-setup.local.ps1
 #
 # Prerequisites:
-#   - Azure CLI installed and logged in
+#   - Azure PowerShell module installed (Install-Module -Name Az)
+#   - Logged in to Azure (Connect-AzAccount)
 #   - PowerShell 7+ recommended
 #   - Bicep deployment completed successfully
-#   - SSH key available
 #
 # Usage:
 #   .\scripts\post-deployment-setup.local.ps1 [-ResourceGroup "rg-workshop-3"]
@@ -30,11 +30,6 @@ param(
 # Configuration - EDIT THESE VALUES
 # =============================================================================
 $Config = @{
-    # Azure Resources
-    BastionName = "<YOUR_BASTION_NAME>"
-    SshKey      = "<PATH_TO_YOUR_SSH_KEY>"  # e.g., "$env:USERPROFILE\.ssh\id_rsa"
-    Username    = "azureuser"
-
     # MongoDB Configuration
     ReplicaSetName = "blogapp-rs0"
     AdminUser      = "blogadmin"
@@ -82,28 +77,29 @@ function Write-LogError {
     Write-Host $Message
 }
 
-function Invoke-BastionSsh {
+function Invoke-VMCommand {
     param(
-        [string]$VmId,
-        [string]$Command
+        [string]$ResourceGroupName,
+        [string]$VMName,
+        [string]$Script
     )
     
-    # Note: The command must be passed as a single quoted string after -t
-    # Using Start-Process to capture output properly
-    $sshArgs = @(
-        "network", "bastion", "ssh",
-        "--name", $Config.BastionName,
-        "-g", $ResourceGroup,
-        "--target-resource-id", $VmId,
-        "--auth-type", "ssh-key",
-        "--username", $Config.Username,
-        "--ssh-key", $Config.SshKey,
-        "--",
-        "-o", "StrictHostKeyChecking=no",
-        "-t", $Command
-    )
+    Write-LogInfo "Running command on $VMName..."
+    $result = Invoke-AzVMRunCommand `
+        -ResourceGroupName $ResourceGroupName `
+        -VMName $VMName `
+        -CommandId 'RunShellScript' `
+        -ScriptString $Script
     
-    az @sshArgs
+    # Return the output
+    if ($result.Value) {
+        $result.Value | ForEach-Object {
+            if ($_.Message) {
+                Write-Host $_.Message
+            }
+        }
+    }
+    return $result
 }
 
 # =============================================================================
@@ -115,15 +111,22 @@ Write-Host "  Post-Deployment Setup for Azure IaaS Workshop"
 Write-Host "=============================================================="
 Write-Host ""
 Write-LogInfo "Resource Group: $ResourceGroup"
-Write-LogInfo "Bastion: $($Config.BastionName)"
 Write-Host ""
 
 # Validate configuration
-if ($ResourceGroup -like "*<*" -or $Config.BastionName -like "*<*") {
+if ($ResourceGroup -like "*<*" -or $Config.AdminPassword -like "*<*") {
     Write-LogError "Please edit this script and replace all <PLACEHOLDER> values!"
     Write-LogError "Or copy post-deployment-setup.template.ps1 to post-deployment-setup.local.ps1 and edit."
     exit 1
 }
+
+# Check Azure PowerShell login
+$context = Get-AzContext
+if (-not $context) {
+    Write-LogError "Not logged in to Azure. Please run 'Connect-AzAccount' first."
+    exit 1
+}
+Write-LogInfo "Logged in as: $($context.Account.Id)"
 
 # -----------------------------------------------------------------------------
 # Step 1: Verify Deployment
@@ -131,22 +134,26 @@ if ($ResourceGroup -like "*<*" -or $Config.BastionName -like "*<*") {
 Write-LogInfo "Step 1: Verifying deployment..."
 
 # Check if resource group exists
-$rgExists = az group show -n $ResourceGroup 2>$null
-if (-not $rgExists) {
+try {
+    $rg = Get-AzResourceGroup -Name $ResourceGroup -ErrorAction Stop
+    Write-LogSuccess "Resource group found: $($rg.ResourceGroupName)"
+}
+catch {
     Write-LogError "Resource group $ResourceGroup not found!"
     exit 1
 }
 
-# Get VM IDs
-$DbVm1Id = az vm show -g $ResourceGroup -n $Config.DbVm1Name --query id -o tsv 2>$null
-$DbVm2Id = az vm show -g $ResourceGroup -n $Config.DbVm2Name --query id -o tsv 2>$null
-
-if (-not $DbVm1Id -or -not $DbVm2Id) {
+# Get VM objects
+try {
+    $DbVm1 = Get-AzVM -ResourceGroupName $ResourceGroup -Name $Config.DbVm1Name -ErrorAction Stop
+    $DbVm2 = Get-AzVM -ResourceGroupName $ResourceGroup -Name $Config.DbVm2Name -ErrorAction Stop
+    Write-LogSuccess "All DB VMs found in resource group"
+}
+catch {
     Write-LogError "DB VMs not found! Ensure Bicep deployment completed successfully."
+    Write-LogError $_.Exception.Message
     exit 1
 }
-
-Write-LogSuccess "All VMs found in resource group"
 
 # -----------------------------------------------------------------------------
 # Step 2: Wait for VMs to be ready
@@ -165,20 +172,28 @@ Write-LogSuccess "VMs should be ready"
 Write-LogInfo "Step 3: Initializing MongoDB replica set..."
 
 # Check if replica set is already initialized
-$rsStatusCmd = "mongosh --quiet --eval 'rs.status().ok' 2>/dev/null || echo '0'"
-Write-LogInfo "Checking replica set status via Bastion SSH..."
-$rsStatus = Invoke-BastionSsh -VmId $DbVm1Id -Command $rsStatusCmd 2>$null
+$rsStatusScript = "mongosh --quiet --eval 'rs.status().ok' 2>/dev/null || echo '0'"
+$rsStatusResult = Invoke-VMCommand -ResourceGroupName $ResourceGroup -VMName $Config.DbVm1Name -Script $rsStatusScript
 
-if ($rsStatus -match "1") {
+$rsInitialized = $rsStatusResult.Value | Where-Object { $_.Message -match "^1$" }
+
+if ($rsInitialized) {
     Write-LogWarning "Replica set already initialized, skipping..."
 }
 else {
     Write-LogInfo "Initializing replica set $($Config.ReplicaSetName)..."
     
-    # Use single-line command to avoid PowerShell string escaping issues
-    $initCmd = "mongosh --quiet --eval 'rs.initiate({ _id: `"$($Config.ReplicaSetName)`", members: [{ _id: 0, host: `"$($Config.DbVm1Ip):27017`", priority: 2 }, { _id: 1, host: `"$($Config.DbVm2Ip):27017`", priority: 1 }] })'"
+    $initScript = @"
+mongosh --quiet --eval 'rs.initiate({
+    _id: "$($Config.ReplicaSetName)",
+    members: [
+        { _id: 0, host: "$($Config.DbVm1Ip):27017", priority: 2 },
+        { _id: 1, host: "$($Config.DbVm2Ip):27017", priority: 1 }
+    ]
+})'
+"@
     
-    Invoke-BastionSsh -VmId $DbVm1Id -Command $initCmd
+    Invoke-VMCommand -ResourceGroupName $ResourceGroup -VMName $Config.DbVm1Name -Script $initScript
     
     Write-LogInfo "Waiting for replica set to elect primary (30 seconds)..."
     Start-Sleep -Seconds 30
@@ -191,11 +206,24 @@ else {
 # -----------------------------------------------------------------------------
 Write-LogInfo "Step 4: Creating MongoDB admin user..."
 
-# Use single-line command to avoid PowerShell string escaping issues
-$adminUserCmd = "mongosh --quiet --eval 'db = db.getSiblingDB(`"admin`"); if (db.getUser(`"$($Config.AdminUser)`") === null) { db.createUser({ user: `"$($Config.AdminUser)`", pwd: `"$($Config.AdminPassword)`", roles: [{ role: `"root`", db: `"admin`" }] }); print(`"Admin user created`"); } else { print(`"Admin user already exists`"); }'"
+$adminUserScript = @"
+mongosh --quiet --eval '
+    db = db.getSiblingDB("admin");
+    if (db.getUser("$($Config.AdminUser)") === null) {
+        db.createUser({
+            user: "$($Config.AdminUser)",
+            pwd: "$($Config.AdminPassword)",
+            roles: [{ role: "root", db: "admin" }]
+        });
+        print("Admin user created");
+    } else {
+        print("Admin user already exists");
+    }
+'
+"@
 
 try {
-    Invoke-BastionSsh -VmId $DbVm1Id -Command $adminUserCmd 2>$null
+    Invoke-VMCommand -ResourceGroupName $ResourceGroup -VMName $Config.DbVm1Name -Script $adminUserScript
 }
 catch {
     Write-LogWarning "Admin user may already exist"
@@ -208,11 +236,24 @@ Write-LogSuccess "MongoDB admin user ready"
 # -----------------------------------------------------------------------------
 Write-LogInfo "Step 5: Creating MongoDB application user..."
 
-# Use single-line command to avoid PowerShell string escaping issues
-$appUserCmd = "mongosh --quiet --eval 'db = db.getSiblingDB(`"blogapp`"); if (db.getUser(`"$($Config.AppUser)`") === null) { db.createUser({ user: `"$($Config.AppUser)`", pwd: `"$($Config.AppPassword)`", roles: [{ role: `"readWrite`", db: `"blogapp`" }] }); print(`"Application user created`"); } else { print(`"Application user already exists`"); }'"
+$appUserScript = @"
+mongosh --quiet --eval '
+    db = db.getSiblingDB("blogapp");
+    if (db.getUser("$($Config.AppUser)") === null) {
+        db.createUser({
+            user: "$($Config.AppUser)",
+            pwd: "$($Config.AppPassword)",
+            roles: [{ role: "readWrite", db: "blogapp" }]
+        });
+        print("Application user created");
+    } else {
+        print("Application user already exists");
+    }
+'
+"@
 
 try {
-    Invoke-BastionSsh -VmId $DbVm1Id -Command $appUserCmd 2>$null
+    Invoke-VMCommand -ResourceGroupName $ResourceGroup -VMName $Config.DbVm1Name -Script $appUserScript
 }
 catch {
     Write-LogWarning "Application user may already exist"
@@ -227,20 +268,22 @@ Write-LogInfo "Step 6: Verifying configuration..."
 
 # Verify replica set status
 Write-LogInfo "Checking replica set status..."
-$rsVerifyCmd = 'mongosh --quiet --eval "rs.status().members.forEach(m => print(m.name + \": \" + m.stateStr))"'
-Invoke-BastionSsh -VmId $DbVm1Id -Command $rsVerifyCmd
+$rsVerifyScript = 'mongosh --quiet --eval "rs.status().members.forEach(m => print(m.name + \": \" + m.stateStr))"'
+Invoke-VMCommand -ResourceGroupName $ResourceGroup -VMName $Config.DbVm1Name -Script $rsVerifyScript
 
 # -----------------------------------------------------------------------------
 # Step 7: Verify App Tier Environment Variables
 # -----------------------------------------------------------------------------
 Write-LogInfo "Step 7: Verifying App tier environment variables..."
 
-$AppVm1Id = az vm show -g $ResourceGroup -n $Config.AppVm1Name --query id -o tsv 2>$null
-
-if ($AppVm1Id) {
+try {
+    $AppVm1 = Get-AzVM -ResourceGroupName $ResourceGroup -Name $Config.AppVm1Name -ErrorAction Stop
     Write-LogInfo "Checking /etc/environment on App VM..."
-    $envCmd = "cat /etc/environment | grep -E 'NODE_ENV|MONGODB_URI|ENTRA' || echo 'Environment variables not found'"
-    Invoke-BastionSsh -VmId $AppVm1Id -Command $envCmd
+    $envScript = "cat /etc/environment | grep -E 'NODE_ENV|MONGODB_URI|ENTRA' || echo 'Environment variables not found'"
+    Invoke-VMCommand -ResourceGroupName $ResourceGroup -VMName $Config.AppVm1Name -Script $envScript
+}
+catch {
+    Write-LogWarning "App VM not found or not accessible"
 }
 
 # -----------------------------------------------------------------------------
@@ -248,12 +291,14 @@ if ($AppVm1Id) {
 # -----------------------------------------------------------------------------
 Write-LogInfo "Step 8: Verifying Web tier config.json..."
 
-$WebVm1Id = az vm show -g $ResourceGroup -n $Config.WebVm1Name --query id -o tsv 2>$null
-
-if ($WebVm1Id) {
+try {
+    $WebVm1 = Get-AzVM -ResourceGroupName $ResourceGroup -Name $Config.WebVm1Name -ErrorAction Stop
     Write-LogInfo "Checking /var/www/html/config.json on Web VM..."
-    $configCmd = "cat /var/www/html/config.json 2>/dev/null || echo 'config.json not found'"
-    Invoke-BastionSsh -VmId $WebVm1Id -Command $configCmd
+    $configScript = "cat /var/www/html/config.json 2>/dev/null || echo 'config.json not found'"
+    Invoke-VMCommand -ResourceGroupName $ResourceGroup -VMName $Config.WebVm1Name -Script $configScript
+}
+catch {
+    Write-LogWarning "Web VM not found or not accessible"
 }
 
 # -----------------------------------------------------------------------------
