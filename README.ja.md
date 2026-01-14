@@ -621,9 +621,12 @@ FQDN=$(az network public-ip show \
 
 echo "アプリケーションURL: https://$FQDN"
 
+# フロントエンドクライアントIDを設定（ステップ4のentraFrontendClientIdの値）
+FRONTEND_CLIENT_ID="your-frontend-client-id"  # ← 実際の値に置き換えてください
+
 # リダイレクトURIを更新
 az rest --method PATCH \
-  --uri "https://graph.microsoft.com/v1.0/applications(appId='フロントエンドクライアントID')" \
+  --uri "https://graph.microsoft.com/v1.0/applications(appId='$FRONTEND_CLIENT_ID')" \
   --headers "Content-Type=application/json" \
   --body "{
     \"spa\": {
@@ -652,11 +655,16 @@ $FQDN = $pip.DnsSettings.Fqdn
 
 Write-Host "アプリケーションURL: https://$FQDN"
 
+# フロントエンドクライアントIDを設定（ステップ4のentraFrontendClientIdの値）
+$FrontendClientId = "your-frontend-client-id"  # ← 実際の値に置き換えてください
+
 # Microsoft Graphに接続
 Connect-MgGraph -Scopes "Application.ReadWrite.All"
 
 # アプリ登録のオブジェクトIDを取得（AppIdではなくオブジェクトID）
-$app = Get-MgApplication -Filter "appId eq 'フロントエンドクライアントID'"
+# Microsoft Graph module がインストールされていない場合、以下のコマンドでインストールしてください：
+# Install-Module Microsoft.Graph -Scope CurrentUser
+$app = Get-MgApplication -Filter "appId eq '$FrontendClientId'"
 
 # リダイレクトURIを更新
 $redirectUris = @(
