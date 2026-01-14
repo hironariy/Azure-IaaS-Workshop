@@ -217,7 +217,7 @@ Microsoft Entra ID で **2 つのアプリ登録** を作成する必要があ�
    - 「Microsoft Entra ID」をクリック
 
 3. **アプリ登録を作成**
-   - 左メニューで「アプリの登録」をクリック
+   - 左メニューで「管理」>「アプリの登録」をクリック
    - 「+ 新規登録」ボタンをクリック
 
 4. **アプリを構成**
@@ -341,7 +341,7 @@ Application Gateway で HTTPS を利用するために SSL 証明書が必要で
 **macOS/Linux:**
 ```bash
 # プロジェクトルートに移動
-cd AzureIaaSWorkshop
+cd Azure-IaaS-Workshop
 
 # スクリプトを実行可能にする
 chmod +x scripts/generate-ssl-cert.sh
@@ -353,7 +353,7 @@ chmod +x scripts/generate-ssl-cert.sh
 **Windows PowerShell:**
 ```powershell
 # プロジェクトルートに移動
-cd AzureIaaSWorkshop
+cd Azure-IaaS-Workshop
 
 # 証明書を生成
 .\scripts\generate-ssl-cert.ps1

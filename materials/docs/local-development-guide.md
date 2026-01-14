@@ -223,10 +223,10 @@ Follow these steps to run the application on your local machine.
 
 ```bash
 # Clone the repository
-git clone https://github.com/YOUR_USERNAME/AzureIaaSWorkshop.git
+git clone https://github.com/YOUR_USERNAME/Azure-IaaS-Workshop.git
 
 # Navigate to project folder
-cd AzureIaaSWorkshop
+cd Azure-IaaS-Workshop
 ```
 
 ### Step 2: Start MongoDB

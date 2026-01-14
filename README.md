@@ -211,7 +211,7 @@ You need to create **two app registrations** in Microsoft Entra ID. This is requ
    - Click on "Microsoft Entra ID"
 
 3. **Create App Registration**
-   - In the left menu, click "App registrations"
+   - In the left menu, click "Manage" > "App registrations"
    - Click "+ New registration" button
 
 4. **Configure the App**
@@ -335,7 +335,7 @@ Application Gateway requires an SSL certificate for HTTPS. For this workshop, we
 **macOS/Linux:**
 ```bash
 # Navigate to project root
-cd AzureIaaSWorkshop
+cd Azure-IaaS-Workshop
 
 # Make script executable
 chmod +x scripts/generate-ssl-cert.sh
@@ -347,7 +347,7 @@ chmod +x scripts/generate-ssl-cert.sh
 **Windows PowerShell:**
 ```powershell
 # Navigate to project root
-cd AzureIaaSWorkshop
+cd Azure-IaaS-Workshop
 
 # Generate certificate
 .\scripts\generate-ssl-cert.ps1

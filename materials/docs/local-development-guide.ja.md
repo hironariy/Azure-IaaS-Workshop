@@ -223,10 +223,10 @@ docker --version
 
 ```bash
 # リポジトリをクローン
-git clone https://github.com/YOUR_USERNAME/AzureIaaSWorkshop.git
+git clone https://github.com/YOUR_USERNAME/Azure-IaaS-Workshop.git
 
 # プロジェクトフォルダに移動
-cd AzureIaaSWorkshop
+cd Azure-IaaS-Workshop
 ```
 
 ### ステップ2: MongoDBの起動
