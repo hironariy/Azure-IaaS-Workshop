@@ -858,18 +858,19 @@ cat /opt/blogapp/.env
 $ResourceGroup = "<YOUR_RESOURCE_GROUP>"
 
 # vm-app-az1-prod で Node.js/PM2 と環境を確認
+# Note: 'pm2 list' の代わりに 'pm2 jlist' を使用（コンパクトな JSON 出力）
 Invoke-AzVMRunCommand `
   -ResourceGroupName $ResourceGroup `
   -VMName "vm-app-az1-prod" `
   -CommandId "RunShellScript" `
-  -ScriptString "node --version; pm2 --version; pm2 list; ls -la /opt/blogapp/; cat /opt/blogapp/.env"
+  -ScriptString "node --version; pm2 --version; pm2 jlist; ls -la /opt/blogapp/; cat /opt/blogapp/.env"
 
 # vm-app-az2-prod でも同様に実行
 Invoke-AzVMRunCommand `
   -ResourceGroupName $ResourceGroup `
   -VMName "vm-app-az2-prod" `
   -CommandId "RunShellScript" `
-  -ScriptString "node --version; pm2 --version; pm2 list; ls -la /opt/blogapp/; cat /opt/blogapp/.env"
+  -ScriptString "node --version; pm2 --version; pm2 jlist; ls -la /opt/blogapp/; cat /opt/blogapp/.env"
 ```
 
 ### 2.2 プレースホルダ ヘルスサーバのクリーンアップ
@@ -892,8 +893,9 @@ pm2 save
 ```powershell
 $ResourceGroup = "<YOUR_RESOURCE_GROUP>"
 
+# Note: 'pm2 list' の代わりに 'pm2 jlist' を使用（コンパクトな JSON 出力）
 $cleanupScript = @'
-pm2 list
+pm2 jlist
 pm2 delete blogapp-health 2>/dev/null || true
 pm2 save
 '@
@@ -1078,11 +1080,12 @@ pm2 logs blogapp-api --lines 20
 ```powershell
 $ResourceGroup = "<YOUR_RESOURCE_GROUP>"
 
+# Note: 'pm2 list' の代わりに 'pm2 show' を使用（単一プロセスの詳細出力）
 $startScript = @'
 cd /opt/blogapp
 pm2 start dist/src/app.js --name blogapp-api
 pm2 save
-pm2 list
+pm2 show blogapp-api
 pm2 logs blogapp-api --lines 20
 '@
 
