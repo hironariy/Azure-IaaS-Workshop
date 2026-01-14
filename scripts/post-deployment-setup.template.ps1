@@ -88,14 +88,22 @@ function Invoke-BastionSsh {
         [string]$Command
     )
     
-    az network bastion ssh `
-        --name $Config.BastionName `
-        -g $ResourceGroup `
-        --target-resource-id $VmId `
-        --auth-type "ssh-key" `
-        --username $Config.Username `
-        --ssh-key $Config.SshKey `
-        -- -o StrictHostKeyChecking=no -t $Command
+    # Note: The command must be passed as a single quoted string after -t
+    # Using Start-Process to capture output properly
+    $sshArgs = @(
+        "network", "bastion", "ssh",
+        "--name", $Config.BastionName,
+        "-g", $ResourceGroup,
+        "--target-resource-id", $VmId,
+        "--auth-type", "ssh-key",
+        "--username", $Config.Username,
+        "--ssh-key", $Config.SshKey,
+        "--",
+        "-o", "StrictHostKeyChecking=no",
+        "-t", $Command
+    )
+    
+    az @sshArgs
 }
 
 # =============================================================================
@@ -158,6 +166,7 @@ Write-LogInfo "Step 3: Initializing MongoDB replica set..."
 
 # Check if replica set is already initialized
 $rsStatusCmd = "mongosh --quiet --eval 'rs.status().ok' 2>/dev/null || echo '0'"
+Write-LogInfo "Checking replica set status via Bastion SSH..."
 $rsStatus = Invoke-BastionSsh -VmId $DbVm1Id -Command $rsStatusCmd 2>$null
 
 if ($rsStatus -match "1") {
@@ -166,15 +175,8 @@ if ($rsStatus -match "1") {
 else {
     Write-LogInfo "Initializing replica set $($Config.ReplicaSetName)..."
     
-    $initCmd = @"
-mongosh --quiet --eval 'rs.initiate({
-    _id: "$($Config.ReplicaSetName)",
-    members: [
-        { _id: 0, host: "$($Config.DbVm1Ip):27017", priority: 2 },
-        { _id: 1, host: "$($Config.DbVm2Ip):27017", priority: 1 }
-    ]
-})'
-"@
+    # Use single-line command to avoid PowerShell string escaping issues
+    $initCmd = "mongosh --quiet --eval 'rs.initiate({ _id: `"$($Config.ReplicaSetName)`", members: [{ _id: 0, host: `"$($Config.DbVm1Ip):27017`", priority: 2 }, { _id: 1, host: `"$($Config.DbVm2Ip):27017`", priority: 1 }] })'"
     
     Invoke-BastionSsh -VmId $DbVm1Id -Command $initCmd
     
@@ -189,23 +191,8 @@ mongosh --quiet --eval 'rs.initiate({
 # -----------------------------------------------------------------------------
 Write-LogInfo "Step 4: Creating MongoDB admin user..."
 
-$adminUserCmd = @"
-mongosh --quiet --eval '
-    db = db.getSiblingDB("admin");
-    if (db.getUser("$($Config.AdminUser)") === null) {
-        db.createUser({
-            user: "$($Config.AdminUser)",
-            pwd: "$($Config.AdminPassword)",
-            roles: [
-                { role: "root", db: "admin" }
-            ]
-        });
-        print("Admin user created");
-    } else {
-        print("Admin user already exists");
-    }
-'
-"@
+# Use single-line command to avoid PowerShell string escaping issues
+$adminUserCmd = "mongosh --quiet --eval 'db = db.getSiblingDB(`"admin`"); if (db.getUser(`"$($Config.AdminUser)`") === null) { db.createUser({ user: `"$($Config.AdminUser)`", pwd: `"$($Config.AdminPassword)`", roles: [{ role: `"root`", db: `"admin`" }] }); print(`"Admin user created`"); } else { print(`"Admin user already exists`"); }'"
 
 try {
     Invoke-BastionSsh -VmId $DbVm1Id -Command $adminUserCmd 2>$null
@@ -221,23 +208,8 @@ Write-LogSuccess "MongoDB admin user ready"
 # -----------------------------------------------------------------------------
 Write-LogInfo "Step 5: Creating MongoDB application user..."
 
-$appUserCmd = @"
-mongosh --quiet --eval '
-    db = db.getSiblingDB("blogapp");
-    if (db.getUser("$($Config.AppUser)") === null) {
-        db.createUser({
-            user: "$($Config.AppUser)",
-            pwd: "$($Config.AppPassword)",
-            roles: [
-                { role: "readWrite", db: "blogapp" }
-            ]
-        });
-        print("Application user created");
-    } else {
-        print("Application user already exists");
-    }
-'
-"@
+# Use single-line command to avoid PowerShell string escaping issues
+$appUserCmd = "mongosh --quiet --eval 'db = db.getSiblingDB(`"blogapp`"); if (db.getUser(`"$($Config.AppUser)`") === null) { db.createUser({ user: `"$($Config.AppUser)`", pwd: `"$($Config.AppPassword)`", roles: [{ role: `"readWrite`", db: `"blogapp`" }] }); print(`"Application user created`"); } else { print(`"Application user already exists`"); }'"
 
 try {
     Invoke-BastionSsh -VmId $DbVm1Id -Command $appUserCmd 2>$null
@@ -255,9 +227,7 @@ Write-LogInfo "Step 6: Verifying configuration..."
 
 # Verify replica set status
 Write-LogInfo "Checking replica set status..."
-$rsVerifyCmd = @'
-mongosh --quiet --eval 'rs.status().members.forEach(m => print(m.name + ": " + m.stateStr))'
-'@
+$rsVerifyCmd = "mongosh --quiet --eval 'rs.status().members.forEach(m => print(m.name + `\": `\" + m.stateStr))'"
 Invoke-BastionSsh -VmId $DbVm1Id -Command $rsVerifyCmd
 
 # -----------------------------------------------------------------------------

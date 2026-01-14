@@ -35,6 +35,16 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
+# Ensure required Azure CLI extensions are installed
+echo -e "${BLUE}Checking Azure CLI extensions...${NC}"
+az config set extension.use_dynamic_install=yes_without_prompt 2>/dev/null || true
+if ! az extension show --name monitor-control-service &>/dev/null; then
+    echo "Installing monitor-control-service extension..."
+    az extension add --name monitor-control-service --yes
+fi
+echo -e "${GREEN}Azure CLI extensions ready${NC}"
+echo ""
+
 # Check arguments
 if [ -z "$1" ]; then
     echo -e "${RED}Error: Resource group name required${NC}"
@@ -66,12 +76,57 @@ LOG_ANALYTICS_WORKSPACE_NAME=$(echo "$LOG_ANALYTICS_WORKSPACE" | jq -r '.name')
 
 echo "Found Log Analytics Workspace: $LOG_ANALYTICS_WORKSPACE_NAME"
 
-# Wait for tables to initialize
-echo -e "${YELLOW}Waiting 60 seconds for Log Analytics tables (Syslog, Perf) to initialize...${NC}"
-echo "This is necessary because new workspaces don't have tables immediately."
-sleep 60
+# Function to check if required tables exist
+check_tables_ready() {
+    local WS_NAME=$1
+    local RG=$2
+    
+    # Check Syslog table
+    if ! az monitor log-analytics workspace table show \
+           --resource-group "$RG" \
+           --workspace-name "$WS_NAME" \
+           --name Syslog &>/dev/null; then
+        return 1
+    fi
+    
+    # Check Perf table
+    if ! az monitor log-analytics workspace table show \
+           --resource-group "$RG" \
+           --workspace-name "$WS_NAME" \
+           --name Perf &>/dev/null; then
+        return 1
+    fi
+    
+    return 0
+}
+
+# Wait for tables to initialize with timeout
+echo -e "${YELLOW}Checking if Log Analytics tables (Syslog, Perf) are initialized...${NC}"
+echo "This may take 1-5 minutes for newly created workspaces."
+echo ""
+
+MAX_ATTEMPTS=30  # 30 attempts * 10 seconds = 5 minutes max
+ATTEMPT=1
+
+while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
+    if check_tables_ready "$LOG_ANALYTICS_WORKSPACE_NAME" "$RESOURCE_GROUP"; then
+        echo -e "${GREEN}✓ Log Analytics tables are ready!${NC}"
+        break
+    fi
+    
+    if [ $ATTEMPT -eq $MAX_ATTEMPTS ]; then
+        echo -e "${RED}Error: Timeout waiting for Log Analytics tables to initialize.${NC}"
+        echo "Please wait a few more minutes and run this script again."
+        exit 1
+    fi
+    
+    echo -e "  Attempt $ATTEMPT/$MAX_ATTEMPTS: Tables not ready yet. Waiting 10 seconds..."
+    sleep 10
+    ATTEMPT=$((ATTEMPT + 1))
+done
 
 # Check if DCR already exists
+echo -e "${BLUE}Checking if DCR already exists...${NC}"
 EXISTING_DCR=$(az monitor data-collection rule show \
     --resource-group "$RESOURCE_GROUP" \
     --name "$DCR_NAME" 2>/dev/null || echo "")
@@ -81,28 +136,86 @@ if [ -n "$EXISTING_DCR" ]; then
     az monitor data-collection rule delete \
         --resource-group "$RESOURCE_GROUP" \
         --name "$DCR_NAME" \
-        --yes
+        --yes \
+        --output none
+    echo "Waiting for deletion to complete..."
     sleep 5
 fi
 
 echo -e "${GREEN}Creating Data Collection Rule: $DCR_NAME${NC}"
+echo "This may take 1-2 minutes..."
 
-# Create DCR using Azure CLI
-az monitor data-collection rule create \
-    --resource-group "$RESOURCE_GROUP" \
-    --name "$DCR_NAME" \
-    --location "$LOCATION" \
-    --kind "Linux" \
-    --description "Data Collection Rule for Azure IaaS Workshop VMs" \
-    --log-analytics "name=logAnalyticsDestination workspaceResourceId=$LOG_ANALYTICS_WORKSPACE_ID" \
-    --syslog "name=syslogDataSource streams=Microsoft-Syslog facilityNames=[auth,authpriv,daemon,syslog,user] logLevels=[Debug,Info,Notice,Warning,Error,Critical,Alert,Emergency]" \
-    --performance-counters "name=perfCounterDataSource streams=Microsoft-Perf samplingFrequencyInSeconds=60 counterSpecifiers=['Processor(*)\\% Processor Time','Processor(*)\\% User Time','Processor(*)\\% Idle Time','Memory(*)\\% Used Memory','Memory(*)\\Available MBytes Memory','LogicalDisk(*)\\% Used Space','LogicalDisk(*)\\Free Megabytes','Network(*)\\Total Bytes Transmitted','Network(*)\\Total Bytes Received']" \
-    --data-flows "streams=[Microsoft-Syslog] destinations=[logAnalyticsDestination]" \
-    --data-flows "streams=[Microsoft-Perf] destinations=[logAnalyticsDestination]"
+# Create DCR JSON configuration file
+DCR_JSON_FILE=$(mktemp)
+cat > "$DCR_JSON_FILE" << EOF
+{
+    "location": "$LOCATION",
+    "kind": "Linux",
+    "properties": {
+        "description": "Data Collection Rule for Azure IaaS Workshop VMs",
+        "dataSources": {
+            "syslog": [
+                {
+                    "name": "syslogDataSource",
+                    "streams": ["Microsoft-Syslog"],
+                    "facilityNames": ["auth", "authpriv", "daemon", "syslog", "user"],
+                    "logLevels": ["Debug", "Info", "Notice", "Warning", "Error", "Critical", "Alert", "Emergency"]
+                }
+            ],
+            "performanceCounters": [
+                {
+                    "name": "perfCounterDataSource",
+                    "streams": ["Microsoft-Perf"],
+                    "samplingFrequencyInSeconds": 60,
+                    "counterSpecifiers": [
+                        "Processor(*)\\\\% Processor Time",
+                        "Processor(*)\\\\% User Time",
+                        "Processor(*)\\\\% Idle Time",
+                        "Memory(*)\\\\% Used Memory",
+                        "Memory(*)\\\\Available MBytes Memory",
+                        "LogicalDisk(*)\\\\% Used Space",
+                        "LogicalDisk(*)\\\\Free Megabytes",
+                        "Network(*)\\\\Total Bytes Transmitted",
+                        "Network(*)\\\\Total Bytes Received"
+                    ]
+                }
+            ]
+        },
+        "destinations": {
+            "logAnalytics": [
+                {
+                    "name": "logAnalyticsDestination",
+                    "workspaceResourceId": "$LOG_ANALYTICS_WORKSPACE_ID"
+                }
+            ]
+        },
+        "dataFlows": [
+            {
+                "streams": ["Microsoft-Syslog"],
+                "destinations": ["logAnalyticsDestination"]
+            },
+            {
+                "streams": ["Microsoft-Perf"],
+                "destinations": ["logAnalyticsDestination"]
+            }
+        ]
+    }
+}
+EOF
+
+# Create DCR using REST API (more reliable than CLI shorthand)
+az rest --method PUT \
+    --uri "https://management.azure.com/subscriptions/$(az account show --query id -o tsv)/resourceGroups/$RESOURCE_GROUP/providers/Microsoft.Insights/dataCollectionRules/$DCR_NAME?api-version=2022-06-01" \
+    --body @"$DCR_JSON_FILE" \
+    --output none
+
+# Clean up temp file
+rm -f "$DCR_JSON_FILE"
 
 echo -e "${GREEN}DCR created successfully!${NC}"
 
 # Get DCR ID
+echo -e "${BLUE}Getting DCR ID...${NC}"
 DCR_ID=$(az monitor data-collection rule show \
     --resource-group "$RESOURCE_GROUP" \
     --name "$DCR_NAME" \
@@ -114,6 +227,7 @@ echo -e "${BLUE}DCR ID: $DCR_ID${NC}"
 echo ""
 echo -e "${GREEN}=== Associating DCR with VMs ===${NC}"
 
+echo "Fetching VM list..."
 VM_LIST=$(az vm list --resource-group "$RESOURCE_GROUP" --query "[].{name:name,id:id}" -o json)
 VM_COUNT=$(echo "$VM_LIST" | jq length)
 
@@ -129,23 +243,18 @@ else
         
         echo -e "${BLUE}Associating DCR with VM: $VM_NAME${NC}"
         
-        # Check if association already exists
-        EXISTING_ASSOC=$(az monitor data-collection rule association list \
+        # Delete existing association if exists (faster than checking first)
+        az monitor data-collection rule association delete \
+            --name "$ASSOCIATION_NAME" \
             --resource "$VM_ID" \
-            --query "[?name=='$ASSOCIATION_NAME']" -o json 2>/dev/null || echo "[]")
-        
-        if [ "$(echo "$EXISTING_ASSOC" | jq length)" -gt 0 ]; then
-            echo "  Association already exists, updating..."
-            az monitor data-collection rule association delete \
-                --name "$ASSOCIATION_NAME" \
-                --resource "$VM_ID" \
-                --yes 2>/dev/null || true
-        fi
+            --yes \
+            --output none 2>/dev/null || true
         
         az monitor data-collection rule association create \
             --name "$ASSOCIATION_NAME" \
             --resource "$VM_ID" \
-            --rule-id "$DCR_ID"
+            --rule-id "$DCR_ID" \
+            --output none
         
         echo -e "  ${GREEN}✓ Associated${NC}"
     done
