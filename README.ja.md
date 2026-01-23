@@ -677,6 +677,31 @@ Update-MgApplication -ApplicationId $app.Id -Spa @{RedirectUris = $redirectUris}
 Write-Host "リダイレクトURIを更新しました"
 ```
 
+> **⚠️ 管理者の同意が必要:** `Application.ReadWrite.All` スコープにはテナント管理者の承認が必要です。「管理者の承認が必要」というエラーが表示された場合は、以下の代替方法を使用してください。
+
+**代替方法1: Azure Portal での手動設定（推奨）**
+
+この方法は、アプリ登録の所有者であれば特別な権限は不要です：
+
+1. [Azure Portal](https://portal.azure.com) にアクセス
+2. **Microsoft Entra ID** → **アプリの登録** → **BlogApp Frontend (Dev)** に移動
+3. 左メニューの **認証** をクリック
+4. **シングルページ アプリケーション** セクションで、**URI の追加** をクリックし、以下を追加：
+   - `https://<YOUR_FQDN>`（Application Gateway の FQDN に置き換え）
+   - `https://<YOUR_FQDN>/`
+5. **保存** をクリック
+
+**代替方法2: 管理者の同意を依頼**
+
+PowerShell を使用したい場合は、テナント管理者に以下を依頼してください：
+
+1. **Azure Portal** → **Microsoft Entra ID** → **エンタープライズ アプリケーション** に移動
+2. **Microsoft Graph Command Line Tools** を検索
+3. 左メニューの **アクセス許可** をクリック
+4. **[組織名] に管理者の同意を与えます** をクリック
+
+管理者の同意が付与された後、上記の PowerShell コマンドを実行できます。
+
 #### ステップ9: アプリケーションコードのデプロイ
 
 **App VMにバックエンドをデプロイ:**

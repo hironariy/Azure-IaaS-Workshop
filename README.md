@@ -660,6 +660,31 @@ $redirectUris = @(
 Update-MgApplication -ApplicationId $app.Id -Spa @{RedirectUris = $redirectUris}
 ```
 
+> **⚠️ Admin Consent Required:** The `Application.ReadWrite.All` scope requires tenant administrator approval. If you see a "Need admin approval" error, use one of the alternatives below.
+
+**Alternative 1: Manual Configuration via Azure Portal (Recommended)**
+
+This method doesn't require any special permissions beyond owning the app registration:
+
+1. Go to [Azure Portal](https://portal.azure.com)
+2. Navigate to **Microsoft Entra ID** → **App registrations** → **BlogApp Frontend (Dev)**
+3. Click **Authentication** in the left menu
+4. Under **Single-page application**, click **Add URI** and add:
+   - `https://<YOUR_FQDN>` (replace with your Application Gateway FQDN)
+   - `https://<YOUR_FQDN>/`
+5. Click **Save**
+
+**Alternative 2: Request Admin Consent**
+
+If you prefer using PowerShell, ask your tenant administrator to:
+
+1. Go to **Azure Portal** → **Microsoft Entra ID** → **Enterprise applications**
+2. Search for **Microsoft Graph Command Line Tools**
+3. Click **Permissions** in the left menu
+4. Click **Grant admin consent for [Organization Name]**
+
+After admin consent is granted, you can run the PowerShell commands above.
+
 > **💡 Alternative:** You can also update redirect URIs manually in Azure Portal:
 > 1. Go to **Microsoft Entra ID** → **App registrations** → **BlogApp Frontend (Dev)**
 > 2. Click **Authentication** in the left menu

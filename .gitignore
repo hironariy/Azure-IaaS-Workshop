@@ -5,6 +5,8 @@
 *.pfx
 cert-base64.txt
 AIdocs/agent-instructions/How-to-access-to-Azure-VMs-via-Bastion.md
+misc/*
+.DS_Store
 
 # =============================================================================
 # Bicep Parameter Files with Personal/Sensitive Values
