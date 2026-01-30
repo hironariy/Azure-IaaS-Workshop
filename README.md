@@ -306,7 +306,7 @@ You need to create **two app registrations** in Microsoft Entra ID. This is requ
    - Also used as `VITE_API_CLIENT_ID` (for frontend)
 
 5. **Expose an API Scope**
-   - In the left menu, click "Expose an API"
+   - In the left menu, click "Manage" > "Expose an API"
    - Click "Add a scope"
    - If asked for Application ID URI, click "Save and continue" (accept default)
    - Configure the scope:
