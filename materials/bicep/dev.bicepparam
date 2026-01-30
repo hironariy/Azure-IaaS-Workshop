@@ -29,6 +29,34 @@ param sshPublicKey = ''  // Add your SSH public key
 param adminObjectId = ''  // Add your Object ID
 
 // =============================================================================
+// Microsoft Entra ID - Authentication Configuration
+// =============================================================================
+// These parameters configure authentication for both frontend and backend
+// Reference: /design/AzureArchitectureDesign.md - Bicep Parameter Flow
+// =============================================================================
+
+// Microsoft Entra tenant ID (shared by all apps)
+// Get with: az account show --query tenantId -o tsv
+param entraTenantId = ''  // REQUIRED: Add your Entra tenant ID here
+
+// Microsoft Entra client ID - Backend API (registered app)
+// Get from Azure Portal > App registrations > Backend API > Application (client) ID
+param entraClientId = ''  // REQUIRED: Add your backend API client ID here
+
+// Microsoft Entra client ID - Frontend SPA (registered app)
+// Get from Azure Portal > App registrations > Frontend SPA > Application (client) ID
+param entraFrontendClientId = ''  // REQUIRED: Add your frontend SPA client ID here
+
+
+// =============================================================================
+// MongoDB Application Password
+// =============================================================================
+// IMPORTANT: Use the SAME password in the post-deployment setup script!
+// =============================================================================
+
+param mongoDbAppPassword = ''  // Add MongoDB app password (must match post-deployment script)
+
+// =============================================================================
 // Cost Optimization - Disable expensive resources
 // =============================================================================
 

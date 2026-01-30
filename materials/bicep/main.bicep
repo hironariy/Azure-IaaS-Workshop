@@ -152,6 +152,18 @@ param sslCertificatePassword string = ''
 param appGatewayDnsLabel string = ''
 
 // =============================================================================
+// MongoDB Application Password
+// =============================================================================
+// IMPORTANT: This password is used in the Backend API connection string.
+// You must use the SAME password when running the post-deployment setup script.
+// Reference: Issue #1 - Password synchronization between Bicep and scripts
+// =============================================================================
+
+@description('Password for MongoDB application user (blogapp). Must match the password used in post-deployment-setup script.')
+@secure()
+param mongoDbAppPassword string
+
+// =============================================================================
 // Variables
 // =============================================================================
 var defaultTags = {
@@ -438,6 +450,7 @@ module appTier 'modules/compute/app-tier.bicep' = {
     dataCollectionRuleId: ''  // DCR created post-deployment via scripts/configure-dcr.sh
     entraTenantId: entraTenantId
     entraClientId: entraClientId
+    mongoDbAppPassword: mongoDbAppPassword  // Issue #1: Synchronized password
     forceUpdateTag: forceUpdateTagApp
     skipVmCreation: skipVmCreationApp
     tags: allTags

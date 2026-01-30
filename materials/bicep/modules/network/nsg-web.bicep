@@ -163,10 +163,11 @@ resource nsg 'Microsoft.Network/networkSecurityGroups@2023-11-01' = {
       // =========================================================================
       
       // Allow outbound to App tier (port 3000 - Express API)
+      // NOTE: Priority 200 leaves 100-199 reserved for test/override rules (see Issue #16)
       {
         name: 'AllowOutboundToAppTier'
         properties: {
-          priority: 100
+          priority: 200
           direction: 'Outbound'
           access: 'Allow'
           protocol: 'Tcp'
@@ -182,7 +183,7 @@ resource nsg 'Microsoft.Network/networkSecurityGroups@2023-11-01' = {
       {
         name: 'AllowOutboundToAzureServices'
         properties: {
-          priority: 200
+          priority: 300
           direction: 'Outbound'
           access: 'Allow'
           protocol: 'Tcp'
@@ -198,7 +199,7 @@ resource nsg 'Microsoft.Network/networkSecurityGroups@2023-11-01' = {
       {
         name: 'AllowDNS'
         properties: {
-          priority: 300
+          priority: 400
           direction: 'Outbound'
           access: 'Allow'
           protocol: 'Udp'
@@ -214,7 +215,7 @@ resource nsg 'Microsoft.Network/networkSecurityGroups@2023-11-01' = {
       {
         name: 'AllowNTP'
         properties: {
-          priority: 310
+          priority: 410
           direction: 'Outbound'
           access: 'Allow'
           protocol: 'Udp'
@@ -230,7 +231,7 @@ resource nsg 'Microsoft.Network/networkSecurityGroups@2023-11-01' = {
       {
         name: 'AllowHTTPOutbound'
         properties: {
-          priority: 400
+          priority: 500
           direction: 'Outbound'
           access: 'Allow'
           protocol: 'Tcp'
@@ -246,7 +247,7 @@ resource nsg 'Microsoft.Network/networkSecurityGroups@2023-11-01' = {
       {
         name: 'AllowHTTPSOutbound'
         properties: {
-          priority: 410
+          priority: 510
           direction: 'Outbound'
           access: 'Allow'
           protocol: 'Tcp'

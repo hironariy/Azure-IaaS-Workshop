@@ -1042,6 +1042,8 @@ pm2 logs blogapp-api --lines 20
 
 ### 2.7 ヘルスチェック検証
 
+#### 2.7.1 基本ヘルスチェック
+
 **macOS/Linux (Bastion 経由 SSH):**
 ```bash
 # Test local health endpoint
@@ -1069,6 +1071,89 @@ Invoke-AzVMRunCommand `
   -CommandId "RunShellScript" `
   -ScriptString "curl http://localhost:3000/health; curl http://10.0.2.10:3000/health"
 ```
+
+#### 2.7.2 アプリケーション機能検証
+
+ヘルスエンドポイントは MongoDB 接続に失敗しても "healthy" を返す場合があります。実際の API 機能をテストしてください：
+
+**macOS/Linux (Bastion 経由 SSH):**
+```bash
+# 実際の API 機能をテスト（MongoDB 接続を検証）
+curl http://localhost:3000/api/posts
+# 期待される結果: [] (空の配列) または投稿リスト
+
+# 他の VM からテスト（内部 LB IP 経由）
+curl http://10.0.2.10:3000/api/posts
+```
+
+**Windows PowerShell (Invoke-AzVMRunCommand):**
+```powershell
+$ResourceGroup = "<YOUR_RESOURCE_GROUP>"
+
+# vm-app-az1-prod で API テスト
+Invoke-AzVMRunCommand `
+  -ResourceGroupName $ResourceGroup `
+  -VMName "vm-app-az1-prod" `
+  -CommandId "RunShellScript" `
+  -ScriptString "curl http://localhost:3000/api/posts"
+```
+
+#### 2.7.3 正常起動時のログ例
+
+PM2 ログを確認して正常起動を検証します：
+
+```bash
+# 正常起動を確認するため PM2 ログを確認
+pm2 logs blogapp-api --lines 30
+```
+
+**正常時の出力例:**
+```
+[INFO] Starting server on port 3000...
+[INFO] Connected to MongoDB replica set: blogapp-rs0
+[INFO] Server is running at http://localhost:3000
+[INFO] Health check available at /health
+```
+
+#### 2.7.4 トラブルシューティング: MongoDB 認証エラー
+
+**以下のような認証エラーが表示された場合：**
+```
+MongoServerError: Authentication failed
+MongoServerError: bad auth : authentication failed
+```
+
+**MongoDB クレデンシャルを検証:**
+
+```bash
+# 1. .env ファイルに正しい MONGODB_URI が設定されているか確認
+cat /opt/blogapp/.env | grep MONGODB_URI
+
+# 2. MongoDB ユーザーが DB VM 上に存在するか確認
+# Bastion 経由で DB VM に接続し、実行:
+mongosh admin --eval "db.getUsers()" | grep blogapp
+
+# 3. MongoDB 接続を直接テスト
+mongosh "mongodb://blogapp:<PASSWORD>@10.0.3.4:27017,10.0.3.5:27017/blogapp?replicaSet=blogapp-rs0&authSource=admin" --eval "db.runCommand({ping:1})"
+
+# 4. ユーザーが存在しない場合、作成（プライマリ DB VM 上で）:
+mongosh admin --eval '
+db.createUser({
+  user: "blogapp",
+  pwd: "<YOUR_APP_PASSWORD>",
+  roles: [{ role: "readWrite", db: "blogapp" }]
+})'
+```
+
+#### 2.7.5 検証チェックリスト
+
+| 確認項目 | コマンド | 期待される結果 |
+|---------|---------|----------------|
+| ヘルスエンドポイント | `curl localhost:3000/health` | `{"status":"healthy"}` |
+| API 機能 | `curl localhost:3000/api/posts` | `[]` または JSON 配列 |
+| PM2 プロセス | `pm2 list` | `blogapp-api` ステータス `online` |
+| PM2 ログ | `pm2 logs blogapp-api --lines 10` | エラーなし、"Connected to MongoDB" |
+| 内部 LB | `curl 10.0.2.10:3000/health` | `{"status":"healthy"}` |
 
 ---
 
@@ -1366,17 +1451,46 @@ curl -k https://<YOUR_APPGW_FQDN>/api/posts
 ```
 
 **Windows PowerShell:**
-```powershell
-# Test via FQDN (skip certificate verification for self-signed cert)
-[System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
 
-# Test HTTPS access
+> **📝 PowerShell バージョンについて:** `-SkipCertificateCheck` パラメータは PowerShell 7+ でのみ動作します。
+> Windows PowerShell 5.1（Windows のデフォルト）はこのパラメータをサポートしていません。
+> バージョン確認: `$PSVersionTable.PSVersion`
+
+**オプション 1: curl.exe を使用（すべての PowerShell バージョンで動作 - 推奨）**
+```powershell
+# HTTPS アクセスをテスト（curl.exe は Windows 10+ に含まれています）
+curl.exe -k https://<YOUR_APPGW_FQDN>/
+
+# API エンドポイントをテスト
+curl.exe -k https://<YOUR_APPGW_FQDN>/api/posts
+
+# HTTP→HTTPS リダイレクトをテスト
+curl.exe -I http://<YOUR_APPGW_FQDN>/
+```
+
+**オプション 2: PowerShell 7+（インストール済みの場合）**
+```powershell
+# PowerShell 7 のインストール: winget install Microsoft.PowerShell
+
+# HTTPS アクセスをテスト
 Invoke-RestMethod -Uri "https://<YOUR_APPGW_FQDN>/" -SkipCertificateCheck
 
-# Test API endpoint through Application Gateway
+# API エンドポイントをテスト
 Invoke-RestMethod -Uri "https://<YOUR_APPGW_FQDN>/api/posts" -SkipCertificateCheck
+```
 
-# Test HTTP→HTTPS redirect
+**オプション 3: PowerShell 5.1（Windows デフォルト）**
+```powershell
+# セッション用に証明書検証を一時的に無効化
+[System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
+
+# HTTPS アクセスをテスト（-SkipCertificateCheck なし）
+Invoke-RestMethod -Uri "https://<YOUR_APPGW_FQDN>/"
+
+# API エンドポイントをテスト
+Invoke-RestMethod -Uri "https://<YOUR_APPGW_FQDN>/api/posts"
+
+# HTTP→HTTPS リダイレクトをテスト
 Invoke-WebRequest -Uri "http://<YOUR_APPGW_FQDN>/" -MaximumRedirection 0 -ErrorAction SilentlyContinue
 ```
 

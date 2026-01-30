@@ -1041,6 +1041,8 @@ pm2 logs blogapp-api --lines 20
 
 ### 2.7 Health Check Verification
 
+#### 2.7.1 Basic Health Check
+
 **macOS/Linux (SSH via Bastion):**
 ```bash
 # Test local health endpoint
@@ -1068,6 +1070,89 @@ Invoke-AzVMRunCommand `
   -CommandId "RunShellScript" `
   -ScriptString "curl http://localhost:3000/health; curl http://10.0.2.10:3000/health"
 ```
+
+#### 2.7.2 Application Functionality Verification
+
+The health endpoint may return "healthy" even if MongoDB connection fails. Test actual API functionality:
+
+**macOS/Linux (SSH via Bastion):**
+```bash
+# Test actual API functionality (verifies MongoDB connection)
+curl http://localhost:3000/api/posts
+# Expected: [] (empty array) or list of posts
+
+# Test from other VM (via Internal LB IP)
+curl http://10.0.2.10:3000/api/posts
+```
+
+**Windows PowerShell (Invoke-AzVMRunCommand):**
+```powershell
+$ResourceGroup = "<YOUR_RESOURCE_GROUP>"
+
+# API test on vm-app-az1-prod
+Invoke-AzVMRunCommand `
+  -ResourceGroupName $ResourceGroup `
+  -VMName "vm-app-az1-prod" `
+  -CommandId "RunShellScript" `
+  -ScriptString "curl http://localhost:3000/api/posts"
+```
+
+#### 2.7.3 Expected Successful Startup Logs
+
+Check PM2 logs to verify successful startup:
+
+```bash
+# Check PM2 logs for successful startup
+pm2 logs blogapp-api --lines 30
+```
+
+**Expected output (successful):**
+```
+[INFO] Starting server on port 3000...
+[INFO] Connected to MongoDB replica set: blogapp-rs0
+[INFO] Server is running at http://localhost:3000
+[INFO] Health check available at /health
+```
+
+#### 2.7.4 Troubleshooting: MongoDB Authentication Errors
+
+**If you see authentication errors like:**
+```
+MongoServerError: Authentication failed
+MongoServerError: bad auth : authentication failed
+```
+
+**Verify MongoDB credentials:**
+
+```bash
+# 1. Check .env file has correct MONGODB_URI
+cat /opt/blogapp/.env | grep MONGODB_URI
+
+# 2. Verify MongoDB user exists on DB VM
+# Connect to DB VM via Bastion and run:
+mongosh admin --eval "db.getUsers()" | grep blogapp
+
+# 3. Test MongoDB connection directly
+mongosh "mongodb://blogapp:<PASSWORD>@10.0.3.4:27017,10.0.3.5:27017/blogapp?replicaSet=blogapp-rs0&authSource=admin" --eval "db.runCommand({ping:1})"
+
+# 4. If user doesn't exist, create it (on primary DB VM):
+mongosh admin --eval '
+db.createUser({
+  user: "blogapp",
+  pwd: "<YOUR_APP_PASSWORD>",
+  roles: [{ role: "readWrite", db: "blogapp" }]
+})'
+```
+
+#### 2.7.5 Complete Verification Checklist
+
+| Check | Command | Expected Result |
+|-------|---------|-----------------|
+| Health endpoint | `curl localhost:3000/health` | `{"status":"healthy"}` |
+| API functionality | `curl localhost:3000/api/posts` | `[]` or JSON array |
+| PM2 process | `pm2 list` | `blogapp-api` status `online` |
+| PM2 logs | `pm2 logs blogapp-api --lines 10` | No errors, "Connected to MongoDB" |
+| Internal LB | `curl 10.0.2.10:3000/health` | `{"status":"healthy"}` |
 
 ---
 
@@ -1365,15 +1450,44 @@ curl -k https://<YOUR_APPGW_FQDN>/api/posts
 ```
 
 **Windows PowerShell:**
+
+> **📝 PowerShell Version Note:** The `-SkipCertificateCheck` parameter only works in PowerShell 7+.
+> Windows PowerShell 5.1 (default on Windows) does not support this parameter.
+> Check your version: `$PSVersionTable.PSVersion`
+
+**Option 1: Use curl.exe (works in all PowerShell versions - Recommended)**
 ```powershell
-# Test via FQDN (skip certificate verification for self-signed cert)
-[System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
+# Test HTTPS access (curl.exe is included in Windows 10+)
+curl.exe -k https://<YOUR_APPGW_FQDN>/
+
+# Test API endpoint
+curl.exe -k https://<YOUR_APPGW_FQDN>/api/posts
+
+# Test HTTP→HTTPS redirect
+curl.exe -I http://<YOUR_APPGW_FQDN>/
+```
+
+**Option 2: PowerShell 7+ (if installed)**
+```powershell
+# Install PowerShell 7: winget install Microsoft.PowerShell
 
 # Test HTTPS access
 Invoke-RestMethod -Uri "https://<YOUR_APPGW_FQDN>/" -SkipCertificateCheck
 
-# Test API endpoint through Application Gateway
+# Test API endpoint
 Invoke-RestMethod -Uri "https://<YOUR_APPGW_FQDN>/api/posts" -SkipCertificateCheck
+```
+
+**Option 3: PowerShell 5.1 (Windows default)**
+```powershell
+# Temporarily disable certificate validation for session
+[System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
+
+# Test HTTPS access (without -SkipCertificateCheck)
+Invoke-RestMethod -Uri "https://<YOUR_APPGW_FQDN>/"
+
+# Test API endpoint
+Invoke-RestMethod -Uri "https://<YOUR_APPGW_FQDN>/api/posts"
 
 # Test HTTP→HTTPS redirect
 Invoke-WebRequest -Uri "http://<YOUR_APPGW_FQDN>/" -MaximumRedirection 0 -ErrorAction SilentlyContinue

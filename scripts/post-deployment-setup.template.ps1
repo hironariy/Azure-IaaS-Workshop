@@ -35,6 +35,8 @@ $Config = @{
     AdminUser      = "blogadmin"
     AdminPassword  = "<YOUR_MONGODB_ADMIN_PASSWORD>"
     AppUser        = "blogapp"
+    # ⚠️ IMPORTANT: This password MUST match the 'mongoDbAppPassword' parameter in your .bicepparam file!
+    # If these don't match, the backend API will fail to connect to MongoDB.
     AppPassword    = "<YOUR_MONGODB_APP_PASSWORD>"
 
     # VM Names (change if using different naming convention)

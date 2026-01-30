@@ -78,6 +78,10 @@ param entraTenantId string
 @description('Microsoft Entra client ID for backend API (registered app)')
 param entraClientId string
 
+@description('Password for MongoDB application user. Must match the password used in post-deployment-setup script.')
+@secure()
+param mongoDbAppPassword string
+
 // =============================================================================
 // Variables
 // =============================================================================
@@ -92,7 +96,8 @@ var allTags = union(defaultTags, tags)
 // MongoDB connection string for production
 // Uses blogapp user with credentials created during DB provisioning
 // Reference: /design/DatabaseDesign.md - Section 3.4: Authentication & Users
-var mongoDbUri = 'mongodb://blogapp:BlogAppUser2024@10.0.3.4:27017,10.0.3.5:27017/blogapp?replicaSet=blogapp-rs0&authSource=blogapp'
+// IMPORTANT: mongoDbAppPassword must match the password used in post-deployment script
+var mongoDbUri = 'mongodb://blogapp:${mongoDbAppPassword}@10.0.3.4:27017,10.0.3.5:27017/blogapp?replicaSet=blogapp-rs0&authSource=blogapp'
 
 // Node.js 20 LTS installation script
 // This script:

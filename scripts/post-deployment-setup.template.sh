@@ -43,6 +43,8 @@ REPLICA_SET_NAME="blogapp-rs0"
 ADMIN_USER="blogadmin"
 ADMIN_PASSWORD="<YOUR_MONGODB_ADMIN_PASSWORD>"
 APP_USER="blogapp"
+# ⚠️ IMPORTANT: This password MUST match the 'mongoDbAppPassword' parameter in your .bicepparam file!
+# If these don't match, the backend API will fail to connect to MongoDB.
 APP_PASSWORD="<YOUR_MONGODB_APP_PASSWORD>"
 
 # VM Names (change if using different naming convention)

@@ -129,6 +129,23 @@ Install these tools on your computer:
 | **Bicep CLI** | Latest | Infrastructure as Code | [Install Guide](https://learn.microsoft.com/azure/azure-resource-manager/bicep/install#windows) |
 | **OpenSSL** | Latest | SSL certificate generation | [Download](https://slproweb.com/products/Win32OpenSSL.html) |
 
+> **⏱️ Note: Azure PowerShell Installation Time**  
+> Installing Azure PowerShell modules may take **5-15 minutes**. The progress indicator appears at the **top of the VS Code terminal window** or PowerShell window. Please wait for the installation to complete before proceeding.
+> - Use `-Scope CurrentUser` if you don't have administrator privileges:
+>   ```powershell
+>   Install-Module -Name Az -Repository PSGallery -Force -Scope CurrentUser
+>   ```
+
+> **🔧 Note: OpenSSL PATH Configuration Required**  
+> After installing OpenSSL for Windows, you must add it to your system PATH:
+> 1. Default installation path: `C:\Program Files\OpenSSL-Win64\bin`
+> 2. Add to PATH: **System Properties** → **Environment Variables** → **System variables** → **Path** → **Edit** → **New**
+> 3. Add: `C:\Program Files\OpenSSL-Win64\bin`
+> 4. Restart your terminal/PowerShell window
+> 5. Verify: `openssl version`
+>
+> **💡 Alternative:** The `generate-ssl-cert.ps1` script can use PowerShell's built-in `New-SelfSignedCertificate` if OpenSSL is not available.
+
 > **⚠️ Important: Bicep CLI Required for Windows**  
 > Unlike Azure CLI (which auto-installs Bicep), Azure PowerShell requires manual Bicep CLI installation.
 > 
@@ -171,8 +188,9 @@ git --version
 # Expected: git version 2.x.x
 
 # Check Azure PowerShell
-Get-Module -Name Az -ListAvailable | Select-Object Name, Version
+Get-InstalledModule -Name Az | Select-Object Name, Version
 # Expected: Az 12.x.x or newer
+# 💡 Alternative if above fails: Get-Module -Name Az.* -ListAvailable | Select-Object Name, Version
 
 # Check Bicep CLI
 bicep --version
@@ -394,6 +412,22 @@ Get-AzContext
 Set-AzContext -Subscription "Your Subscription Name"
 ```
 
+> **💡 Multiple Tenants?** If you have access to multiple Entra ID tenants (e.g., personal and work accounts), you may need to specify the tenant explicitly:
+> 
+> **Azure CLI:**
+> ```bash
+> az login --tenant "your-tenant-id-or-domain.onmicrosoft.com"
+> ```
+> 
+> **Azure PowerShell:**
+> ```powershell
+> Connect-AzAccount -Tenant "your-tenant-id"
+> # Or set both tenant and subscription:
+> Set-AzContext -Tenant "your-tenant-id" -Subscription "Your Subscription Name"
+> ```
+> 
+> To find your tenant ID: Azure Portal → Microsoft Entra ID → Overview → Tenant ID
+
 #### Step 2: Generate SSL Certificate
 
 Application Gateway requires an SSL certificate for HTTPS. For this workshop, we'll create a self-signed certificate.
@@ -466,6 +500,10 @@ cd materials/bicep
 
 # Create your local parameter file
 cp main.bicepparam main.local.bicepparam
+
+# Open the file for editing (choose one):
+code main.local.bicepparam    # VS Code (recommended)
+# nano main.local.bicepparam  # Alternative: nano editor
 ```
 
 **Windows PowerShell:**
@@ -475,7 +513,13 @@ cd materials\bicep
 
 # Create your local parameter file
 Copy-Item main.bicepparam main.local.bicepparam
+
+# Open the file for editing (choose one):
+code main.local.bicepparam      # VS Code (recommended)
+# notepad main.local.bicepparam # Alternative: Notepad
 ```
+
+> **💡 Tip:** If `code` command is not recognized, open VS Code, press `Ctrl+Shift+P` (or `Cmd+Shift+P` on Mac), type "Shell Command", and select "Install 'code' command in PATH".
 
 **Edit `main.local.bicepparam`** with your values:
 
@@ -491,9 +535,10 @@ param adminObjectId = 'your-object-id-from-step-3'
 // ============================================================
 // REQUIRED: Microsoft Entra ID Parameters
 // ============================================================
-param entraTenantId = 'your-tenant-id'
-param entraClientId = 'your-backend-api-client-id'
-param entraFrontendClientId = 'your-frontend-client-id'
+// Use the values from Section 2.1.5 "Summary of Values You'll Need"
+param entraTenantId = 'your-tenant-id'                   // ← VITE_ENTRA_TENANT_ID from Section 2.1.5
+param entraClientId = 'your-backend-api-client-id'       // ← ENTRA_CLIENT_ID from Section 2.1.5
+param entraFrontendClientId = 'your-frontend-client-id'  // ← VITE_ENTRA_CLIENT_ID from Section 2.1.5
 
 // ============================================================
 // REQUIRED: Application Gateway SSL/TLS Configuration
@@ -504,6 +549,13 @@ param sslCertificatePassword = 'Workshop2024!'
 
 // Choose a unique DNS label (must be unique in your region)
 param appGatewayDnsLabel = 'blogapp-yourname-1234'
+
+// ============================================================
+// REQUIRED: MongoDB Application Password
+// ============================================================
+// ⚠️ IMPORTANT: Use the SAME password in Step 6 (post-deployment script)!
+// This password connects the backend API to MongoDB.
+param mongoDbAppPassword = 'YourSecurePassword123!'  // Change this!
 ```
 
 > **💡 Choosing a DNS label:** The label must be unique within your Azure region. Try formats like:
@@ -536,22 +588,55 @@ New-AzResourceGroupDeployment `
   -TemplateParameterFile materials\bicep\main.local.bicepparam
 ```
 
-**Wait for deployment to complete.** You can monitor progress in:
-- Terminal output
-- Azure Portal → Resource groups → rg-blogapp-workshop → Deployments
+**Wait for deployment to complete (15-30 minutes).** Here's how to monitor progress:
+
+**Terminal Output:**
+
+During deployment, you'll see:
+```
+ - Running ..
+```
+This "Running .." status is **normal** and indicates deployment is in progress. The dots may not animate - this is expected.
+
+When deployment completes successfully, you'll see JSON output with `"provisioningState": "Succeeded"`.
+
+**Azure Portal (Real-time monitoring):**
+
+1. Go to [Azure Portal](https://portal.azure.com)
+2. Navigate to **Resource groups** → **rg-blogapp-workshop**
+3. Click **Deployments** in the left menu (under "Settings")
+4. You'll see a deployment named **main** with status:
+   - 🔄 **Running** - Deployment in progress (this is normal)
+   - ✅ **Succeeded** - Deployment completed successfully
+   - ❌ **Failed** - Deployment failed (click for details)
+
+> **💡 Tip:** The Azure Portal updates in real-time. You can watch resources being created one by one.
+
+> **⚠️ If deployment seems stuck:** If no progress for more than 10 minutes, check Azure Portal for specific resource status. Don't cancel the deployment - some resources (like Application Gateway) take 10-15 minutes alone.
 
 #### Step 6: Run Post-Deployment Setup
 
 The post-deployment script initializes MongoDB replica set and creates database users.
 
+> **⚠️ IMPORTANT: Password Synchronization**  
+> The `<MONGODB_APP_PASSWORD>` in this script **MUST match** the `mongoDbAppPassword` parameter you set in Step 4.  
+> If they don't match, the backend API will fail to connect to MongoDB.
+
 **macOS/Linux:**
 ```bash
+# Return to project root (from materials/bicep)
+cd ../..
+
 # Navigate to scripts folder
 cd scripts
 
 # Create your local script
 cp post-deployment-setup.template.sh post-deployment-setup.local.sh
 chmod +x post-deployment-setup.local.sh
+
+# Open the file for editing:
+code post-deployment-setup.local.sh    # VS Code (recommended)
+# nano post-deployment-setup.local.sh  # Alternative: nano editor
 
 # Edit the script and replace placeholders:
 # - <RESOURCE_GROUP> → rg-blogapp-workshop
@@ -565,11 +650,18 @@ chmod +x post-deployment-setup.local.sh
 
 **Windows PowerShell:**
 ```powershell
+# Return to project root (from materials/bicep)
+cd ..\..  
+
 # Navigate to scripts folder
 cd scripts
 
 # Create your local script
 Copy-Item post-deployment-setup.template.ps1 post-deployment-setup.local.ps1
+
+# Open the file for editing:
+code post-deployment-setup.local.ps1      # VS Code (recommended)
+# notepad post-deployment-setup.local.ps1 # Alternative: Notepad
 
 # Edit the script and replace placeholders:
 # - <RESOURCE_GROUP> → rg-blogapp-workshop
@@ -633,6 +725,14 @@ az rest --method PATCH \
 ```
 
 **Windows PowerShell:**
+
+> **⏱️ Note: Microsoft Graph Module Installation**  
+> If you need to install the Microsoft Graph module, it may take **5-15 minutes** due to its large size (several hundred MB). You'll see a progress bar during installation.
+> ```powershell
+> Install-Module Microsoft.Graph -Scope CurrentUser -Force
+> ```
+> **Tip:** The Portal method (Alternative 1 below) is faster and doesn't require this module.
+
 ```powershell
 # Get your Application Gateway FQDN
 $pip = Get-AzPublicIpAddress -ResourceGroupName rg-blogapp-workshop -Name pip-agw-blogapp-prod
@@ -704,6 +804,7 @@ Connect to each Web VM via Bastion and deploy the frontend code. See [deployment
 
 #### Step 10: Verify Deployment
 
+**macOS/Linux:**
 ```bash
 # Test HTTPS access (use -k for self-signed certificate)
 curl -k https://$FQDN/
@@ -715,11 +816,35 @@ curl -k https://$FQDN/api/posts
 echo "Open: https://$FQDN"
 ```
 
+**Windows PowerShell:**
+```powershell
+# Test HTTPS access (use curl.exe, not curl alias)
+# Note: In PowerShell, 'curl' is an alias for Invoke-WebRequest.
+# Use 'curl.exe' to run the actual curl command.
+curl.exe -k https://$FQDN/
+
+# Test API endpoint
+curl.exe -k https://$FQDN/api/posts
+
+# Open in browser
+Write-Host "Open: https://$FQDN"
+```
+
+> **📝 Windows Note:** In PowerShell, `curl` is an alias for `Invoke-WebRequest`. Use `curl.exe` to run the actual curl command with the `-k` flag for self-signed certificates.
+
 > **⚠️ Browser Warning:** Your browser will show a certificate warning because we're using a self-signed certificate. This is expected for the workshop. Click "Advanced" → "Proceed" to continue.
 
 **🎉 Congratulations!** Your application is now running on Azure!
 
 #### Cleanup (When Done)
+
+> **⚠️ Wait! Before cleaning up:**
+> 
+> If you want to explore more workshop content, **do NOT delete resources yet**:
+> - **[Section 3: Resiliency Testing](#3-resiliency-testing)** - Practice HA/DR scenarios (recommended)
+> - **[Section 4: Operational Guides](#4-operational-guides)** - Learn monitoring and backup
+> 
+> These sections require the deployed infrastructure. Redeploying takes 45-90 minutes.
 
 To avoid ongoing Azure charges, delete all resources when you're finished:
 
@@ -745,12 +870,50 @@ This section contains exercises for testing the high availability and disaster r
 
 - Completed Azure deployment (Section 2.3)
 - Azure CLI configured and logged in
+- **Azure CLI extensions for Bastion SSH** (required for VM access in tests):
+  ```bash
+  # Install required extensions (one-time setup)
+  az extension add --name bastion
+  az extension add --name ssh
+  
+  # Verify installation
+  az extension list --output table
+  ```
 - Access to Azure Portal for monitoring
 - Application accessible via Application Gateway URL
+
+> **📝 Windows Users:** If you encounter SSL/connection errors in corporate environments, you may need to set:
+> ```powershell
+> $env:AZURE_CLI_DISABLE_CONNECTION_VERIFICATION=1
+> ```
 
 ### 3.1 Core Resiliency Tests (Recommended)
 
 These tests demonstrate automatic failover capabilities without requiring complex manual recovery steps.
+
+> **📝 Windows PowerShell Users - Syntax Differences:**
+> 
+> The commands below use bash/Azure CLI syntax. For PowerShell, make these conversions:
+> 
+> | Bash | PowerShell |
+> |------|------------|
+> | `\` (line continuation) | `` ` `` (backtick) |
+> | `sleep 60` | `Start-Sleep -Seconds 60` |
+> | `curl -k` | `curl.exe -k` |
+> | `curl -I` | `curl.exe -I` |
+> | `$(az vm show ...)` | `$vmId = az vm show ...` then use `$vmId` |
+> | `for i in {1..20}; do cmd; done` | `1..20 \| ForEach-Object { cmd }` |
+> | `> /dev/null 2>&1` | `> $null 2>&1` |
+>
+> **Example - Azure CLI with line continuation:**
+> ```powershell
+> az network application-gateway show-backend-health `
+>   -g rg-blogapp-workshop `
+>   -n agw-blogapp-prod `
+>   --query 'backendAddressPools[0].backendHttpSettingsCollection[0].servers[]'
+> ```
+>
+> **Note:** Azure CLI (`az`) commands work in PowerShell. Only shell-specific syntax (line continuation, sleep, curl) needs conversion.
 
 #### Test 1: Web Tier VM Failure
 
@@ -970,6 +1133,10 @@ sudo nginx -t && sudo systemctl reload nginx
 #### Test 8: Network Partition (NSG-based)
 
 **Objective:** Test behavior when network connectivity is lost between tiers.
+
+> **📝 NSG Rule Priority:** Azure NSG rule priorities range from 100 (highest) to 4096 (lowest).
+> Rules are evaluated in priority order - lower numbers are evaluated first.
+> The infrastructure reserves priorities 100-199 for test/override scenarios.
 
 ```bash
 # 1. Block App Tier → Database Tier traffic

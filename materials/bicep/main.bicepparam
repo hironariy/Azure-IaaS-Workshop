@@ -70,6 +70,18 @@ param sslCertificateData = ''  // REQUIRED: Add base64-encoded PFX certificate h
 // Must match the password used when generating the certificate
 param sslCertificatePassword = ''  // REQUIRED: Add certificate password here
 
+// =============================================================================
+// MongoDB Application Password
+// =============================================================================
+// IMPORTANT: Use the SAME password in the post-deployment setup script!
+// This password is injected into the backend API connection string.
+// =============================================================================
+
+// MongoDB application user password
+// Use a strong password with at least 12 characters
+// Example: Generate with: openssl rand -base64 16
+param mongoDbAppPassword = ''  // REQUIRED: Add MongoDB app password here
+
 // DNS label prefix for Application Gateway public IP
 // Results in FQDN: <label>.<region>.cloudapp.azure.com
 // Example: blogapp-12345 → blogapp-12345.japanwest.cloudapp.azure.com
