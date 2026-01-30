@@ -134,6 +134,7 @@ Engilish version: [README.md](./README.md)
 | **Azure PowerShell** | 12.0以上 | Azure管理 | [インストールガイド](https://docs.microsoft.com/powershell/azure/install-azure-powershell) |
 | **Bicep CLI** | 最新版 | Infrastructure as Code | [インストールガイド](https://learn.microsoft.com/azure/azure-resource-manager/bicep/install#windows) |
 | **OpenSSL** | 最新版 | SSL証明書生成 | [ダウンロード](https://slproweb.com/products/Win32OpenSSL.html) |
+| **Azure CLI** | 2.60+ | デプロイ後の各種テストに利用 | [インストールガイド](https://docs.microsoft.com/cli/azure/install-azure-cli) |
 
 > **⏱️ 注意: Azure PowerShell のインストール時間**  
 > Azure PowerShell モジュールのインストールには **5〜15分** かかる場合があります。進行状況は **VS Code ターミナルウィンドウの上部** または PowerShell ウィンドウの上部に表示されます。インストールが完了するまでお待ちください。

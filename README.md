@@ -128,6 +128,7 @@ Install these tools on your computer:
 | **Azure PowerShell** | 12.0+ | Azure management | [Install Guide](https://docs.microsoft.com/powershell/azure/install-azure-powershell) |
 | **Bicep CLI** | Latest | Infrastructure as Code | [Install Guide](https://learn.microsoft.com/azure/azure-resource-manager/bicep/install#windows) |
 | **OpenSSL** | Latest | SSL certificate generation | [Download](https://slproweb.com/products/Win32OpenSSL.html) |
+| **Azure CLI** | 2.60+ | For test phase after deployment | [Install Guide](https://docs.microsoft.com/cli/azure/install-azure-cli) |
 
 > **⏱️ Note: Azure PowerShell Installation Time**  
 > Installing Azure PowerShell modules may take **5-15 minutes**. The progress indicator appears at the **top of the VS Code terminal window** or PowerShell window. Please wait for the installation to complete before proceeding.
