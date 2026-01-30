@@ -593,6 +593,7 @@ Create the Data Collection Rule to enable VM monitoring:
 
 **Windows PowerShell:**
 ```powershell
+# From project root
 .\scripts\configure-dcr.ps1 -ResourceGroupName rg-blogapp-workshop
 ```
 

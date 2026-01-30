@@ -600,6 +600,7 @@ VM 監視を有効にするために Data Collection Rule を作成します：
 
 **Windows PowerShell:**
 ```powershell
+# プロジェクトルートから実行
 .\scripts\configure-dcr.ps1 -ResourceGroupName rg-blogapp-workshop
 ```
 
