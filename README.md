@@ -327,7 +327,7 @@ You need to create **two app registrations** in Microsoft Entra ID. This is requ
 2. **Add API Permission**
    - In the left menu, click "API permissions"
    - Click "+ Add a permission"
-   - Select "My APIs" tab
+   - Select "APIs my organization uses" tab (If you configure apps with your own account, you may also see "My APIs" tab)
    - Click on "BlogApp API (Dev)"
    - Check the box next to `access_as_user`
    - Click "Add permissions"
