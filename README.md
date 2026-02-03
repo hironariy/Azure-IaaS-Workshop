@@ -678,6 +678,52 @@ When deployment completes successfully, you'll see JSON output with `"provisioni
 
 > **⚠️ If deployment seems stuck:** If no progress for more than 10 minutes, check Azure Portal for specific resource status. Don't cancel the deployment - some resources (like Application Gateway) take 10-15 minutes alone.
 
+#### Deployment Troubleshooting
+
+<details>
+<summary><strong>🔧 VM Size Not Available in Region</strong></summary>
+
+**Error:**
+```
+The requested VM size Standard_B2s is not available in the current region.
+```
+
+**Cause:** Azure VM SKU availability varies by region, availability zone, and subscription type.
+
+**Solution:**
+
+1. **Check available VM sizes in your region:**
+   ```bash
+   # List available B-series VMs
+   az vm list-skus --location japanwest --size Standard_B --output table
+   
+   # Check availability in specific zone
+   az vm list-skus --location japanwest --zone 1 --size Standard_B --output table
+   ```
+
+2. **Update your parameter file** (`main.local.bicepparam`) with available alternatives:
+   ```bicep
+   // Alternative VM sizes (update if defaults are unavailable)
+   param webVmSize = 'Standard_B2als_v2'  // Alternative to Standard_B2s
+   param appVmSize = 'Standard_B2als_v2'  // Alternative to Standard_B2s
+   param dbVmSize = 'Standard_B4as_v2'    // Alternative to Standard_B4ms
+   ```
+
+3. **Alternative VM Size Reference:**
+
+   | Original SKU | Alternatives | vCPU | RAM |
+   |--------------|--------------|------|-----|
+   | Standard_B2s | Standard_B2als_v2, Standard_B2as_v2, Standard_B2ms | 2 | 4-8 GB |
+   | Standard_B4ms | Standard_B4as_v2, Standard_B4als_v2 | 4 | 16 GB |
+
+   > **⚠️ Important for DB Tier:** Ensure the alternative VM size supports Premium SSD for MongoDB performance. Check with:
+   > ```bash
+   > az vm list-skus --location japanwest --size Standard_B4as_v2 \
+   >   --query "[].capabilities[?name=='PremiumIO'].value" --output tsv
+   > ```
+
+</details>
+
 #### Step 6: Run Post-Deployment Setup
 
 The post-deployment script initializes MongoDB replica set and creates database users.
@@ -899,52 +945,6 @@ Write-Host "Open: https://$FQDN"
 > **⚠️ Browser Warning:** Your browser will show a certificate warning because we're using a self-signed certificate. This is expected for the workshop. Click "Advanced" → "Proceed" to continue.
 
 **🎉 Congratulations!** Your application is now running on Azure!
-
-#### Deployment Troubleshooting
-
-<details>
-<summary><strong>🔧 VM Size Not Available in Region</strong></summary>
-
-**Error:**
-```
-The requested VM size Standard_B2s is not available in the current region.
-```
-
-**Cause:** Azure VM SKU availability varies by region, availability zone, and subscription type.
-
-**Solution:**
-
-1. **Check available VM sizes in your region:**
-   ```bash
-   # List available B-series VMs
-   az vm list-skus --location japanwest --size Standard_B --output table
-   
-   # Check availability in specific zone
-   az vm list-skus --location japanwest --zone 1 --size Standard_B --output table
-   ```
-
-2. **Update your parameter file** (`main.local.bicepparam`) with available alternatives:
-   ```bicep
-   // Alternative VM sizes (update if defaults are unavailable)
-   param webVmSize = 'Standard_B2als_v2'  // Alternative to Standard_B2s
-   param appVmSize = 'Standard_B2als_v2'  // Alternative to Standard_B2s
-   param dbVmSize = 'Standard_B4as_v2'    // Alternative to Standard_B4ms
-   ```
-
-3. **Alternative VM Size Reference:**
-
-   | Original SKU | Alternatives | vCPU | RAM |
-   |--------------|--------------|------|-----|
-   | Standard_B2s | Standard_B2als_v2, Standard_B2as_v2, Standard_B2ms | 2 | 4-8 GB |
-   | Standard_B4ms | Standard_B4as_v2, Standard_B4als_v2 | 4 | 16 GB |
-
-   > **⚠️ Important for DB Tier:** Ensure the alternative VM size supports Premium SSD for MongoDB performance. Check with:
-   > ```bash
-   > az vm list-skus --location japanwest --size Standard_B4as_v2 \
-   >   --query "[].capabilities[?name=='PremiumIO'].value" --output tsv
-   > ```
-
-</details>
 
 #### Cleanup (When Done)
 

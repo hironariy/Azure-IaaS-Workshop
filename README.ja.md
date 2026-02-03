@@ -685,6 +685,52 @@ New-AzResourceGroupDeployment `
 
 > **⚠️ デプロイが止まっているように見える場合:** 10分以上進捗がない場合は、Azure Portal で特定のリソースのステータスを確認してください。デプロイをキャンセルしないでください - Application Gateway などのリソースはそれだけで10〜15分かかります。
 
+#### デプロイのトラブルシューティング
+
+<details>
+<summary><strong>🔧 VMサイズがリージョンで利用できない</strong></summary>
+
+**エラー:**
+```
+The requested VM size Standard_B2s is not available in the current region.
+```
+
+**原因:** Azure VM SKUの利用可能性は、リージョン、可用性ゾーン、サブスクリプションの種類によって異なります。
+
+**解決策:**
+
+1. **リージョンで利用可能なVMサイズを確認:**
+   ```bash
+   # 利用可能なBシリーズVMをリスト
+   az vm list-skus --location japanwest --size Standard_B --output table
+   
+   # 特定のゾーンでの利用可能性を確認
+   az vm list-skus --location japanwest --zone 1 --size Standard_B --output table
+   ```
+
+2. **パラメータファイル** (`main.local.bicepparam`) を利用可能な代替サイズで更新:
+   ```bicep
+   // 代替VMサイズ（デフォルトが利用できない場合に更新）
+   param webVmSize = 'Standard_B2als_v2'  // Standard_B2sの代替
+   param appVmSize = 'Standard_B2als_v2'  // Standard_B2sの代替
+   param dbVmSize = 'Standard_B4as_v2'    // Standard_B4msの代替
+   ```
+
+3. **代替VMサイズ参照表:**
+
+   | 元のSKU | 代替 | vCPU | RAM |
+   |---------|------|------|-----|
+   | Standard_B2s | Standard_B2als_v2, Standard_B2as_v2, Standard_B2ms | 2 | 4-8 GB |
+   | Standard_B4ms | Standard_B4as_v2, Standard_B4als_v2 | 4 | 16 GB |
+
+   > **⚠️ DB層の重要事項:** MongoDBのパフォーマンスのため、代替VMサイズがPremium SSDをサポートしていることを確認してください:
+   > ```bash
+   > az vm list-skus --location japanwest --size Standard_B4as_v2 \
+   >   --query "[].capabilities[?name=='PremiumIO'].value" --output tsv
+   > ```
+
+</details>
+
 #### ステップ6: デプロイ後のセットアップを実行
 
 デプロイ後のスクリプトは MongoDB レプリカセットを初期化し、データベース ユーザーを作成します。
@@ -906,52 +952,6 @@ Write-Host "開く: https://$FQDN"
 > **⚠️ ブラウザ警告:** 自己署名証明書を使用しているため、ブラウザは証明書の警告を表示します。これはワークショップでは想定内です。「詳細設定」→「続行」をクリックして続けてください。
 
 **🎉 おめでとうございます！** アプリケーションがAzureで実行されています！
-
-#### デプロイのトラブルシューティング
-
-<details>
-<summary><strong>🔧 VMサイズがリージョンで利用できない</strong></summary>
-
-**エラー:**
-```
-The requested VM size Standard_B2s is not available in the current region.
-```
-
-**原因:** Azure VM SKUの利用可能性は、リージョン、可用性ゾーン、サブスクリプションの種類によって異なります。
-
-**解決策:**
-
-1. **リージョンで利用可能なVMサイズを確認:**
-   ```bash
-   # 利用可能なBシリーズVMをリスト
-   az vm list-skus --location japanwest --size Standard_B --output table
-   
-   # 特定のゾーンでの利用可能性を確認
-   az vm list-skus --location japanwest --zone 1 --size Standard_B --output table
-   ```
-
-2. **パラメータファイル** (`main.local.bicepparam`) を利用可能な代替サイズで更新:
-   ```bicep
-   // 代替VMサイズ（デフォルトが利用できない場合に更新）
-   param webVmSize = 'Standard_B2als_v2'  // Standard_B2sの代替
-   param appVmSize = 'Standard_B2als_v2'  // Standard_B2sの代替
-   param dbVmSize = 'Standard_B4as_v2'    // Standard_B4msの代替
-   ```
-
-3. **代替VMサイズ参照表:**
-
-   | 元のSKU | 代替 | vCPU | RAM |
-   |---------|------|------|-----|
-   | Standard_B2s | Standard_B2als_v2, Standard_B2as_v2, Standard_B2ms | 2 | 4-8 GB |
-   | Standard_B4ms | Standard_B4as_v2, Standard_B4als_v2 | 4 | 16 GB |
-
-   > **⚠️ DB層の重要事項:** MongoDBのパフォーマンスのため、代替VMサイズがPremium SSDをサポートしていることを確認してください:
-   > ```bash
-   > az vm list-skus --location japanwest --size Standard_B4as_v2 \
-   >   --query "[].capabilities[?name=='PremiumIO'].value" --output tsv
-   > ```
-
-</details>
 
 #### クリーンアップ（完了時）
 
