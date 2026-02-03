@@ -892,7 +892,7 @@ Write-Host "リダイレクトURIを更新しました"
 
 1. [Azure Portal](https://portal.azure.com) にアクセス
 2. **Microsoft Entra ID** → **アプリの登録** → **BlogApp Frontend (Dev)** に移動
-3. 左メニューの **認証** をクリック
+3. 左メニューの **Authentication (Preview)** をクリック
 4. **シングルページ アプリケーション** セクションで、**URI の追加** をクリックし、以下を追加：
    - `https://<YOUR_FQDN>`（Application Gateway の FQDN に置き換え）
    - `https://<YOUR_FQDN>/`
