@@ -860,11 +860,11 @@ After admin consent is granted, you can run the PowerShell commands above.
 
 **Deploy Backend to App VMs:**
 
-Connect to each App VM via Bastion and deploy the backend code. See [deployment-strategy.md](AIdocs/dev-record/deployment-strategy.md) Phase 2 for detailed steps.
+Connect to each App VM via Bastion and deploy the backend code. See [deployment-strategy.md](AIdocs/dev-record/deployment-strategy.md#phase-2-backend-tier-deployment) Phase 2 for detailed steps.
 
 **Deploy Frontend to Web VMs:**
 
-Connect to each Web VM via Bastion and deploy the frontend code. See [deployment-strategy.md](AIdocs/dev-record/deployment-strategy.md) Phase 3 for detailed steps.
+Connect to each Web VM via Bastion and deploy the frontend code. See [deployment-strategy.md](AIdocs/dev-record/deployment-strategy.md#phase-3-frontend-tier-deployment) Phase 3 for detailed steps.
 
 #### Step 10: Verify Deployment
 

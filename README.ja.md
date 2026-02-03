@@ -867,11 +867,11 @@ PowerShell を使用したい場合は、テナント管理者に以下を依頼
 
 **App VMにバックエンドをデプロイ:**
 
-Bastion 経由で各 App VM に接続し、バックエンドコードをデプロイします。詳細な手順は [deployment-strategy.ja.md](AIdocs/dev-record/deployment-strategy.ja.md) のフェーズ 2 を参照してください。
+Bastion 経由で各 App VM に接続し、バックエンドコードをデプロイします。詳細な手順は [deployment-strategy.ja.md](AIdocs/dev-record/deployment-strategy.ja.md#phase-2-backend-tier-デプロイ) のフェーズ 2 を参照してください。
 
 **Web VMにフロントエンドをデプロイ:**
 
-Bastion 経由で各 Web VM に接続し、フロントエンドコードをデプロイします。詳細な手順は [deployment-strategy.ja.md](AIdocs/dev-record/deployment-strategy.ja.md) のフェーズ 3 を参照してください。
+Bastion 経由で各 Web VM に接続し、フロントエンドコードをデプロイします。詳細な手順は [deployment-strategy.ja.md](AIdocs/dev-record/deployment-strategy.ja.md#phase-3-frontend-tier-デプロイ) のフェーズ 3 を参照してください。
 
 #### ステップ10: デプロイの確認
 
