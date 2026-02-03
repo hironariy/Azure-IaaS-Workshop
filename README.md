@@ -570,7 +570,7 @@ param appGatewayDnsLabel = 'blogapp-yourname-1234'
 
 When multiple groups deploy to the same Azure subscription, each group needs unique resource names to avoid conflicts.
 
-**Step 1: Set your group identifier**
+**Section 1: Set your group identifier**
 
 In your `main.local.bicepparam` file, set the `groupId` parameter:
 ```bicep
@@ -578,7 +578,7 @@ In your `main.local.bicepparam` file, set the `groupId` parameter:
 param groupId = 'A'  // Set to your assigned group letter (A-J)
 ```
 
-**Step 2: Create resource group with group identifier**
+**Section 2: Create resource group with group identifier**
 
 Use your group letter in the resource group name:
 
@@ -602,7 +602,7 @@ az group create --name rg-blogapp-A-workshop --location japanwest
 New-AzResourceGroup -Name rg-blogapp-A-workshop -Location japanwest
 ```
 
-**Step 3: Deploy using your group's resource group**
+**Section 3: Deploy using your group's resource group**
 
 **macOS/Linux:**
 ```bash
@@ -705,8 +705,9 @@ code post-deployment-setup.local.sh    # VS Code (recommended)
 # Edit the script and replace placeholders:
 # - <RESOURCE_GROUP> → rg-blogapp-workshop
 # - <BASTION_NAME> → bastion-blogapp-prod
-# - <MONGODB_ADMIN_PASSWORD> → Your chosen admin password
-# - <MONGODB_APP_PASSWORD> → Your chosen app password
+# - <PATH_TO_YOUR_SSH_KEY> → Path to your private SSH key which is the pair of public key which you used in Step 4 for main.local.bicepparam (e.g., ~/.ssh/id_rsa)
+# - <MONGODB_ADMIN_PASSWORD> → Your chosen DB admin password
+# - <MONGODB_APP_PASSWORD> → The DB user password you set in Step 4 for mongoDbAppPassword in main.local.bicepparam
 
 # Run the script
 ./post-deployment-setup.local.sh
@@ -729,8 +730,8 @@ code post-deployment-setup.local.ps1      # VS Code (recommended)
 
 # Edit the script and replace placeholders:
 # - <RESOURCE_GROUP> → rg-blogapp-workshop
-# - <MONGODB_ADMIN_PASSWORD> → Your chosen admin password
-# - <MONGODB_APP_PASSWORD> → The password you set in Step 4 for mongoDbAppPassword in main.local.bicepparam
+# - <MONGODB_ADMIN_PASSWORD> → Your chosen DB admin password
+# - <MONGODB_APP_PASSWORD> → The DB user password you set in Step 4 for mongoDbAppPassword in main.local.bicepparam
 
 # Run the script
 .\post-deployment-setup.local.ps1

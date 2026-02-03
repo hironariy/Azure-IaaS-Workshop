@@ -576,7 +576,7 @@ param appGatewayDnsLabel = 'blogapp-yourname-1234'
 
 複数のグループが同じAzureサブスクリプションにデプロイする場合、競合を避けるために各グループは一意のリソース名が必要です。
 
-**ステップ1: グループIDを設定**
+**セクション1: グループIDを設定**
 
 `main.local.bicepparam` ファイルで `groupId` パラメータを設定：
 ```bicep
@@ -584,7 +584,7 @@ param appGatewayDnsLabel = 'blogapp-yourname-1234'
 param groupId = 'A'  // 割り当てられたグループ文字（A-J）を設定
 ```
 
-**ステップ2: グループIDを含むリソースグループを作成**
+**セクション2: グループIDを含むリソースグループを作成**
 
 リソースグループ名にグループ文字を使用：
 
@@ -608,7 +608,7 @@ az group create --name rg-blogapp-A-workshop --location japanwest
 New-AzResourceGroup -Name rg-blogapp-A-workshop -Location japanwest
 ```
 
-**ステップ3: グループのリソースグループを使用してデプロイ**
+**セクション3: グループのリソースグループを使用してデプロイ**
 
 **macOS/Linux:**
 ```bash
@@ -712,8 +712,8 @@ code post-deployment-setup.local.sh    # VS Code（推奨）
 # スクリプトを編集し、プレースホルダーを置き換え:
 # - <RESOURCE_GROUP> → rg-blogapp-workshop
 # - <BASTION_NAME> → bastion-blogapp-prod
-# - <MONGODB_ADMIN_PASSWORD> → 選択した管理者パスワード
-# - <MONGODB_APP_PASSWORD> → 選択したアプリパスワード
+# - <MONGODB_ADMIN_PASSWORD> → 任意のDB管理者パスワード
+# - <MONGODB_APP_PASSWORD> → main.local.bicepparamで設定したDBユーザー用パスワード
 
 # スクリプトを実行
 ./post-deployment-setup.local.sh
