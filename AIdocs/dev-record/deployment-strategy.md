@@ -1010,7 +1010,7 @@ Expected `.env` (all values injected by Bicep):
 NODE_ENV=production
 PORT=3000
 LOG_LEVEL=info
-MONGODB_URI=mongodb://blogapp:BlogApp2024Workshop!@10.0.3.4:27017,10.0.3.5:27017/blogapp?replicaSet=blogapp-rs0&authSource=admin
+MONGODB_URI=mongodb://blogapp:<YourDBAppUserPassword>@10.0.3.4:27017,10.0.3.5:27017/blogapp?replicaSet=blogapp-rs0&authSource=admin
 ENTRA_TENANT_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 ENTRA_CLIENT_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 ```
