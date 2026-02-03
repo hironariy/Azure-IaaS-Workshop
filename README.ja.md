@@ -610,11 +610,22 @@ New-AzResourceGroup -Name rg-blogapp-A-workshop -Location japanwest
 
 **ステップ3: グループのリソースグループを使用してデプロイ**
 
+**macOS/Linux:**
 ```bash
 az deployment group create \
   --resource-group rg-blogapp-A-workshop \  # 自分のグループのRGを使用
   --template-file materials/bicep/main.bicep \
   --parameters materials/bicep/main.local.bicepparam
+```
+
+**Windows PowerShell:**
+```powershell
+# 'A' を自分のグループ文字に置き換えてください
+New-AzResourceGroupDeployment `
+  -ResourceGroupName rg-blogapp-A-workshop `
+  -TemplateFile materials\bicep\main.bicep `
+  -TemplateParameterFile materials\bicep\main.local.bicepparam `
+  -Verbose
 ```
 
 > **注意:** ストレージアカウント、Key Vault、DNSラベルは、リソースグループIDに基づいて一意の識別子を自動的に含むため、グループ間で競合しません。

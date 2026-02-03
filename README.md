@@ -604,11 +604,22 @@ New-AzResourceGroup -Name rg-blogapp-A-workshop -Location japanwest
 
 **Step 3: Deploy using your group's resource group**
 
+**macOS/Linux:**
 ```bash
 az deployment group create \
   --resource-group rg-blogapp-A-workshop \  # Use YOUR group's RG
   --template-file materials/bicep/main.bicep \
   --parameters materials/bicep/main.local.bicepparam
+```
+
+**Windows PowerShell:**
+```powershell
+# Replace 'A' with your assigned group letter
+New-AzResourceGroupDeployment `
+  -ResourceGroupName rg-blogapp-A-workshop `
+  -TemplateFile materials\bicep\main.bicep `
+  -TemplateParameterFile materials\bicep\main.local.bicepparam `
+  -Verbose
 ```
 
 > **Note:** Storage Account, Key Vault, and DNS labels automatically include unique identifiers based on the resource group ID, so they won't conflict between groups.
