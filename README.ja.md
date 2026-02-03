@@ -569,6 +569,58 @@ param mongoDbAppPassword = 'YourSecurePassword123!'  // これを変更してく
 > - `blogapp-yourname-0106`（名前 + 日付）
 > - `blogapp-team1-abc`（チーム + ランダム）
 
+#### マルチグループワークショップ設定（講師主導）
+
+<details>
+<summary><strong>📋 複数のグループ（A-J）が同じサブスクリプションを共有する場合</strong></summary>
+
+複数のグループが同じAzureサブスクリプションにデプロイする場合、競合を避けるために各グループは一意のリソース名が必要です。
+
+**ステップ1: グループIDを設定**
+
+`main.local.bicepparam` ファイルで `groupId` パラメータを設定：
+```bicep
+// マルチグループワークショップサポート
+param groupId = 'A'  // 割り当てられたグループ文字（A-J）を設定
+```
+
+**ステップ2: グループIDを含むリソースグループを作成**
+
+リソースグループ名にグループ文字を使用：
+
+| グループ | リソースグループ名 |
+|---------|-------------------|
+| A | `rg-blogapp-A-workshop` |
+| B | `rg-blogapp-B-workshop` |
+| C | `rg-blogapp-C-workshop` |
+| ... | ... |
+| J | `rg-blogapp-J-workshop` |
+
+**macOS/Linux:**
+```bash
+# 'A' を割り当てられたグループ文字に置き換えてください
+az group create --name rg-blogapp-A-workshop --location japanwest
+```
+
+**Windows PowerShell:**
+```powershell
+# 'A' を割り当てられたグループ文字に置き換えてください
+New-AzResourceGroup -Name rg-blogapp-A-workshop -Location japanwest
+```
+
+**ステップ3: グループのリソースグループを使用してデプロイ**
+
+```bash
+az deployment group create \
+  --resource-group rg-blogapp-A-workshop \  # 自分のグループのRGを使用
+  --template-file materials/bicep/main.bicep \
+  --parameters materials/bicep/main.local.bicepparam
+```
+
+> **注意:** ストレージアカウント、Key Vault、DNSラベルは、リソースグループIDに基づいて一意の識別子を自動的に含むため、グループ間で競合しません。
+
+</details>
+
 #### ステップ5: Azureにデプロイ
 
 **macOS/Linux (bash/zsh):**
@@ -843,6 +895,52 @@ Write-Host "開く: https://$FQDN"
 > **⚠️ ブラウザ警告:** 自己署名証明書を使用しているため、ブラウザは証明書の警告を表示します。これはワークショップでは想定内です。「詳細設定」→「続行」をクリックして続けてください。
 
 **🎉 おめでとうございます！** アプリケーションがAzureで実行されています！
+
+#### デプロイのトラブルシューティング
+
+<details>
+<summary><strong>🔧 VMサイズがリージョンで利用できない</strong></summary>
+
+**エラー:**
+```
+The requested VM size Standard_B2s is not available in the current region.
+```
+
+**原因:** Azure VM SKUの利用可能性は、リージョン、可用性ゾーン、サブスクリプションの種類によって異なります。
+
+**解決策:**
+
+1. **リージョンで利用可能なVMサイズを確認:**
+   ```bash
+   # 利用可能なBシリーズVMをリスト
+   az vm list-skus --location japanwest --size Standard_B --output table
+   
+   # 特定のゾーンでの利用可能性を確認
+   az vm list-skus --location japanwest --zone 1 --size Standard_B --output table
+   ```
+
+2. **パラメータファイル** (`main.local.bicepparam`) を利用可能な代替サイズで更新:
+   ```bicep
+   // 代替VMサイズ（デフォルトが利用できない場合に更新）
+   param webVmSize = 'Standard_B2als_v2'  // Standard_B2sの代替
+   param appVmSize = 'Standard_B2als_v2'  // Standard_B2sの代替
+   param dbVmSize = 'Standard_B4as_v2'    // Standard_B4msの代替
+   ```
+
+3. **代替VMサイズ参照表:**
+
+   | 元のSKU | 代替 | vCPU | RAM |
+   |---------|------|------|-----|
+   | Standard_B2s | Standard_B2als_v2, Standard_B2as_v2, Standard_B2ms | 2 | 4-8 GB |
+   | Standard_B4ms | Standard_B4as_v2, Standard_B4als_v2 | 4 | 16 GB |
+
+   > **⚠️ DB層の重要事項:** MongoDBのパフォーマンスのため、代替VMサイズがPremium SSDをサポートしていることを確認してください:
+   > ```bash
+   > az vm list-skus --location japanwest --size Standard_B4as_v2 \
+   >   --query "[].capabilities[?name=='PremiumIO'].value" --output tsv
+   > ```
+
+</details>
 
 #### クリーンアップ（完了時）
 
@@ -1146,6 +1244,17 @@ sudo nginx -t && sudo systemctl reload nginx
 > ルールは優先度順に評価されます - 小さい数字が先に評価されます。
 > インフラストラクチャは、テスト/オーバーライドシナリオのために優先度100〜199を予約しています。
 
+> **💡 NSGのステートフル動作について**
+> 
+> Azure NSGは**ステートフル**です - Denyルールを追加しても、既存の接続ではなく**新しい**接続のみをブロックします。
+> 
+> テストで即座に障害が表示されない理由：
+> 1. **既存の接続はアクティブなまま** - プール内のMongoDB接続は引き続き動作
+> 2. **TCPアイドルタイムアウト（4分）** - Azureは4分以上アイドルになるまで接続を維持
+> 3. **コネクションプーリング** - Node.js MongoDBドライバは確立済みの接続を再利用
+> 
+> 即座に効果を確認するには、Denyルール追加後に**アプリケーションを再起動**してください。
+
 ```bash
 # 1. Appティア → データベースティアのトラフィックをブロック
 az network nsg rule create \
@@ -1159,21 +1268,33 @@ az network nsg rule create \
   --destination-port-ranges 27017 \
   --protocol Tcp
 
-# 2. アプリケーションをテスト - エラーが返されるはず
+# 2. 両方のApp VMでアプリケーションを再起動して新しい接続を強制
+#    Bastion SSHで各App VMに接続し、実行:
+#    pm2 restart blogapp-api
+#
+#    または Invoke-AzVMRunCommand を使用 (Windows PowerShell):
+#    Invoke-AzVMRunCommand -ResourceGroupName rg-blogapp-workshop `
+#      -VMName vm-app-az1-prod -CommandId RunShellScript `
+#      -ScriptString "pm2 restart blogapp-api"
+
+# 3. アプリケーションをテスト - エラーが返されるはず（データベース接続タイムアウト）
 curl -k https://<YOUR_APPGW_FQDN>/api/posts
 
-# 3. ブロックルールを削除
+# 4. ブロックルールを削除
 az network nsg rule delete \
   -g rg-blogapp-workshop \
   --nsg-name nsg-app-prod \
   -n DenyMongoDB
 
-# 4. 復旧を確認
-sleep 30
+# 5. アプリケーションを再起動して接続を再確立
+#    （両方のApp VMでBastion経由）: pm2 restart blogapp-api
+
+# 6. 復旧を確認
+sleep 10
 curl -k https://<YOUR_APPGW_FQDN>/api/posts
 ```
 
-**期待される結果:** アプリケーションはデータベースエラーを表示し、ルール削除後に復旧します。
+**期待される結果:** アプリケーションはデータベースエラーを表示し、ルール削除とアプリ再起動後に復旧します。
 
 ---
 

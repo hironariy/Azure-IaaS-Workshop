@@ -23,6 +23,22 @@ param environment = 'prod'
 // Workload name (used in resource naming)
 param workloadName = 'blogapp'
 
+// =============================================================================
+// Multi-Group Workshop Support
+// =============================================================================
+// For workshops with multiple groups (A-J) deploying to the same subscription:
+// 1. Each group should use a unique resource group name
+// 2. Set groupId to your assigned group letter (A-J)
+// 3. Create resource group: rg-blogapp-{groupId}-workshop
+//
+// Example for Group C:
+//   param groupId = 'C'
+//   az group create --name rg-blogapp-C-workshop --location japanwest
+//
+// For single-group workshops, leave groupId empty (default)
+// =============================================================================
+param groupId = ''  // Set to 'A'-'J' for multi-group workshops
+
 // Admin username for SSH
 param adminUsername = 'azureuser'
 
@@ -107,14 +123,27 @@ param deployStorage = true
 // =============================================================================
 // Optional Parameters - VM Sizing
 // =============================================================================
+// NOTE: VM SKU availability varies by region. If deployment fails with 
+// "VM size not available", check available sizes with:
+//   az vm list-skus --location <your-region> --size Standard_B --output table
+//
+// Common alternatives:
+//   Standard_B2s  → Standard_B2als_v2, Standard_B2as_v2, Standard_B2ms
+//   Standard_B4ms → Standard_B4as_v2, Standard_B4als_v2
+// =============================================================================
 
 // Web tier: NGINX reverse proxy (2 vCPU, 4 GB RAM)
+// Alternatives if unavailable: Standard_B2als_v2, Standard_B2as_v2
 param webVmSize = 'Standard_B2s'
 
 // App tier: Express/Node.js API (2 vCPU, 4 GB RAM)
+// Alternatives if unavailable: Standard_B2als_v2, Standard_B2as_v2
 param appVmSize = 'Standard_B2s'
 
 // DB tier: MongoDB (4 vCPU, 16 GB RAM) - needs Premium SSD support
+// Alternatives if unavailable: Standard_B4as_v2, Standard_B4als_v2
+// IMPORTANT: Verify Premium SSD support with:
+//   az vm list-skus --location <region> --size <sku> --query "[].capabilities[?name=='PremiumIO']"
 param dbVmSize = 'Standard_B4ms'
 
 // MongoDB data disk size

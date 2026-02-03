@@ -563,6 +563,58 @@ param mongoDbAppPassword = 'YourSecurePassword123!'  // Change this!
 > - `blogapp-yourname-0106` (name + date)
 > - `blogapp-team1-abc` (team + random)
 
+#### Multi-Group Workshop Setup (Instructor-Led)
+
+<details>
+<summary><strong>📋 For workshops with multiple groups (A-J) sharing a subscription</strong></summary>
+
+When multiple groups deploy to the same Azure subscription, each group needs unique resource names to avoid conflicts.
+
+**Step 1: Set your group identifier**
+
+In your `main.local.bicepparam` file, set the `groupId` parameter:
+```bicep
+// Multi-Group Workshop Support
+param groupId = 'A'  // Set to your assigned group letter (A-J)
+```
+
+**Step 2: Create resource group with group identifier**
+
+Use your group letter in the resource group name:
+
+| Group | Resource Group Name |
+|-------|---------------------|
+| A | `rg-blogapp-A-workshop` |
+| B | `rg-blogapp-B-workshop` |
+| C | `rg-blogapp-C-workshop` |
+| ... | ... |
+| J | `rg-blogapp-J-workshop` |
+
+**macOS/Linux:**
+```bash
+# Replace 'A' with your assigned group letter
+az group create --name rg-blogapp-A-workshop --location japanwest
+```
+
+**Windows PowerShell:**
+```powershell
+# Replace 'A' with your assigned group letter
+New-AzResourceGroup -Name rg-blogapp-A-workshop -Location japanwest
+```
+
+**Step 3: Deploy using your group's resource group**
+
+```bash
+az deployment group create \
+  --resource-group rg-blogapp-A-workshop \  # Use YOUR group's RG
+  --template-file materials/bicep/main.bicep \
+  --parameters materials/bicep/main.local.bicepparam
+```
+
+> **Note:** Storage Account, Key Vault, and DNS labels automatically include unique identifiers based on the resource group ID, so they won't conflict between groups.
+
+</details>
+
 #### Step 5: Deploy to Azure
 
 **macOS/Linux (bash/zsh):**
@@ -836,6 +888,52 @@ Write-Host "Open: https://$FQDN"
 > **⚠️ Browser Warning:** Your browser will show a certificate warning because we're using a self-signed certificate. This is expected for the workshop. Click "Advanced" → "Proceed" to continue.
 
 **🎉 Congratulations!** Your application is now running on Azure!
+
+#### Deployment Troubleshooting
+
+<details>
+<summary><strong>🔧 VM Size Not Available in Region</strong></summary>
+
+**Error:**
+```
+The requested VM size Standard_B2s is not available in the current region.
+```
+
+**Cause:** Azure VM SKU availability varies by region, availability zone, and subscription type.
+
+**Solution:**
+
+1. **Check available VM sizes in your region:**
+   ```bash
+   # List available B-series VMs
+   az vm list-skus --location japanwest --size Standard_B --output table
+   
+   # Check availability in specific zone
+   az vm list-skus --location japanwest --zone 1 --size Standard_B --output table
+   ```
+
+2. **Update your parameter file** (`main.local.bicepparam`) with available alternatives:
+   ```bicep
+   // Alternative VM sizes (update if defaults are unavailable)
+   param webVmSize = 'Standard_B2als_v2'  // Alternative to Standard_B2s
+   param appVmSize = 'Standard_B2als_v2'  // Alternative to Standard_B2s
+   param dbVmSize = 'Standard_B4as_v2'    // Alternative to Standard_B4ms
+   ```
+
+3. **Alternative VM Size Reference:**
+
+   | Original SKU | Alternatives | vCPU | RAM |
+   |--------------|--------------|------|-----|
+   | Standard_B2s | Standard_B2als_v2, Standard_B2as_v2, Standard_B2ms | 2 | 4-8 GB |
+   | Standard_B4ms | Standard_B4as_v2, Standard_B4als_v2 | 4 | 16 GB |
+
+   > **⚠️ Important for DB Tier:** Ensure the alternative VM size supports Premium SSD for MongoDB performance. Check with:
+   > ```bash
+   > az vm list-skus --location japanwest --size Standard_B4as_v2 \
+   >   --query "[].capabilities[?name=='PremiumIO'].value" --output tsv
+   > ```
+
+</details>
 
 #### Cleanup (When Done)
 
@@ -1139,6 +1237,17 @@ sudo nginx -t && sudo systemctl reload nginx
 > Rules are evaluated in priority order - lower numbers are evaluated first.
 > The infrastructure reserves priorities 100-199 for test/override scenarios.
 
+> **💡 Understanding NSG Stateful Behavior**
+> 
+> Azure NSGs are **stateful** - adding a Deny rule only blocks **new** connections, not existing ones.
+> 
+> Why the test may not show immediate failure:
+> 1. **Existing connections remain active** - MongoDB connections in the pool continue working
+> 2. **TCP idle timeout (4 minutes)** - Azure keeps connections open until idle for 4+ minutes
+> 3. **Connection pooling** - Node.js MongoDB driver reuses established connections
+> 
+> To see immediate effect, **restart the application** after adding the Deny rule.
+
 ```bash
 # 1. Block App Tier → Database Tier traffic
 az network nsg rule create \
@@ -1152,21 +1261,33 @@ az network nsg rule create \
   --destination-port-ranges 27017 \
   --protocol Tcp
 
-# 2. Test application - should return error
+# 2. Force new connections by restarting the application on BOTH App VMs
+#    Connect via Bastion SSH to each App VM and run:
+#    pm2 restart blogapp-api
+#
+#    Or use Invoke-AzVMRunCommand (Windows PowerShell):
+#    Invoke-AzVMRunCommand -ResourceGroupName rg-blogapp-workshop `
+#      -VMName vm-app-az1-prod -CommandId RunShellScript `
+#      -ScriptString "pm2 restart blogapp-api"
+
+# 3. Test application - should return error (database connection timeout)
 curl -k https://<YOUR_APPGW_FQDN>/api/posts
 
-# 3. Remove the blocking rule
+# 4. Remove the blocking rule
 az network nsg rule delete \
   -g rg-blogapp-workshop \
   --nsg-name nsg-app-prod \
   -n DenyMongoDB
 
-# 4. Verify recovery
-sleep 30
+# 5. Restart application to re-establish connections
+#    (on both App VMs via Bastion): pm2 restart blogapp-api
+
+# 6. Verify recovery
+sleep 10
 curl -k https://<YOUR_APPGW_FQDN>/api/posts
 ```
 
-**Expected Result:** Application shows database error, then recovers after rule removal.
+**Expected Result:** Application shows database error, then recovers after rule removal and app restart.
 
 ---
 

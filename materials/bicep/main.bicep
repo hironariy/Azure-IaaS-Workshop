@@ -41,6 +41,19 @@ param environment string = 'prod'
 @description('Workload name for naming convention')
 param workloadName string = 'blogapp'
 
+// =============================================================================
+// Multi-Group Workshop Support
+// =============================================================================
+// For workshops with multiple groups (A-J) deploying to the same subscription,
+// each group should use a unique resource group name.
+// The groupId is used to generate a recommended resource group name.
+// Example: Group A → rg-blogapp-A-workshop
+// =============================================================================
+
+@description('Workshop group identifier (A-J) for multi-group deployments. Leave empty for single-group.')
+@allowed(['', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'])
+param groupId string = ''
+
 @description('Admin username for all VMs')
 param adminUsername string = 'azureuser'
 
@@ -565,6 +578,11 @@ output bastionName string = bastion.?outputs.?bastionName ?? ''
 
 @description('NAT Gateway Public IP (for outbound connectivity)')
 output natGatewayPublicIp string = natGateway.?outputs.?publicIpAddress ?? ''
+
+@description('Recommended resource group name for multi-group workshops')
+output recommendedResourceGroupName string = empty(groupId) 
+  ? 'rg-${workloadName}-workshop' 
+  : 'rg-${workloadName}-${groupId}-workshop'
 
 // =============================================================================
 // Post-Deployment Instructions
