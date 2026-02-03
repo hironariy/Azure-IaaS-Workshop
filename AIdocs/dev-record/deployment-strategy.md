@@ -1017,7 +1017,7 @@ ENTRA_CLIENT_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 
 > **If MONGODB_URI is missing or incorrect:** Check that `mongoDbUri` parameter is set in your `main.local.bicepparam` file and redeploy, or manually append:
 > ```bash
-> echo 'MONGODB_URI=mongodb://blogapp:BlogApp2024Workshop@10.0.3.4:27017,10.0.3.5:27017/blogapp?replicaSet=blogapp-rs0&authSource=admin' | sudo tee -a /opt/blogapp/.env
+> echo 'MONGODB_URI=mongodb://blogapp:<YourDBAppUserPassword>@10.0.3.4:27017,10.0.3.5:27017/blogapp?replicaSet=blogapp-rs0&authSource=admin' | sudo tee -a /opt/blogapp/.env
 > ```
 
 ### 2.6 Start Application with PM2
