@@ -841,6 +841,8 @@ mongosh "mongodb://blogapp:BlogApp2024Workshop!@10.0.3.4:27017,10.0.3.5:27017/bl
 
 **On both App VMs - Verification only:**
 
+Please check [here](#connect-to-vms-via-azure-bastion-native-ssh-client) for instructions on connecting with SSH via Bastion.
+
 **macOS/Linux (SSH via Bastion):**
 ```bash
 # Check Node.js version (should be v20.x)
@@ -1161,6 +1163,8 @@ db.createUser({
 > **Important:** The frontend now uses runtime configuration via `/config.json` (already created by Bicep). No build-time environment variables needed!
 
 ### 3.1 Verify Pre-installed NGINX and Config
+
+Please check [here](#connect-to-vms-via-azure-bastion-native-ssh-client) for instructions on connecting with SSH via Bastion.
 
 **On both Web VMs - Verification only:**
 

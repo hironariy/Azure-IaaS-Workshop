@@ -843,6 +843,9 @@ mongosh "mongodb://blogapp:BlogApp2024Workshop!@10.0.3.4:27017,10.0.3.5:27017/bl
 **両方の App VM 上で確認のみ:**
 
 **macOS/Linux (Bastion 経由 SSH):**
+
+Bastion 経由での SSH 接続方法はここを参照してください: [Azure Bastion 経由で VM に接続](#azure-bastion-経由で-vm-に接続ネイティブ-ssh-クライアント)
+
 ```bash
 # Check Node.js version (should be v20.x)
 node --version
@@ -1162,6 +1165,8 @@ db.createUser({
 > **Important:** フロントエンドは実行時に `/config.json` を利用するようになりました（Bicep により既に作成済み）。ビルド時の環境変数は不要です。
 
 ### 3.1 事前インストール済み NGINX と設定の確認
+
+Bastion 経由での SSH 接続方法はここを参照してください: [Azure Bastion 経由で VM に接続](#azure-bastion-経由で-vm-に接続ネイティブ-ssh-クライアント)
 
 **両方の Web VM 上で確認のみ:**
 
