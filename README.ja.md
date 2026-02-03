@@ -712,6 +712,7 @@ code post-deployment-setup.local.sh    # VS Code（推奨）
 # スクリプトを編集し、プレースホルダーを置き換え:
 # - <RESOURCE_GROUP> → rg-blogapp-workshop
 # - <BASTION_NAME> → bastion-blogapp-prod
+# - <PATH_TO_YOUR_SSH_KEY> → Step 4 で main.local.bicepparam に設定したSSH公開鍵のペアとなる秘密鍵のパス
 # - <MONGODB_ADMIN_PASSWORD> → 任意のDB管理者パスワード
 # - <MONGODB_APP_PASSWORD> → main.local.bicepparamで設定したDBユーザー用パスワード
 
