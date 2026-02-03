@@ -548,15 +548,15 @@ param entraFrontendClientId = 'your-frontend-client-id'  // ← VITE_ENTRA_CLIEN
 param sslCertificateData = 'MIIKcQIBAzCCCi...very-long-base64-string...'
 param sslCertificatePassword = 'Workshop2024!'
 
-// Choose a unique DNS label (must be unique in your region)
-param appGatewayDnsLabel = 'blogapp-yourname-1234'
-
 // ============================================================
 // REQUIRED: MongoDB Application Password
 // ============================================================
 // ⚠️ IMPORTANT: Use the SAME password in Step 6 (post-deployment script)!
 // This password connects the backend API to MongoDB.
 param mongoDbAppPassword = 'YourSecurePassword123!'  // Change this!
+
+// Choose a unique DNS label (must be unique in your region)
+param appGatewayDnsLabel = 'blogapp-yourname-1234'
 ```
 
 > **💡 Choosing a DNS label:** The label must be unique within your Azure region. Try formats like:

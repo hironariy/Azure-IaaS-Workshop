@@ -146,7 +146,7 @@ Engilish version: [README.md](./README.md)
 > **🔧 注意: OpenSSL の PATH 設定が必要です**  
 > Windows 用 OpenSSL をインストールした後、システム PATH に追加する必要があります：
 > 1. デフォルトのインストールパス: `C:\Program Files\OpenSSL-Win64\bin`
-> 2. PATH に追加: **システムのプロパティ** → **環境変数** → **システム環境変数** → **Path** → **編集** → **新規**
+> 2. PATH に追加: **システム** → **バージョン情報** → **システムの詳細設定** → **環境変数** → **システム環境変数** → **Path** → **編集** → **新規**
 > 3. 追加: `C:\Program Files\OpenSSL-Win64\bin`
 > 4. ターミナル/PowerShell ウィンドウを再起動
 > 5. 確認: `openssl version`
@@ -554,15 +554,15 @@ param entraFrontendClientId = 'フロントエンドクライアントID'  // �
 param sslCertificateData = 'MIIKcQIBAzCCCi...非常に長いbase64文字列...'
 param sslCertificatePassword = 'Workshop2024!'
 
-// 一意のDNSラベルを選択（リージョン内で一意である必要があります）
-param appGatewayDnsLabel = 'blogapp-yourname-1234'
-
 // ============================================================
 // 必須: MongoDBアプリケーションパスワード
 // ============================================================
 // ⚠️ 重要: ステップ6（デプロイ後スクリプト）でも同じパスワードを使用してください！
 // このパスワードはバックエンドAPIかMongoDBへの接続に使用されます。
 param mongoDbAppPassword = 'YourSecurePassword123!'  // これを変更してください！
+
+// 一意のDNSラベルを選択（リージョン内で一意である必要があります）
+param appGatewayDnsLabel = 'blogapp-yourname-1234'
 ```
 
 > **💡 DNSラベルの選択:** ラベルはAzureリージョン内で一意である必要があります。以下のような形式を試してください：
