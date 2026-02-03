@@ -729,9 +729,8 @@ code post-deployment-setup.local.ps1      # VS Code (recommended)
 
 # Edit the script and replace placeholders:
 # - <RESOURCE_GROUP> → rg-blogapp-workshop
-# - <BASTION_NAME> → bastion-blogapp-prod
 # - <MONGODB_ADMIN_PASSWORD> → Your chosen admin password
-# - <MONGODB_APP_PASSWORD> → Your chosen app password
+# - <MONGODB_APP_PASSWORD> → The password you set in Step 4 for mongoDbAppPassword in main.local.bicepparam
 
 # Run the script
 .\post-deployment-setup.local.ps1

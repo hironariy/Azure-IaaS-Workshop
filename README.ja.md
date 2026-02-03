@@ -736,9 +736,8 @@ code post-deployment-setup.local.ps1      # VS Code（推奨）
 
 # スクリプトを編集し、プレースホルダーを置き換え:
 # - <RESOURCE_GROUP> → rg-blogapp-workshop
-# - <BASTION_NAME> → bastion-blogapp-prod
-# - <MONGODB_ADMIN_PASSWORD> → 選択した管理者パスワード
-# - <MONGODB_APP_PASSWORD> → 選択したアプリパスワード
+# - <MONGODB_ADMIN_PASSWORD> → 任意のDB管理者パスワード
+# - <MONGODB_APP_PASSWORD> → main.local.bicepparamで設定したDBユーザー用パスワード
 
 # スクリプトを実行
 .\post-deployment-setup.local.ps1
