@@ -287,7 +287,7 @@ You need to create **two app registrations** in Microsoft Entra ID. This is requ
    - Click "+ New registration" button
 
 4. **Configure the App**
-   - **Name**: `BlogApp Frontend (Dev)` (or any name you prefer)
+   - **Name**: `BlogApp Frontend <YourTeamName>` (or any name you prefer)
    - **Supported account types**: Select "Accounts in this organizational directory only"
    - **Redirect URI**: 
      - Select **"Single-page application (SPA)"** from the dropdown
@@ -314,7 +314,7 @@ You need to create **two app registrations** in Microsoft Entra ID. This is requ
    - Click "+ New registration"
 
 2. **Configure the App**
-   - **Name**: `BlogApp API (Dev)`
+   - **Name**: `BlogApp API (Dev) <YourTeamName>`
    - **Supported account types**: "Accounts in this organizational directory only"
    - **Redirect URI**: Leave empty (APIs don't need redirect URIs)
 
@@ -341,13 +341,13 @@ You need to create **two app registrations** in Microsoft Entra ID. This is requ
 <summary>📝 Click to expand: Grant Frontend Permission to Call Backend API</summary>
 
 1. **Go to Frontend App Registration**
-   - Navigate to App registrations → `BlogApp Frontend (Dev)`
+   - Navigate to App registrations → `BlogApp Frontend <YourTeamName>`
 
 2. **Add API Permission**
    - In the left menu, click "API permissions"
    - Click "+ Add a permission"
    - Select "APIs my organization uses" tab (If you configure apps with your own account, you may also see "My APIs" tab)
-   - Click on "BlogApp API (Dev)"
+   - Click on "`BlogApp API <YourTeamName>`"
    - Check the box next to `access_as_user`
    - Click "Add permissions"
 
