@@ -222,7 +222,112 @@ openssl version
 
 > **💡 Azure 初心者向けヒント:** Azure は新規アカウントに $200 の無料クレジットを提供しています。これはこのワークショップを完了するのに十分な金額です。
 
-#### 2.1.3 Entra IDに必要な権限
+#### 2.1.3 リソースプロバイダーとクォータの確認
+
+デプロイ前に、必要なリソースプロバイダーが登録されていることと、十分なクォータがあることを確認してください。
+
+<details>
+<summary><strong>📝 クリックして展開: リソースプロバイダーの確認</strong></summary>
+
+Azure ではリソースを作成する前にリソースプロバイダーを登録する必要があります。ほとんどはデフォルトで登録されていますが、一部は手動で登録が必要な場合があります。
+
+**必要なリソースプロバイダー:**
+
+| プロバイダー | 用途 |
+|----------|----------|
+| `Microsoft.Compute` | 仮想マシン |
+| `Microsoft.Network` | VNet、Load Balancer、Application Gateway、Bastion |
+| `Microsoft.Storage` | ストレージアカウント |
+| `Microsoft.KeyVault` | シークレット管理用 Key Vault |
+| `Microsoft.OperationalInsights` | Log Analytics |
+| `Microsoft.Insights` | Azure Monitor |
+
+**macOS/Linux (Azure CLI):**
+```bash
+# 必要なプロバイダーの登録状態を確認
+az provider show --namespace Microsoft.Compute --query "registrationState" -o tsv
+az provider show --namespace Microsoft.Network --query "registrationState" -o tsv
+az provider show --namespace Microsoft.Storage --query "registrationState" -o tsv
+az provider show --namespace Microsoft.KeyVault --query "registrationState" -o tsv
+az provider show --namespace Microsoft.OperationalInsights --query "registrationState" -o tsv
+az provider show --namespace Microsoft.Insights --query "registrationState" -o tsv
+
+# "NotRegistered" と表示された場合は登録:
+az provider register --namespace Microsoft.Compute
+az provider register --namespace Microsoft.Network
+# ... 必要に応じて他のプロバイダーも同様に
+```
+
+**Windows PowerShell:**
+```powershell
+# 必要なプロバイダーの登録状態を確認
+Get-AzResourceProvider -ProviderNamespace Microsoft.Compute | Select-Object ProviderNamespace, RegistrationState
+Get-AzResourceProvider -ProviderNamespace Microsoft.Network | Select-Object ProviderNamespace, RegistrationState
+Get-AzResourceProvider -ProviderNamespace Microsoft.Storage | Select-Object ProviderNamespace, RegistrationState
+Get-AzResourceProvider -ProviderNamespace Microsoft.KeyVault | Select-Object ProviderNamespace, RegistrationState
+Get-AzResourceProvider -ProviderNamespace Microsoft.OperationalInsights | Select-Object ProviderNamespace, RegistrationState
+Get-AzResourceProvider -ProviderNamespace Microsoft.Insights | Select-Object ProviderNamespace, RegistrationState
+
+# "NotRegistered" と表示された場合は登録:
+Register-AzResourceProvider -ProviderNamespace Microsoft.Compute
+Register-AzResourceProvider -ProviderNamespace Microsoft.Network
+# ... 必要に応じて他のプロバイダーも同様に
+```
+
+> **📝 注意:** プロバイダーの登録には1〒2分かかる場合があります。上記のコマンドでステータスを確認できます。
+
+</details>
+
+<details>
+<summary><strong>📝 クリックして展開: VMクォータの確認</strong></summary>
+
+このワークショップではBシリーズVMを6台（Web 2台、App 2台、DB 2台）デプロイします。十分なvCPUクォータがあることを確認してください。
+
+**クォータ要件:**
+
+| VMサイズ | 台数 | 各vCPU | 合計vCPU |
+|---------|-------|------------|-------------|
+| Standard_B2s (Web) | 2 | 2 | 4 |
+| Standard_B2s (App) | 2 | 2 | 4 |
+| Standard_B4ms (DB) | 2 | 4 | 8 |
+| **合計** | **6** | | **16 vCPU** |
+
+**macOS/Linux (Azure CLI):**
+```bash
+# ターゲットリージョンでBシリーズvCPUクォータを確認
+az vm list-usage --location japanwest --query "[?contains(name.value, 'standardBSFamily')].{Name:name.localizedValue, CurrentValue:currentValue, Limit:limit}" -o table
+
+# リージョン全体のvCPUクォータを確認
+az vm list-usage --location japanwest --query "[?name.value=='cores'].{Name:name.localizedValue, CurrentValue:currentValue, Limit:limit}" -o table
+```
+
+**Windows PowerShell:**
+```powershell
+# ターゲットリージョンでBシリーズvCPUクォータを確認
+Get-AzVMUsage -Location japanwest | Where-Object { $_.Name.Value -like "*standardBSFamily*" } | Select-Object @{N='Name';E={$_.Name.LocalizedValue}}, CurrentValue, Limit
+
+# リージョン全体のvCPUクォータを確認
+Get-AzVMUsage -Location japanwest | Where-Object { $_.Name.Value -eq "cores" } | Select-Object @{N='Name';E={$_.Name.LocalizedValue}}, CurrentValue, Limit
+```
+
+**出力の見方:**
+- `Limit` = 許可された最大vCPU数
+- `CurrentValue` = 現在使用中のvCPU数
+- 利用可能 = Limit - CurrentValue
+- Bシリーズで少なくとも **16 vCPU** が必要です
+
+**クォータが不足している場合:**
+1. [Azure Portal](https://portal.azure.com) → **サブスクリプション** → サブスクリプションを選択
+2. 左メニューの **使用量 + クォータ** をクリック
+3. 「Standard BS Family vCPUs」を検索
+4. **増加の要求** をクリックしてサポートリクエストを送信
+5. クォータの増加は通常、合理的な量であれば数時間以内に承認されます
+
+> **💡 ヒント:** 無料試用版サブスクリプションはクォータが制限されています。制限に達した場合は、従量課金制へのアップグレードを検討してください。
+
+</details>
+
+#### 2.1.4 Entra IDに必要な権限
 
 > ⚠️ **重要: 開始前に権限を確認してください**
 >
@@ -249,7 +354,7 @@ openssl version
 > **個人/無料Azureアカウントの場合:**
 > 自分でAzureアカウントを作成した場合、自動的にグローバル管理者となり、追加設定なしでアプリ登録を作成できます。
 
-#### 2.1.4 リポジトリのクローン
+#### 2.1.5 リポジトリのクローン
 
 ワークショップのリポジトリをローカルマシンにクローンします：
 
@@ -267,7 +372,7 @@ cd Azure-IaaS-Workshop
 > cd Azure-IaaS-Workshop
 > ```
 
-#### 2.1.5 Microsoft Entra IDアプリ登録
+#### 2.1.6 Microsoft Entra IDアプリ登録
 
 Microsoft Entra ID で **2 つのアプリ登録** を作成する必要があります。これは Azure デプロイに必要です（ローカル開発にも使用します）。
 
@@ -542,10 +647,10 @@ param adminObjectId = 'ステップ3で取得したオブジェクトID'
 // ============================================================
 // 必須: Microsoft Entra IDパラメータ
 // ============================================================
-// セクション 2.1.5 「必要な値のまとめ」の値を使用してください
-param entraTenantId = 'あなたのテナントID'                   // ← セクション 2.1.5 の VITE_ENTRA_TENANT_ID
-param entraClientId = 'バックエンドAPIクライアントID'       // ← セクション 2.1.5 の ENTRA_CLIENT_ID
-param entraFrontendClientId = 'フロントエンドクライアントID'  // ← セクション 2.1.5 の VITE_ENTRA_CLIENT_ID
+// セクション 2.1.6 「必要な値のまとめ」の値を使用してください
+param entraTenantId = 'あなたのテナントID'                   // ← セクション 2.1.6 の VITE_ENTRA_TENANT_ID
+param entraClientId = 'バックエンドAPIクライアントID'       // ← セクション 2.1.6 の ENTRA_CLIENT_ID
+param entraFrontendClientId = 'フロントエンドクライアントID'  // ← セクション 2.1.6 の VITE_ENTRA_CLIENT_ID
 
 // ============================================================
 // 必須: Application Gateway SSL/TLS構成

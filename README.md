@@ -216,7 +216,112 @@ You need access to the following:
 
 > **💡 Tip for Azure beginners:** Azure offers $200 free credit for new accounts. This is more than enough to complete this workshop.
 
-#### 2.1.3 Required Permissions for Entra ID
+#### 2.1.3 Check Resource Providers and Quotas
+
+Before deployment, verify that necessary resource providers are registered and you have sufficient quota.
+
+<details>
+<summary><strong>📝 Click to expand: Check Resource Providers</strong></summary>
+
+Azure requires resource providers to be registered before you can create resources. Most are registered by default, but some may need manual registration.
+
+**Required Resource Providers:**
+
+| Provider | Purpose |
+|----------|----------|
+| `Microsoft.Compute` | Virtual Machines |
+| `Microsoft.Network` | VNet, Load Balancer, Application Gateway, Bastion |
+| `Microsoft.Storage` | Storage Accounts |
+| `Microsoft.KeyVault` | Key Vault for secrets |
+| `Microsoft.OperationalInsights` | Log Analytics |
+| `Microsoft.Insights` | Azure Monitor |
+
+**macOS/Linux (Azure CLI):**
+```bash
+# Check registration status of required providers
+az provider show --namespace Microsoft.Compute --query "registrationState" -o tsv
+az provider show --namespace Microsoft.Network --query "registrationState" -o tsv
+az provider show --namespace Microsoft.Storage --query "registrationState" -o tsv
+az provider show --namespace Microsoft.KeyVault --query "registrationState" -o tsv
+az provider show --namespace Microsoft.OperationalInsights --query "registrationState" -o tsv
+az provider show --namespace Microsoft.Insights --query "registrationState" -o tsv
+
+# If any shows "NotRegistered", register it:
+az provider register --namespace Microsoft.Compute
+az provider register --namespace Microsoft.Network
+# ... repeat for other providers as needed
+```
+
+**Windows PowerShell:**
+```powershell
+# Check registration status of required providers
+Get-AzResourceProvider -ProviderNamespace Microsoft.Compute | Select-Object ProviderNamespace, RegistrationState
+Get-AzResourceProvider -ProviderNamespace Microsoft.Network | Select-Object ProviderNamespace, RegistrationState
+Get-AzResourceProvider -ProviderNamespace Microsoft.Storage | Select-Object ProviderNamespace, RegistrationState
+Get-AzResourceProvider -ProviderNamespace Microsoft.KeyVault | Select-Object ProviderNamespace, RegistrationState
+Get-AzResourceProvider -ProviderNamespace Microsoft.OperationalInsights | Select-Object ProviderNamespace, RegistrationState
+Get-AzResourceProvider -ProviderNamespace Microsoft.Insights | Select-Object ProviderNamespace, RegistrationState
+
+# If any shows "NotRegistered", register it:
+Register-AzResourceProvider -ProviderNamespace Microsoft.Compute
+Register-AzResourceProvider -ProviderNamespace Microsoft.Network
+# ... repeat for other providers as needed
+```
+
+> **📝 Note:** Provider registration may take 1-2 minutes. You can check status with the same commands above.
+
+</details>
+
+<details>
+<summary><strong>📝 Click to expand: Check VM Quota</strong></summary>
+
+This workshop deploys 6 VMs (2 Web, 2 App, 2 DB) using B-series VMs. Verify you have sufficient vCPU quota.
+
+**Quota Requirements:**
+
+| VM Size | Count | vCPUs Each | Total vCPUs |
+|---------|-------|------------|-------------|
+| Standard_B2s (Web) | 2 | 2 | 4 |
+| Standard_B2s (App) | 2 | 2 | 4 |
+| Standard_B4ms (DB) | 2 | 4 | 8 |
+| **Total** | **6** | | **16 vCPUs** |
+
+**macOS/Linux (Azure CLI):**
+```bash
+# Check B-series vCPU quota in your target region
+az vm list-usage --location japanwest --query "[?contains(name.value, 'standardBSFamily')].{Name:name.localizedValue, CurrentValue:currentValue, Limit:limit}" -o table
+
+# Check total regional vCPU quota
+az vm list-usage --location japanwest --query "[?name.value=='cores'].{Name:name.localizedValue, CurrentValue:currentValue, Limit:limit}" -o table
+```
+
+**Windows PowerShell:**
+```powershell
+# Check B-series vCPU quota in your target region
+Get-AzVMUsage -Location japanwest | Where-Object { $_.Name.Value -like "*standardBSFamily*" } | Select-Object @{N='Name';E={$_.Name.LocalizedValue}}, CurrentValue, Limit
+
+# Check total regional vCPU quota
+Get-AzVMUsage -Location japanwest | Where-Object { $_.Name.Value -eq "cores" } | Select-Object @{N='Name';E={$_.Name.LocalizedValue}}, CurrentValue, Limit
+```
+
+**Understanding the Output:**
+- `Limit` = Maximum allowed vCPUs
+- `CurrentValue` = Currently used vCPUs
+- Available = Limit - CurrentValue
+- You need at least **16 available vCPUs** for B-series
+
+**If quota is insufficient:**
+1. Go to [Azure Portal](https://portal.azure.com) → **Subscriptions** → Select your subscription
+2. Click **Usage + quotas** in the left menu
+3. Search for "Standard BS Family vCPUs"
+4. Click **Request increase** and submit a support request
+5. Quota increases are typically approved within a few hours for reasonable amounts
+
+> **💡 Tip:** Free trial subscriptions have limited quotas. If you hit limits, consider upgrading to Pay-As-You-Go.
+
+</details>
+
+#### 2.1.4 Required Permissions for Entra ID
 
 > ⚠️ **IMPORTANT: Check Your Permissions Before Starting**
 >
@@ -243,7 +348,7 @@ You need access to the following:
 > **For Personal/Free Azure Accounts:**
 > If you created your own Azure account, you are automatically the Global Administrator and can create app registrations without any additional setup.
 
-#### 2.1.4 Clone the Repository
+#### 2.1.5 Clone the Repository
 
 Clone the workshop repository to your local machine:
 
@@ -261,7 +366,7 @@ cd Azure-IaaS-Workshop
 > cd Azure-IaaS-Workshop
 > ```
 
-#### 2.1.5 Microsoft Entra ID App Registrations
+#### 2.1.6 Microsoft Entra ID App Registrations
 
 You need to create **two app registrations** in Microsoft Entra ID. This is required for Azure deployment (and also for local development).
 
@@ -536,10 +641,10 @@ param adminObjectId = 'your-object-id-from-step-3'
 // ============================================================
 // REQUIRED: Microsoft Entra ID Parameters
 // ============================================================
-// Use the values from Section 2.1.5 "Summary of Values You'll Need"
-param entraTenantId = 'your-tenant-id'                   // ← VITE_ENTRA_TENANT_ID from Section 2.1.5
-param entraClientId = 'your-backend-api-client-id'       // ← ENTRA_CLIENT_ID from Section 2.1.5
-param entraFrontendClientId = 'your-frontend-client-id'  // ← VITE_ENTRA_CLIENT_ID from Section 2.1.5
+// Use the values from Section 2.1.6 "Summary of Values You'll Need"
+param entraTenantId = 'your-tenant-id'                   // ← VITE_ENTRA_TENANT_ID from Section 2.1.6
+param entraClientId = 'your-backend-api-client-id'       // ← ENTRA_CLIENT_ID from Section 2.1.6
+param entraFrontendClientId = 'your-frontend-client-id'  // ← VITE_ENTRA_CLIENT_ID from Section 2.1.6
 
 // ============================================================
 // REQUIRED: Application Gateway SSL/TLS Configuration
