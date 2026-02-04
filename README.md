@@ -878,7 +878,7 @@ Update-MgApplication -ApplicationId $app.Id -Spa @{RedirectUris = $redirectUris}
 This method doesn't require any special permissions beyond owning the app registration:
 
 1. Go to [Azure Portal](https://portal.azure.com)
-2. Navigate to **Microsoft Entra ID** → **App registrations** → **BlogApp Frontend (Dev)**
+2. Navigate to **Microsoft Entra ID** → **App registrations** → **BlogApp Frontend　<YourTeamName>**
 3. Click **Authentication (Preview)** in the left menu
 4. Under **Single-page application**, click **Add URI** and add:
    - `https://<YOUR_FQDN>` (replace with your Application Gateway FQDN)
