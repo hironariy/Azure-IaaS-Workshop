@@ -354,23 +354,47 @@ Get-AzVMUsage -Location japanwest | Where-Object { $_.Name.Value -eq "cores" } |
 > **個人/無料Azureアカウントの場合:**
 > 自分でAzureアカウントを作成した場合、自動的にグローバル管理者となり、追加設定なしでアプリ登録を作成できます。
 
-#### 2.1.5 リポジトリのクローン
+#### 2.1.5 リポジトリの作成
 
-ワークショップのリポジトリをローカルマシンにクローンします：
+これは**テンプレートリポジトリ**なので、まず自分のコピーを作成する必要があります。
 
+**ステップ1: テンプレートから作成**
+
+1. [https://github.com/hironariy/Azure-IaaS-Workshop](https://github.com/hironariy/Azure-IaaS-Workshop) にアクセス
+2. 緑色の **「Use this template」** ボタンをクリック
+3. **「Create a new repository」** を選択
+
+| 設定 | 推奨 |
+|---------|----------------|
+| **Owner** | あなたのGitHubユーザー名または組織 |
+| **Repository name** | `Azure-IaaS-Workshop`（または任意の名前） |
+| **Visibility** | Public（無料のGitHub Actionsに必要） |
+| **Include all branches** | ☐ チェックなし |
+
+4. **「Create repository」** をクリック
+
+**ステップ2: リポジトリをクローン**
+
+**macOS/Linux:**
 ```bash
-# 公式リポジトリをクローン
-git clone https://github.com/hironariy/Azure-IaaS-Workshop.git
+# あなたのリポジトリをクローン（テンプレートではなく）
+git clone https://github.com/YOUR_USERNAME/Azure-IaaS-Workshop.git
 
 # プロジェクトフォルダに移動
 cd Azure-IaaS-Workshop
 ```
 
-> **💡 ワークショップ参加者向け:** このリポジトリを自分のGitHubアカウントにフォークした場合は、フォークしたリポジトリをクローンしてください：
-> ```bash
-> git clone https://github.com/YOUR_USERNAME/Azure-IaaS-Workshop.git
-> cd Azure-IaaS-Workshop
-> ```
+**Windows PowerShell:**
+```powershell
+# あなたのリポジトリをクローン（テンプレートではなく）
+git clone https://github.com/YOUR_USERNAME/Azure-IaaS-Workshop.git
+# プロジェクトフォルダに移動
+cd Azure-IaaS-Workshop
+```
+
+> **⚠️ 重要:** `YOUR_USERNAME` を実際のGitHubユーザー名に置き換えてください。
+
+✅ **チェックポイント:** テンプレートからリポジトリを作成し、ローカルマシンにクローンしました。
 
 #### 2.1.6 Microsoft Entra IDアプリ登録
 
