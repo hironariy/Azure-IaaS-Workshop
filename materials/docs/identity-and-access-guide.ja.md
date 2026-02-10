@@ -28,7 +28,7 @@ AWS との類比:
 
 このワークショップでは:
 - Azure RBAC が Azure インフラ（portal、デプロイ、Key Vault など）へのアクセスを制御
-- Entra ID のトークンが backend API エンドポイントへのアクセスを制御
+- Entra ID のトークンで backend API エンドポイントへのアクセスを制御
 
 ## 2) このワークショップで登場する 3つのアイデンティティ
 
