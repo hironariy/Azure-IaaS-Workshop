@@ -1491,6 +1491,8 @@ After completing these tests, you will understand:
 ### Documentation
 
 - [Local Development Guide](materials/docs/local-development-guide.md) - Run the application locally
+- [Bicep Techniques Used in This Repository](materials/docs/bicep-techniques-guide.md) - Patterns used in the workshop IaC
+- [Identity, Access, and Secrets Guide (Entra ID + RBAC + Managed Identity)](materials/docs/identity-and-access-guide.md) - How authentication/authorization and secrets work in this repo
 - [Deployment Strategy (Detailed)](AIdocs/dev-record/deployment-strategy.md) - Complete step-by-step deployment guide
 - [Azure Architecture Design](design/AzureArchitectureDesign.md) - Infrastructure specifications
 - [Backend Application Design](design/BackendApplicationDesign.md) - API design and specifications

@@ -1498,6 +1498,8 @@ curl -k https://<YOUR_APPGW_FQDN>/api/posts
 ### ドキュメント
 
 - [ローカル開発ガイド](materials/docs/local-development-guide.ja.md) - ローカルでアプリケーションを実行
+- [このリポジトリで使っている Bicep テクニック](materials/docs/bicep-techniques-guide.ja.md) - ワークショップ IaC で使うパターン
+- [アイデンティティ、アクセス、シークレットガイド（Entra ID + RBAC + Managed Identity）](materials/docs/identity-and-access-guide.ja.md) - このリポジトリの認証/認可とシークレット取り扱い
 - [デプロイ戦略（詳細版）](AIdocs/dev-record/deployment-strategy.ja.md) - 完全なステップバイステップデプロイガイド
 - [Azureアーキテクチャ設計](design/AzureArchitectureDesign.md) - インフラストラクチャ仕様
 - [バックエンドアプリケーション設計](design/BackendApplicationDesign.md) - API設計と仕様
