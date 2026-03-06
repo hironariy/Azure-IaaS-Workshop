@@ -63,6 +63,20 @@
   },
   "overrides": {
     "lodash": "4.17.23",
-    "qs": "6.15.0"
+    "qs": "6.15.0",
+    "@eslint/config-array": {
+      "minimatch": "^3.1.5"
+    },
+    "@eslint/eslintrc": {
+      "ajv": "^6.14.0",
+      "minimatch": "^3.1.5"
+    },
+    "eslint": {
+      "ajv": "^6.14.0",
+      "minimatch": "^3.1.5"
+    },
+    "ts-node": {
+      "diff": "^4.0.4"
+    }
   }
 }
