@@ -3,7 +3,7 @@
  * Displays list of current user's posts (including drafts)
  */
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useIsAuthenticated } from '@azure/msal-react';
 import { getMyPosts, deletePost, Post } from '../services/api';
@@ -16,7 +16,7 @@ function MyPostsPage() {
   const [deletingSlug, setDeletingSlug] = useState<string | null>(null);
   const isAuthenticated = useIsAuthenticated();
 
-  const fetchPosts = async () => {
+  const fetchPosts = useCallback(async () => {
     if (!isAuthenticated) {
       setLoading(false);
       return;
@@ -32,11 +32,11 @@ function MyPostsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [isAuthenticated, statusFilter]);
 
   useEffect(() => {
     fetchPosts();
-  }, [isAuthenticated, statusFilter]);
+  }, [fetchPosts]);
 
   const handleDelete = async (slug: string, title: string) => {
     if (!confirm(`Are you sure you want to delete "${title}"? This action cannot be undone.`)) {
