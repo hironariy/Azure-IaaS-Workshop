@@ -32,16 +32,18 @@ jobs:
         with:
           enablement: true
 
+      - name: Prepare Pages source
+        run: |
+          mkdir -p ./_pages_src
+          cp -R ./materials/docs/. ./_pages_src/
+          mkdir -p ./_pages_src/assets
+          cp -R ./assets/. ./_pages_src/assets/
+
       - name: Build Markdown site
         uses: actions/jekyll-build-pages@v1
         with:
-          source: ./materials/docs
+          source: ./_pages_src
           destination: ./_site
-
-      - name: Copy shared assets
-        run: |
-          mkdir -p ./_site/assets
-          cp -R ./assets/. ./_site/assets/
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
