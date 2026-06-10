@@ -139,10 +139,3 @@ az account show --query "{subscription:name, subscriptionId:id, tenantId:tenantI
 | `git clone` が認証で失敗する | コピー先リポジトリが private ではないか | public にするか、講師の指示に従って GitHub 認証を行う |
 | `code` が開かない | Cloud Shell editor の起動待ち | 数秒待つ。だめな場合は `nano` を使う |
 | デプロイ中に Cloud Shell が切れた | Portal の Deployments | 再接続して `az deployment group show` または Portal で状態確認する |
-
-## 次に進む
-
-[Day 1: デプロイチェックリスト](day-1-deployment-checklist.ja.md) に進みます。
-
-前のページ: [Day 0: 事前準備](day-0-prerequisites.ja.md)  
-迷ったとき: [受講者ポータル](../index.md) / [トラブルシューティングランブック](../operations/troubleshooting-runbook.ja.md) / [クイックリファレンス](../reference/quick-reference-card.ja.md)
