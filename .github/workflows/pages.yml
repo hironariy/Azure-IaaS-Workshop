@@ -1,0 +1,59 @@
+name: Deploy learner portal
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/pages.yml"
+      - "materials/docs/**"
+      - "assets/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build learner portal
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Build Markdown site
+        uses: actions/jekyll-build-pages@v1
+        with:
+          source: ./materials/docs
+          destination: ./_site
+
+      - name: Copy shared assets
+        run: |
+          mkdir -p ./_site/assets
+          cp -R ./assets/. ./_site/assets/
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./_site
+
+  deploy:
+    name: Deploy learner portal
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

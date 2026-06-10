@@ -1,148 +1,128 @@
+---
+title: 災害復旧ガイド
+---
+
 # BCDR ガイド（Azure Backup + Azure Site Recovery）
 
-このガイドでは、ワークショップの IaaS ベース 3 層アプリケーションに対して、**事業継続（Business Continuity）と災害復旧（Disaster Recovery）= BCDR** を実現するための実践的な進め方を説明します。
+## このページでやること
 
-- **Azure Backup**: データと VM 状態を保護（ポイントインタイム復旧）
-- **Azure Site Recovery（ASR）**: VM のリージョンフェールオーバーをオーケストレーション（災害対策）
+Day 2 の Backup、Restore、HA 検証、Azure Site Recovery (ASR) の背景を理解します。実際の手順は [Day 2: 回復性チェックリスト](day-2-resiliency-checklist.ja.md) を主線とし、このページでは判断理由、安全ルール、期待結果を補足します。
 
-## ワークショップ上の重要な注意
+| 項目 | 内容 |
+|---|---|
+| 対象者 | Day 2 の BCDR 演習を進める受講者 |
+| 所要時間 | 20-30 分 |
+| 前提 | Day 1 環境が稼働し、Recovery Services vault を作成できる権限があること |
+| 完了条件 | Backup と ASR の役割、test failover の安全な進め方、DB 層の注意点を説明できること |
 
-このアプリケーションには以下が含まれます。
-- Web 層 VM（NGINX）
-- App 層 VM（Node.js）
-- DB 層 VM（MongoDB レプリカセット）
+## 1. BCDR の基本方針
 
-DB 層のフェールオーバーはステートレス層よりも繊細です。本ガイドでは **ワークショップに適した DR 演習** にフォーカスし、設計判断が必要な箇所を明示します。
+| 目的 | 使う Azure サービス | AWS との類比 |
+|---|---|---|
+| ポイントインタイム復旧 | Azure Backup | AWS Backup |
+| VM のリージョン DR | Azure Site Recovery | EC2 レプリケーション + DR オーケストレーションに近い |
+| 障害検知と確認 | Azure Monitor / Log Analytics | CloudWatch |
+| トラフィック入口の正常性 | Application Gateway | ALB target health |
 
----
+このワークショップでは、Azure IaaS の学習に集中するため、Backup / Restore / ASR は Portal で状態を見ながら進めます。CLI は VM 停止・起動や状態確認に使います。
 
-## 1. DR 戦略を選ぶ（ワークショップ推奨）
+## 2. Day 2 の安全ルール
 
-### 選択肢 A（推奨）: 復旧は Backup、計算資源の DR は ASR
+- Day 1 の正常状態を確認してから障害検証を始めます。
+- Web / App / DB VM を停止したら、同じ演習内で必ず起動します。
+- Restore は既存 VM を上書きせず、新しい VM または別リソースグループへの復元として扱います。
+- ASR test failover は分離ネットワークで実行します。
+- Test failover 後は必ず cleanup を実行します。
+- ASR 初回レプリケーションが長引く場合は、講師デモまたは設計ウォークスルーへ切り替えます。
 
-- **Azure Backup** を使ってポイントインタイムの VM 復元とデータ復旧を行う
-- **ASR** を使って Web/App VM をペアリージョンへフェールオーバーする
-- DB 層は慎重に扱う（後述「DB 層の考慮事項」参照）
+## 3. Azure Backup の考え方
 
-### 選択肢 B（上級）: すべての層を ASR でリージョン DR
+Azure Backup は、VM やデータの復元ポイントを作成するためのサービスです。Day 1 の Bicep は Recovery Services vault を作成しないため、Day 2 で vault と backup item を Portal から作成します。
 
-- Web/App/DB の VM を ASR でレプリケート
-- DB のフェールオーバープランと、復旧シーケンスの明確化がより重要
+### ワークショップで確認すること
 
-**AWS との類比:** ASR は、インスタンスのレプリケーションとフェールオーバーをマネージドにしたもの（Route 53 のフェールオーバー + EC2 レプリケーションのパターンを組み合わせたようなイメージ）に近く、Azure Backup は AWS Backup に近い位置づけです。
+1. Recovery Services vault を作成する。
+2. VM Backup を有効化する。
+3. Backup now を実行する。
+4. Restore point を確認する。
+5. Restore VM の入力項目と影響範囲を理解する。
 
----
+**期待結果:** 復元ポイントが存在し、復元先やネットワークを選ぶ必要があることを説明できます。
 
-## 2. Azure Backup: VM を保護する
+**チェックポイント:** 復元 VM を実際に作成した場合は、削除対象として必ずメモします。
 
-### 2.1 Recovery Services vault を作成する
+## 4. VM 障害と HA の考え方
 
-1. Azure portal で **Recovery Services vault** を作成します。
-2. 同じサブスクリプション、かつ（通常は）ワークロードと同じリージョンに配置します。
+| Tier | 構成 | 期待する挙動 |
+|---|---|---|
+| Web | 2 VM + Application Gateway | 1 台停止しても正常 VM へルーティング |
+| App | 2 VM + Internal Load Balancer | 1 台停止しても API が継続または短時間で復旧 |
+| DB | 2 VM + MongoDB replica set | primary 再選出により復旧。ただし一時的な失敗が起こり得る |
 
-### 2.2 VM バックアップを有効化する
+DB tier はステートフルであり、Web/App tier よりも停止の影響が大きくなります。演習では、停止、観測、起動、復旧確認を 1 セットで行います。
 
-1. Recovery Services vault を開きます。
-2. **Backup** に移動し、Workload location は **Azure**、Workload は **Virtual machine** を選択します。
-3. ワークショップの VM を選択し、**バックアップポリシー** を構成します。
+## 5. Azure Site Recovery の考え方
 
-**ワークショップの最低ライン:** 日次バックアップ + 短い保持期間。
+ASR は VM を別リージョンへレプリケートし、災害時の failover を支援します。
 
-### 2.3 リストアを実施する（演習）
+### ワークショップで確認すること
 
-- **Restore VM** を使って、復元ポイントから新しい VM を作成します。
-- 次を確認します:
-  - VM が起動する
-  - アプリケーションサービスが起動する
-  - 復元 VM がネットワーク（NSG/サブネット）に正しく参加できる
+1. Recovery Services vault の Site Recovery を開く。
+2. Enable replication で対象 VM とターゲットリージョンを選ぶ。
+3. Replicated items で replication health を確認する。
+4. 初回レプリケーション完了後、分離ネットワークへ test failover する。
+5. 検証後、cleanup test failover を実行する。
 
----
+> [!TODO] スクリーンショットを挿入
+> - Image path: `assets/screenshots/day2-asr-replication-health.png`
+> - Capture target: Site Recovery replicated items page showing replication health
+> - Purpose: ASR の replication health を確認する画面を示す
+> - Suggested alt text: Azure Site Recovery replicated items page showing replication health
+> - Insertion note: Replication health、status、対象 VM が分かる状態を撮影する
+> - Mask: サブスクリプション ID、リソース名に含まれる個人情報、アカウント名、組織名
 
-## 3. Azure Site Recovery: VM のリージョンフェールオーバー
+**期待結果:** レプリケーションの状態と、test failover を始められる条件を説明できます。
 
-### 3.1 前提条件
+## 6. Test failover と本番 failover の違い
 
-- レプリケーション管理用の **Recovery Services vault**
-- **ターゲットリージョン**（多くの場合、Azure のペアリージョン）
-- ターゲット側ネットワークの準備（VNet/サブネット）または ASR 設定時のマッピング
+| 操作 | 用途 | 本番影響 |
+|---|---|---|
+| Test failover | DR 手順の検証 | 分離ネットワークを使えば本番影響を避けられる |
+| Planned failover | ソースが健全な状態で計画的に切り替える | 影響あり。事前調整が必要 |
+| Unplanned failover | 障害時に切り替える | 影響あり。データ損失や復旧順序に注意 |
 
-### 3.2 レプリケーションを有効化する
+ワークショップでは、原則として test failover を扱います。Planned / unplanned failover は設計理解として扱います。
 
-1. Recovery Services vault で **Site Recovery** を開きます。
-2. Azure VM に対して **Enable replication** を選択します。
-3. 次を選択します:
-   - ソースリージョン/リソースグループ
-   - ターゲットリージョン
-   - ターゲットリソースグループ
-   - ターゲット VNet/サブネットのマッピング
-4. **レプリケーションポリシー** を作成/選択します。
+> [!TODO] スクリーンショットを挿入
+> - Image path: `assets/screenshots/day2-asr-test-failover.png`
+> - Capture target: Azure Site Recovery test failover confirmation or job page
+> - Purpose: Test failover の実行と cleanup の入口を示す
+> - Suggested alt text: Azure Site Recovery test failover job page
+> - Insertion note: Test failover の job 状態と cleanup 操作が分かる状態を撮影する
+> - Mask: サブスクリプション ID、リソース名に含まれる個人情報、アカウント名、組織名
 
-### 3.3 Recovery Plan を作成する（推奨）
+## 7. DB 層の注意点
 
-Recovery Plan により、起動順序を定義できます。
-1. DB 層（含める場合）
-2. App 層
-3. Web 層
+MongoDB レプリカセットはゾーン障害には有効ですが、リージョン DR では追加の設計が必要です。
 
-手動ステップも入れられますが、ワークショップでは最小限に留めるのがよいです。
+- DB VM を ASR 対象にする場合、Recovery Plan で DB を先に起動します。
+- フェールオーバー後、MongoDB replica set の primary と接続文字列を確認します。
+- 単一リージョン前提の replica set をそのまま別リージョンへ広げる設計は上級トピックとして扱います。
+- ワークショップ時間内では、DB の復旧は Azure Backup の Restore と、単一 VM 停止時の replica set 挙動確認を中心にします。
 
-### 3.4 テストフェールオーバー（安全な演習）
+## 8. 成功条件
 
-1. 分離ネットワークへ **Test failover** を実行します。
-2. 次を確認します:
-   - VM が期待どおりの順序で起動する
-   - テストネットワーク内で web/app のエンドポイントが応答する
-3. テストフェールオーバーのリソースをクリーンアップします。
+- Recovery Services vault と backup item の役割を説明できる。
+- Restore point が何を意味するか説明できる。
+- Web/App/DB VM 停止時の期待挙動を区別できる。
+- ASR replication health と test failover の意味を説明できる。
+- Test failover 後の cleanup が必要な理由を説明できる。
+- Day 2 終了時に VM と test failover リソースの状態を確認できる。
 
-### 3.5 計画フェールオーバー / 非計画フェールオーバー
+## 迷ったとき
 
-- **Planned failover**: ソースリージョンが健全なときに利用（より安全でリスクが低い）
-- **Unplanned failover**: 障害・停止シナリオで利用
+- 実行手順は [Day 2: 回復性チェックリスト](day-2-resiliency-checklist.ja.md) を参照します。
+- 症状別の切り分けは [トラブルシューティングランブック](troubleshooting-runbook.ja.md) を参照します。
+- コマンドは [クイックリファレンス](quick-reference-card.ja.md) を参照します。
 
----
-
-## 4. DNS とトラフィック切り替え
-
-フェールオーバーは、ユーザーが新リージョンへ到達できて初めて「完了」です。
-
-ワークショップ環境では、切り替えは通常次の更新を意味します。
-- Application Gateway の公開エンドポイント（DNS ラベル / Public IP）
-- クライアント側のベース URL（ハードコードされている場合）
-
-**推奨:** DNS ラベルや環境変数を明確にドキュメント化し、演習中に切り替えやすくします。
-
----
-
-## 5. DB 層の考慮事項（MongoDB）
-
-MongoDB レプリカセットはノード障害やゾーン冗長には適していますが、**リージョン DR** では計画が必要です。
-
-ワークショップ向けの指針:
-- DB VM を ASR でレプリケートする場合、Recovery Plan で DB を最初に起動するようにします。
-- フェールオーバー後、レプリカセットの健全性と primary 選出を確認します。
-- 単一リージョン前提のレプリカセット設計の場合、リージョン跨ぎは **上級拡張** として扱います。
-
-よりシンプルな DR ストーリーにしたい場合:
-- DB 層の復旧演習は Azure Backup のリストアに寄せる
-- ASR のフェールオーバーはステートレス層（web/app）にフォーカスする
-
----
-
-## 6. 「良い状態」の目安（受け入れチェック）
-
-- **RPO が定義されている**: 許容できるデータ損失量
-- **RTO が定義されている**: 許容できる停止時間
-- バックアップが成功し、リストアが再現できる
-- ASR のテストフェールオーバーが再現でき、検証されている
-- トラフィック切り替え手順がドキュメント化され、ワークショップ時間内に実施できる
-
----
-
-## 7. 次のステップ（任意）
-
-- Bicep/CLI による Backup/ASR 設定の自動化
-- 次のランブックを追加:
-  - failover
-  - failback
-  - post-failover validation
-- バックアップ失敗やレプリケーション健全性の Azure Monitor アラートを追加
+戻る: [受講者ポータル](index.md)

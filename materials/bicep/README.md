@@ -1,5 +1,7 @@
 # Azure IaaS Workshop - Bicep Infrastructure Templates
 
+> **Learner path:** This file is a technical reference for the Bicep templates. Workshop learners should follow the Japanese Cloud Shell-first flow in [`materials/docs/learner-quickstart.ja.md`](../docs/learner-quickstart.ja.md) and [`materials/docs/day-1-deployment-checklist.ja.md`](../docs/day-1-deployment-checklist.ja.md). Local Azure CLI, Bicep CLI, and OpenSSL installation are not required for the standard learner path because Azure Cloud Shell provides the required tools.
+
 This directory contains the Bicep Infrastructure as Code (IaC) templates for deploying the Azure IaaS Workshop infrastructure.
 
 ## 🎯 Overview
@@ -505,7 +507,7 @@ For AWS-experienced engineers:
 
 ## 📖 References
 
-- [Azure Architecture Design](/design/AzureArchitectureDesign.md)
+- [Azure Architecture Design](../../design/AzureArchitectureDesign.md)
 - [Bicep Documentation](https://learn.microsoft.com/azure/azure-resource-manager/bicep/)
 - [Azure Well-Architected Framework](https://learn.microsoft.com/azure/well-architected/)
 - [Azure Naming Conventions](https://learn.microsoft.com/azure/cloud-adoption-framework/ready/azure-best-practices/resource-naming)

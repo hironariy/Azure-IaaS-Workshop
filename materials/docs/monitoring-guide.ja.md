@@ -1,113 +1,53 @@
+---
+title: 監視ガイド
+---
+
 # 監視ガイド（Azure Monitor + Log Analytics）
 
-このガイドでは、ワークショップ環境を観測・トラブルシュートするために次を利用する方法を説明します。
-- **Azure Monitor**（メトリック + プラットフォームログ）
-- **Log Analytics**（KQL によるログクエリ）
+## このページでやること
 
-## 対象範囲
+Day 1 でデプロイした Azure IaaS 環境を、Azure Monitor と Log Analytics で確認します。Application Gateway から Web、App、DB の順に外側から内側へ追い、正常性、遅延、エラーの見方を学びます。
 
-- **インフラ**: Application Gateway、Load Balancer、VM（NGINX/Web + Node/App + MongoDB/DB）
-- **目的**: 「稼働しているか？」「どこが遅いか？」「何が失敗したか？」を素早く答えられるようにする
+| 項目 | 内容 |
+|---|---|
+| 対象者 | Day 1 のデプロイ後に監視確認を行う受講者 |
+| 所要時間 | 30-45 分 |
+| 前提 | Day 1 の Bicep deployment と DCR 構成が完了していること |
+| 完了条件 | Application Gateway backend health、VM Heartbeat、基本 KQL クエリを確認できること |
 
-> 注: 監視の一部は Bicep による IaC 化が「planned」になっている場合があります。本ガイドは、ワークショップを進行できるようにするための実用的な手動設定手順にフォーカスします。
+## 1. 監視の全体像
 
----
+| 観点 | Azure で見る場所 | AWS との類比 |
+|---|---|---|
+| メトリック | Azure Monitor Metrics | CloudWatch Metrics |
+| ログ集約 | Log Analytics workspace | CloudWatch Logs + Logs Insights |
+| 制御プレーン操作 | Activity log | CloudTrail に近い操作履歴 |
+| VM ゲスト情報 | Azure Monitor Agent + DCR | CloudWatch Agent |
+| 入口の正常性 | Application Gateway backend health | ALB target health |
 
-## 1. Log Analytics ワークスペースを作成（または再利用）する
+Day 1 の Bicep は Log Analytics workspace と VM 拡張を作成します。Data Collection Rule (DCR) は、Log Analytics table の初期化を待つ必要があるため、`scripts/configure-dcr.sh` で後から作成します。
 
-1. Azure portal で **Log Analytics workspaces** を検索します。
-2. 主要なデプロイ先と同じリージョンにワークスペースを作成します（推奨）。
-3. 例: `law-blogapp-dev` のように環境サフィックス付きで命名します。
+## 2. 入口から正常性を確認する
 
-**AWS との類比:** Log Analytics ワークスペースは、集中管理された CloudWatch Logs の集約先 + クエリレイヤーに概念的に近いものです。
+まず Application Gateway の backend health を確認します。
 
----
+```bash
+RESOURCE_GROUP="rg-blogapp-workshop"
 
-## 2. プラットフォーム診断ログを Log Analytics に送る
-
-### 2.1 Application Gateway の診断
-
-診断を有効化して、次をクエリできるようにします。
-- アクセスログ（誰が/何を/レイテンシ）
-- パフォーマンスログ
-- ファイアウォールログ（WAF を使用している場合）
-
-手順（portal）:
-1. **Application Gateway** リソースを開きます。
-2. **Diagnostic settings** に移動します。
-3. ログを **Log Analytics workspace** に送る診断設定を作成します。
-4. 関連カテゴリ（Access/Performance）を選択します。
-
-### 2.2 Load Balancer の診断（該当する場合）
-
-Load Balancer のメトリック/診断に依存する場合:
-1. **Load Balancer** リソースを開きます。
-2. 同様に診断を設定し、同じワークスペースに送信します。
-
----
-
-## 3. VM のログとパフォーマンスデータを収集する
-
-VM 監視には、一般的に次の 2 段階があります。
-
-### 3.1 ベースライン: Metrics + Activity Log
-
-- 各 VM の **Metrics** で CPU / ディスク / ネットワークを確認します。
-- **Activity Log** で制御プレーン操作（start/stop, redeploy, updates）を追跡します。
-
-これはすぐ使えますが、OS ログは含まれません。
-
-### 3.2 推奨: VM Insights（パフォーマンス + 依存関係ビュー）
-
-1. Azure portal で **Virtual Machines** を検索します。
-2. VM を選び、**Insights** を開きます。
-3. Insights を有効化し、出力先を **Log Analytics workspace** に設定します。
-
-Web/App/DB VM について繰り返します。
-
----
-
-## 4. ワークショップ中に見るべきポイント
-
-### 4.1 「サービスは稼働しているか？」
-
-- Application Gateway のバックエンド正常性
-- VM 状態（稼働中、ブート診断）
-- Load Balancer のヘルスプローブ状態
-
-### 4.2 「なぜ遅いのか？」
-
-- App Gateway のアクセスログ: リクエスト時間とバックエンド応答時間
-- VM CPU（web/app）とディスクレイテンシ（db）
-- MongoDB のパフォーマンスカウンタ（エクスポートしている場合）
-
-### 4.3 「何が失敗したのか？」
-
-- App Gateway ログ: 4xx/5xx の傾向
-- VM 上の Node/NGINX のサービスログ
-- OS の syslog / Windows Event logs（イメージに依存）
-
----
-
-## 5. Log Analytics: KQL クエリ例（導入用）
-
-> ここでは意図的に汎用的な例を示します。実際のテーブルは有効化した診断/エージェントによって異なります。
-
-### 5.1 直近イベントの表示（疎通確認）
-
-```kusto
-search *
-| take 50
+az network application-gateway show-backend-health \
+  --resource-group "$RESOURCE_GROUP" \
+  --name agw-blogapp-prod \
+  --query "backendAddressPools[].backendHttpSettingsCollection[].servers[].{address:address,health:health}" \
+  -o table
 ```
 
-### 5.2 HTTP 5xx エラーの検索（gateway）
+**期待結果:** Web tier backend が Healthy と表示されます。
 
-```kusto
-search " 500 "
-| take 100
-```
+**チェックポイント:** Unhealthy がある場合は、[トラブルシューティングランブック](troubleshooting-runbook.ja.md) を参照します。
 
-### 5.3 VM のハートビート / エージェント有効性
+## 3. VM の Heartbeat を確認する
+
+Azure Portal で Log Analytics workspace を開き、Logs で次を実行します。
 
 ```kusto
 Heartbeat
@@ -115,17 +55,102 @@ Heartbeat
 | order by LastSeen desc
 ```
 
----
+> [!TODO] スクリーンショットを挿入
+> - Image path: `assets/screenshots/day1-log-analytics-query.png`
+> - Capture target: Log Analytics query editor with Heartbeat query results
+> - Purpose: VM の Heartbeat を KQL で確認する画面を示す
+> - Suggested alt text: Azure Log Analytics query editor showing Heartbeat query results
+> - Insertion note: クエリ本文と結果表が分かる状態を撮影する
+> - Mask: サブスクリプション ID、ワークスペース名、VM 名に含まれる個人情報
 
-## 6. 運用のコツ（ワークショップ向け）
+**期待結果:** Web / App / DB VM の `Computer` と `LastSeen` が表示されます。
 
-- 1 学習環境（学生環境）につき **ワークスペースは 1 つ** にして、クエリを簡単にします。
-- 診断設定名は一貫させます（例: `to-law-blogapp`）。
-- 調査時は、外側（**Application Gateway**）から内側（web → app → db）へ順に追います。
+**チェックポイント:** DCR 作成直後はデータが出るまで数分かかることがあります。
 
----
+## 4. CPU とメモリの傾向を確認する
 
-## 7. 次のステップ（任意）
+```kusto
+Perf
+| where ObjectName == "Processor" and CounterName == "% Processor Time"
+| summarize AvgCpu=avg(CounterValue) by Computer, bin(TimeGenerated, 5m)
+| order by TimeGenerated desc
+```
 
-- Azure Monitor の **アラート** を追加（HTTP 5xx 率、バックエンド異常、VM CPU 高騰など）
-- Bicep で **診断設定を IaC 化** し、環境の観測性を一貫させる
+```kusto
+Perf
+| where ObjectName == "Memory" and CounterName in ("% Used Memory", "Available MBytes Memory")
+| summarize AvgValue=avg(CounterValue) by Computer, CounterName, bin(TimeGenerated, 5m)
+| order by TimeGenerated desc
+```
+
+**期待結果:** VM ごとの CPU またはメモリ傾向を確認できます。
+
+**チェックポイント:** テーブルや counter 名は DCR 設定に依存します。結果がない場合は `Perf | take 20` で実データを確認してください。
+
+## 5. Syslog のエラーを確認する
+
+```kusto
+Syslog
+| where SeverityLevel in ("err", "crit", "alert", "emerg")
+| project TimeGenerated, Computer, Facility, SeverityLevel, SyslogMessage
+| order by TimeGenerated desc
+| take 50
+```
+
+**期待結果:** OS やサービスのエラー傾向を確認できます。
+
+**チェックポイント:** 何も出ないこと自体は正常な場合があります。障害演習後に再度確認すると、停止や再起動に関するログが見えることがあります。
+
+## 6. Application Gateway ログを確認する
+
+診断設定で Application Gateway のログを Log Analytics に送っている場合、次のように探索できます。
+
+```kusto
+search "ApplicationGateway"
+| order by TimeGenerated desc
+| take 50
+```
+
+HTTP 5xx の傾向を探す場合:
+
+```kusto
+search " 500 " or " 502 " or " 503 "
+| order by TimeGenerated desc
+| take 100
+```
+
+**期待結果:** Application Gateway 関連ログが入っていれば、アクセスやエラーの傾向を確認できます。
+
+**チェックポイント:** ログカテゴリやテーブル名は診断設定により異なるため、最初は `search * | take 50` で入っているデータを把握します。
+
+## 7. Day 2 の障害検証で見るポイント
+
+| 演習 | 監視で見るもの | 期待する観測 |
+|---|---|---|
+| Web VM 停止 | Application Gateway backend health | 片方の backend が Unhealthy、アプリは継続 |
+| App VM 停止 | API 疎通、VM Heartbeat | API が継続または短時間で復旧 |
+| DB VM 停止 | API 疎通、Syslog、VM 状態 | 一時的な失敗の有無と復旧後の安定 |
+| ASR test failover | Recovery Services vault job | Test failover job と cleanup 状態 |
+
+## 8. よくあるつまずき
+
+| 症状 | 確認すること | 対処 |
+|---|---|---|
+| Heartbeat が出ない | DCR が作成・関連付け済みか | `./scripts/configure-dcr.sh "$RESOURCE_GROUP"` を確認 |
+| Perf が出ない | Table 初期化と DCR counter | 数分待つ、`Perf | take 20` を実行 |
+| App Gateway ログがない | Diagnostic settings | Application Gateway から Log Analytics への送信を有効化 |
+| VM 停止後に戻らない | VM power state | `az vm start` で起動 |
+
+## 完了条件
+
+- Application Gateway backend health を確認できた。
+- Log Analytics で Heartbeat を確認できた。
+- Perf または Syslog の基本クエリを実行できた。
+- Day 2 の障害検証で、どのメトリックやログを見るべきか説明できる。
+
+## 次に進む
+
+Day 2 の演習は [Day 2: 回復性チェックリスト](day-2-resiliency-checklist.ja.md) に進みます。
+
+迷ったとき: [トラブルシューティングランブック](troubleshooting-runbook.ja.md) / [クイックリファレンス](quick-reference-card.ja.md)
+戻る: [受講者ポータル](index.md)
