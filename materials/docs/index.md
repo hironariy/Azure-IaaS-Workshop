@@ -6,40 +6,218 @@ title: Azure IaaS Workshop 受講者ポータル
 
 このポータルは、2 日版 Azure IaaS Workshop を進めるための受講者向け入口です。CLI とスクリプト作業は **Azure Cloud Shell (Bash)** を標準にし、ローカル PC にはブラウザ以外のツールを原則として要求しません。
 
-## ワークショップ進行 TOC
+<style>
+  .page-content > .wrapper {
+    max-width: 1320px;
+  }
 
-この表を上から順に進めます。右端のチェックボックスは、受講者が自分の進捗確認に使うための一時的なチェック欄です。
+  .workshop-portal {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: minmax(22rem, 32%) minmax(0, 1fr);
+    margin-top: 1.5rem;
+  }
 
-| 順番 | タイミング | ページ | このページで完了すること | 完了 |
-|---:|---|---|---|---|
-| 1 | 事前確認 | [受講者クイックスタート](learner/learner-quickstart.ja.md) | 教材の読み順と Cloud Shell-first の進め方を理解する | <input type="checkbox" aria-label="受講者クイックスタート完了"> |
-| 2 | Day 0 | [Day 0: 事前準備](learner/day-0-prerequisites.ja.md) | Azure Portal、Cloud Shell、Entra ID 権限、クォータ、GitHub リポジトリを確認する | <input type="checkbox" aria-label="Day 0 事前準備完了"> |
-| 3 | Day 1 開始 | [Azure Cloud Shell ガイド](learner/azure-cloud-shell-guide.ja.md) | Cloud Shell の起動、clone、ファイル編集、SSH 鍵、証明書生成を確認する | <input type="checkbox" aria-label="Azure Cloud Shell ガイド完了"> |
-| 4 | Day 1 本編 | [Day 1: デプロイチェックリスト](learner/day-1-deployment-checklist.ja.md) | Bicep デプロイ、デプロイ後セットアップ、疎通確認、監視確認を完了する | <input type="checkbox" aria-label="Day 1 デプロイチェックリスト完了"> |
-| 5 | Day 1 監視 | [監視ガイド](operations/monitoring-guide.ja.md) | Application Gateway、VM Heartbeat、KQL の基本確認を行う | <input type="checkbox" aria-label="監視ガイド完了"> |
-| 6 | Day 2 本編 | [Day 2: 回復性チェックリスト](learner/day-2-resiliency-checklist.ja.md) | Backup、Restore、HA 検証、ASR/test failover を安全に進める | <input type="checkbox" aria-label="Day 2 回復性チェックリスト完了"> |
-| 7 | Day 2 補足 | [災害復旧ガイド](operations/disaster-recovery-guide.ja.md) | BCDR の背景、安全ルール、期待結果を理解する | <input type="checkbox" aria-label="災害復旧ガイド完了"> |
+  .workshop-toc {
+    border: 1px solid #d0d7de;
+    border-radius: 0.5rem;
+    max-height: 82vh;
+    overflow: auto;
+    padding: 1rem;
+    position: sticky;
+    top: 1rem;
+  }
 
-## 迷ったときの参照 TOC
+  .workshop-toc h2 {
+    font-size: 1.15rem;
+    margin-top: 0;
+  }
 
-| 用途 | ページ | いつ見るか | 確認済み |
-|---|---|---|---|
-| 症状別の切り分け | [トラブルシューティングランブック](operations/troubleshooting-runbook.ja.md) | エラー、失敗、想定外の状態に遭遇したとき | <input type="checkbox" aria-label="トラブルシューティングランブック確認済み"> |
-| コマンドと値の確認 | [クイックリファレンス](reference/quick-reference-card.ja.md) | リソース名、ポート、主要コマンド、KQL を素早く確認したいとき | <input type="checkbox" aria-label="クイックリファレンス確認済み"> |
-| 認証と権限の背景 | [アイデンティティ、アクセス、シークレットガイド](reference/identity-and-access-guide.ja.md) | Entra ID、RBAC、Managed Identity の関係を確認したいとき | <input type="checkbox" aria-label="アイデンティティガイド確認済み"> |
-| Bicep の深掘り | [Bicep テクニックガイド](reference/bicep-techniques-guide.ja.md) | Bicep の構造やパラメータ設計を学びたいとき | <input type="checkbox" aria-label="Bicep テクニックガイド確認済み"> |
-| ローカル開発 | [ローカル開発ガイド](development/local-development-guide.ja.md) | アプリケーションを手元で変更・検証したいとき | <input type="checkbox" aria-label="ローカル開発ガイド確認済み"> |
+  .workshop-toc table {
+    font-size: 0.9rem;
+    margin-bottom: 1.5rem;
+  }
 
-## ディレクトリ構成
+  .workshop-toc th,
+  .workshop-toc td {
+    padding: 0.35rem 0.45rem;
+    vertical-align: top;
+  }
 
-| フォルダ | 内容 |
-|---|---|
-| `learner/` | 受講者が順番に進める Day 0 / Day 1 / Day 2 の本線 |
-| `operations/` | 監視、BCDR、トラブルシューティングなど運用系の補足 |
-| `reference/` | クイックリファレンス、Bicep、Identity などの参照資料 |
-| `development/` | ローカル開発など教材・アプリ開発者向けの任意資料 |
-| `en/` | 既存英語版ドキュメント。日本語版の構成確定後に同期予定 |
-| `archive/` | 教材計画など、受講者ポータルには出さない内部メモ |
+  .workshop-toc input[type="checkbox"] {
+    transform: scale(1.2);
+  }
+
+  .workshop-content {
+    border: 1px solid #d0d7de;
+    border-radius: 0.5rem;
+    min-height: 82vh;
+    overflow: hidden;
+  }
+
+  .workshop-content iframe {
+    border: 0;
+    display: block;
+    height: 82vh;
+    width: 100%;
+  }
+
+  @media (max-width: 900px) {
+    .workshop-portal {
+      grid-template-columns: 1fr;
+    }
+
+    .workshop-toc {
+      max-height: none;
+      position: static;
+    }
+
+    .workshop-content iframe {
+      height: 75vh;
+    }
+  }
+</style>
+
+<div class="workshop-portal">
+  <nav class="workshop-toc" aria-label="ワークショップ教材 TOC">
+    <h2>ワークショップ進行 TOC</h2>
+    <p>左の表を上から順に進めます。右端のチェックボックスは、受講者が自分の進捗確認に使うための一時的なチェック欄です。</p>
+
+    <table>
+      <thead>
+        <tr>
+          <th>順番</th>
+          <th>タイミング</th>
+          <th>ページ</th>
+          <th>完了</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>1</td>
+          <td>事前確認</td>
+          <td><a href="learner/learner-quickstart.ja.html" target="workshop-content-frame">受講者クイックスタート</a></td>
+          <td><input type="checkbox" aria-label="受講者クイックスタート完了"></td>
+        </tr>
+        <tr>
+          <td>2</td>
+          <td>Day 0</td>
+          <td><a href="learner/day-0-prerequisites.ja.html" target="workshop-content-frame">Day 0: 事前準備</a></td>
+          <td><input type="checkbox" aria-label="Day 0 事前準備完了"></td>
+        </tr>
+        <tr>
+          <td>3</td>
+          <td>Day 1 開始</td>
+          <td><a href="learner/azure-cloud-shell-guide.ja.html" target="workshop-content-frame">Azure Cloud Shell ガイド</a></td>
+          <td><input type="checkbox" aria-label="Azure Cloud Shell ガイド完了"></td>
+        </tr>
+        <tr>
+          <td>4</td>
+          <td>Day 1 本編</td>
+          <td><a href="learner/day-1-deployment-checklist.ja.html" target="workshop-content-frame">Day 1: デプロイチェックリスト</a></td>
+          <td><input type="checkbox" aria-label="Day 1 デプロイチェックリスト完了"></td>
+        </tr>
+        <tr>
+          <td>5</td>
+          <td>Day 1 監視</td>
+          <td><a href="operations/monitoring-guide.ja.html" target="workshop-content-frame">監視ガイド</a></td>
+          <td><input type="checkbox" aria-label="監視ガイド完了"></td>
+        </tr>
+        <tr>
+          <td>6</td>
+          <td>Day 2 本編</td>
+          <td><a href="learner/day-2-resiliency-checklist.ja.html" target="workshop-content-frame">Day 2: 回復性チェックリスト</a></td>
+          <td><input type="checkbox" aria-label="Day 2 回復性チェックリスト完了"></td>
+        </tr>
+        <tr>
+          <td>7</td>
+          <td>Day 2 補足</td>
+          <td><a href="operations/disaster-recovery-guide.ja.html" target="workshop-content-frame">災害復旧ガイド</a></td>
+          <td><input type="checkbox" aria-label="災害復旧ガイド完了"></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>迷ったときの参照 TOC</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>用途</th>
+          <th>ページ</th>
+          <th>確認</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>症状別の切り分け</td>
+          <td><a href="operations/troubleshooting-runbook.ja.html" target="workshop-content-frame">トラブルシューティング</a></td>
+          <td><input type="checkbox" aria-label="トラブルシューティングランブック確認済み"></td>
+        </tr>
+        <tr>
+          <td>コマンドと値の確認</td>
+          <td><a href="reference/quick-reference-card.ja.html" target="workshop-content-frame">クイックリファレンス</a></td>
+          <td><input type="checkbox" aria-label="クイックリファレンス確認済み"></td>
+        </tr>
+        <tr>
+          <td>認証と権限の背景</td>
+          <td><a href="reference/identity-and-access-guide.ja.html" target="workshop-content-frame">Identity / Access</a></td>
+          <td><input type="checkbox" aria-label="アイデンティティガイド確認済み"></td>
+        </tr>
+        <tr>
+          <td>Bicep の深掘り</td>
+          <td><a href="reference/bicep-techniques-guide.ja.html" target="workshop-content-frame">Bicep テクニック</a></td>
+          <td><input type="checkbox" aria-label="Bicep テクニックガイド確認済み"></td>
+        </tr>
+        <tr>
+          <td>ローカル開発</td>
+          <td><a href="development/local-development-guide.ja.html" target="workshop-content-frame">ローカル開発ガイド</a></td>
+          <td><input type="checkbox" aria-label="ローカル開発ガイド確認済み"></td>
+        </tr>
+      </tbody>
+    </table>
+  </nav>
+
+  <section class="workshop-content" aria-label="選択した教材本文">
+    <iframe
+      name="workshop-content-frame"
+      src="learner/learner-quickstart.ja.html"
+      title="選択したワークショップ教材本文"></iframe>
+  </section>
+</div>
+
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const contentFrame = document.querySelector('iframe[name="workshop-content-frame"]');
+    if (!contentFrame) {
+      return;
+    }
+
+    contentFrame.addEventListener('load', () => {
+      const frameDocument = contentFrame.contentDocument;
+      if (!frameDocument || frameDocument.getElementById('embedded-workshop-style')) {
+        return;
+      }
+
+      const style = frameDocument.createElement('style');
+      style.id = 'embedded-workshop-style';
+      style.textContent = `
+        .site-header,
+        .site-footer {
+          display: none;
+        }
+
+        .page-content {
+          padding: 1.5rem 0;
+        }
+
+        .page-content > .wrapper {
+          max-width: 920px;
+        }
+      `;
+      frameDocument.head.appendChild(style);
+    });
+  });
+</script>
 
 ## 現在の整備状況
 
