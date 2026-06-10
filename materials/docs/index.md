@@ -6,27 +6,29 @@ title: Azure IaaS Workshop 受講者ポータル
 
 このポータルは、2 日版 Azure IaaS Workshop を進めるための受講者向け入口です。CLI とスクリプト作業は **Azure Cloud Shell (Bash)** を標準にし、ローカル PC にはブラウザ以外のツールを原則として要求しません。
 
-## まず読むページ
+## ワークショップ進行 TOC
 
-| 順番 | ページ | 目的 |
-|---|---|---|
-| 1 | [受講者クイックスタート](learner/learner-quickstart.ja.md) | 全体像、読む順番、完了条件を確認する |
-| 2 | [Day 0: 事前準備](learner/day-0-prerequisites.ja.md) | Azure Portal、Cloud Shell、Entra ID 権限、クォータを確認する |
-| 3 | [Azure Cloud Shell ガイド](learner/azure-cloud-shell-guide.ja.md) | Cloud Shell の起動、clone、ファイル編集、復帰方法を確認する |
-| 4 | [Day 1: デプロイチェックリスト](learner/day-1-deployment-checklist.ja.md) | Cloud Shell でデプロイ、初期設定、動作確認、監視確認を進める |
-| 5 | [Day 2: 回復性チェックリスト](learner/day-2-resiliency-checklist.ja.md) | Backup、Restore、HA 検証、ASR/test failover を安全に進める |
+この表を上から順に進めます。右端のチェックボックスは、受講者が自分の進捗確認に使うための一時的なチェック欄です。
 
-## 補足資料
+| 順番 | タイミング | ページ | このページで完了すること | 完了 |
+|---:|---|---|---|---|
+| 1 | 事前確認 | [受講者クイックスタート](learner/learner-quickstart.ja.md) | 教材の読み順と Cloud Shell-first の進め方を理解する | <input type="checkbox" aria-label="受講者クイックスタート完了"> |
+| 2 | Day 0 | [Day 0: 事前準備](learner/day-0-prerequisites.ja.md) | Azure Portal、Cloud Shell、Entra ID 権限、クォータ、GitHub リポジトリを確認する | <input type="checkbox" aria-label="Day 0 事前準備完了"> |
+| 3 | Day 1 開始 | [Azure Cloud Shell ガイド](learner/azure-cloud-shell-guide.ja.md) | Cloud Shell の起動、clone、ファイル編集、SSH 鍵、証明書生成を確認する | <input type="checkbox" aria-label="Azure Cloud Shell ガイド完了"> |
+| 4 | Day 1 本編 | [Day 1: デプロイチェックリスト](learner/day-1-deployment-checklist.ja.md) | Bicep デプロイ、デプロイ後セットアップ、疎通確認、監視確認を完了する | <input type="checkbox" aria-label="Day 1 デプロイチェックリスト完了"> |
+| 5 | Day 1 監視 | [監視ガイド](operations/monitoring-guide.ja.md) | Application Gateway、VM Heartbeat、KQL の基本確認を行う | <input type="checkbox" aria-label="監視ガイド完了"> |
+| 6 | Day 2 本編 | [Day 2: 回復性チェックリスト](learner/day-2-resiliency-checklist.ja.md) | Backup、Restore、HA 検証、ASR/test failover を安全に進める | <input type="checkbox" aria-label="Day 2 回復性チェックリスト完了"> |
+| 7 | Day 2 補足 | [災害復旧ガイド](operations/disaster-recovery-guide.ja.md) | BCDR の背景、安全ルール、期待結果を理解する | <input type="checkbox" aria-label="災害復旧ガイド完了"> |
 
-| ページ | 位置づけ |
-|---|---|
-| [監視ガイド](operations/monitoring-guide.ja.md) | Day 1 の Azure Monitor / Log Analytics 演習で参照する |
-| [災害復旧ガイド](operations/disaster-recovery-guide.ja.md) | Day 2 の Backup / Restore / ASR 演習で参照する |
-| [トラブルシューティングランブック](operations/troubleshooting-runbook.ja.md) | 症状から確認箇所と対処に進む |
-| [クイックリファレンス](reference/quick-reference-card.ja.md) | リソース名、ポート、主要コマンド、KQL を確認する |
-| [アイデンティティ、アクセス、シークレットガイド](reference/identity-and-access-guide.ja.md) | Entra ID、RBAC、Managed Identity の背景理解に使う |
-| [Bicep テクニックガイド](reference/bicep-techniques-guide.ja.md) | Bicep の構造を深掘りしたい場合に読む |
-| [ローカル開発ガイド](development/local-development-guide.ja.md) | アプリケーションを手元で変更・検証したい開発者向けの任意資料 |
+## 迷ったときの参照 TOC
+
+| 用途 | ページ | いつ見るか | 確認済み |
+|---|---|---|---|
+| 症状別の切り分け | [トラブルシューティングランブック](operations/troubleshooting-runbook.ja.md) | エラー、失敗、想定外の状態に遭遇したとき | <input type="checkbox" aria-label="トラブルシューティングランブック確認済み"> |
+| コマンドと値の確認 | [クイックリファレンス](reference/quick-reference-card.ja.md) | リソース名、ポート、主要コマンド、KQL を素早く確認したいとき | <input type="checkbox" aria-label="クイックリファレンス確認済み"> |
+| 認証と権限の背景 | [アイデンティティ、アクセス、シークレットガイド](reference/identity-and-access-guide.ja.md) | Entra ID、RBAC、Managed Identity の関係を確認したいとき | <input type="checkbox" aria-label="アイデンティティガイド確認済み"> |
+| Bicep の深掘り | [Bicep テクニックガイド](reference/bicep-techniques-guide.ja.md) | Bicep の構造やパラメータ設計を学びたいとき | <input type="checkbox" aria-label="Bicep テクニックガイド確認済み"> |
+| ローカル開発 | [ローカル開発ガイド](development/local-development-guide.ja.md) | アプリケーションを手元で変更・検証したいとき | <input type="checkbox" aria-label="ローカル開発ガイド確認済み"> |
 
 ## ディレクトリ構成
 

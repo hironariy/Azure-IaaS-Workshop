@@ -3,6 +3,9 @@ description: Cloud Shell-first learner materials for the Azure IaaS Workshop.
 lang: ja-JP
 theme: minima
 
+header_pages:
+  - index.md
+
 plugins:
   - jekyll-optional-front-matter
   - jekyll-readme-index
