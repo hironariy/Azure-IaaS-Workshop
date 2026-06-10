@@ -1,3 +1,7 @@
+# Authoritative build/deploy for the learner portal (materials/docs).
+# To preview Pages content locally before pushing, run:
+#   ./scripts/preview-pages.sh        # serves http://localhost:4000
+#   ./scripts/preview-pages.sh stop   # stops the local preview
 name: Deploy learner portal
 
 on:

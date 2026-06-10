@@ -34,3 +34,10 @@ materials/bicep/dev.bicepparam
 # =============================================================================
 *.local.sh
 *.local.ps1
+
+# =============================================================================
+# Local Jekyll preview (scripts/preview-pages.sh) — never commit build output
+# =============================================================================
+materials/docs/_site/
+materials/docs/.jekyll-cache/
+.jekyll-metadata
