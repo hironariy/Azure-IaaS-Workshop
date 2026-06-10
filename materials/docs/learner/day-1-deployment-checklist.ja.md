@@ -308,7 +308,7 @@ Heartbeat
 
 **期待結果:** VM の `Computer` と `LastSeen` が表示されます。
 
-**チェックポイント:** データがすぐに出ない場合は、DCR 関連付け後に数分待ちます。監視の詳細は [監視ガイド](monitoring-guide.ja.md) を参照してください。
+**チェックポイント:** データがすぐに出ない場合は、DCR 関連付け後に数分待ちます。監視の詳細は [監視ガイド](../operations/monitoring-guide.ja.md) を参照してください。
 
 ## よくある失敗と確認先
 
@@ -336,7 +336,7 @@ Heartbeat
 
 ## 次に進む
 
-Day 1 の監視演習では [監視ガイド](monitoring-guide.ja.md) を参照します。Day 2 では [Day 2: 回復性チェックリスト](day-2-resiliency-checklist.ja.md) に進みます。
+Day 1 の監視演習では [監視ガイド](../operations/monitoring-guide.ja.md) を参照します。Day 2 では [Day 2: 回復性チェックリスト](day-2-resiliency-checklist.ja.md) に進みます。
 
 前のページ: [Azure Cloud Shell ガイド](azure-cloud-shell-guide.ja.md)  
-迷ったとき: [受講者ポータル](index.md) / [トラブルシューティングランブック](troubleshooting-runbook.ja.md) / [クイックリファレンス](quick-reference-card.ja.md)
+迷ったとき: [受講者ポータル](../index.md) / [トラブルシューティングランブック](../operations/troubleshooting-runbook.ja.md) / [クイックリファレンス](../reference/quick-reference-card.ja.md)

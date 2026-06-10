@@ -270,9 +270,9 @@ Test failover は本番側に影響しない分離ネットワークで行いま
 
 ## 迷ったとき
 
-- 症状別の確認は [トラブルシューティングランブック](troubleshooting-runbook.ja.md) を参照します。
-- コマンドとリソース名は [クイックリファレンス](quick-reference-card.ja.md) を参照します。
-- BCDR の背景説明は [災害復旧ガイド](disaster-recovery-guide.ja.md) を参照します。
+- 症状別の確認は [トラブルシューティングランブック](../operations/troubleshooting-runbook.ja.md) を参照します。
+- コマンドとリソース名は [クイックリファレンス](../reference/quick-reference-card.ja.md) を参照します。
+- BCDR の背景説明は [災害復旧ガイド](../operations/disaster-recovery-guide.ja.md) を参照します。
 
 前のページ: [Day 1: デプロイチェックリスト](day-1-deployment-checklist.ja.md)  
-戻る: [受講者ポータル](index.md)
+戻る: [受講者ポータル](../index.md)

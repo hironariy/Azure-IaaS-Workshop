@@ -186,10 +186,10 @@ search "ApplicationGateway"
 
 | 状況 | 戻るページ |
 |---|---|
-| Day 1 手順を確認したい | [Day 1: デプロイチェックリスト](day-1-deployment-checklist.ja.md) |
-| Day 2 手順を確認したい | [Day 2: 回復性チェックリスト](day-2-resiliency-checklist.ja.md) |
-| 症状別に調べたい | [トラブルシューティングランブック](troubleshooting-runbook.ja.md) |
-| 監視を深掘りしたい | [監視ガイド](monitoring-guide.ja.md) |
-| BCDR を深掘りしたい | [災害復旧ガイド](disaster-recovery-guide.ja.md) |
+| Day 1 手順を確認したい | [Day 1: デプロイチェックリスト](../learner/day-1-deployment-checklist.ja.md) |
+| Day 2 手順を確認したい | [Day 2: 回復性チェックリスト](../learner/day-2-resiliency-checklist.ja.md) |
+| 症状別に調べたい | [トラブルシューティングランブック](../operations/troubleshooting-runbook.ja.md) |
+| 監視を深掘りしたい | [監視ガイド](../operations/monitoring-guide.ja.md) |
+| BCDR を深掘りしたい | [災害復旧ガイド](../operations/disaster-recovery-guide.ja.md) |
 
-戻る: [受講者ポータル](index.md)
+戻る: [受講者ポータル](../index.md)

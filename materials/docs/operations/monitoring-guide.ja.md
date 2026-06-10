@@ -150,7 +150,7 @@ search " 500 " or " 502 " or " 503 "
 
 ## 次に進む
 
-Day 2 の演習は [Day 2: 回復性チェックリスト](day-2-resiliency-checklist.ja.md) に進みます。
+Day 2 の演習は [Day 2: 回復性チェックリスト](../learner/day-2-resiliency-checklist.ja.md) に進みます。
 
-迷ったとき: [トラブルシューティングランブック](troubleshooting-runbook.ja.md) / [クイックリファレンス](quick-reference-card.ja.md)
-戻る: [受講者ポータル](index.md)
+迷ったとき: [トラブルシューティングランブック](troubleshooting-runbook.ja.md) / [クイックリファレンス](../reference/quick-reference-card.ja.md)
+戻る: [受講者ポータル](../index.md)

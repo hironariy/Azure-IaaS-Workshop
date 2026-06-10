@@ -6,7 +6,7 @@ title: 災害復旧ガイド
 
 ## このページでやること
 
-Day 2 の Backup、Restore、HA 検証、Azure Site Recovery (ASR) の背景を理解します。実際の手順は [Day 2: 回復性チェックリスト](day-2-resiliency-checklist.ja.md) を主線とし、このページでは判断理由、安全ルール、期待結果を補足します。
+Day 2 の Backup、Restore、HA 検証、Azure Site Recovery (ASR) の背景を理解します。実際の手順は [Day 2: 回復性チェックリスト](../learner/day-2-resiliency-checklist.ja.md) を主線とし、このページでは判断理由、安全ルール、期待結果を補足します。
 
 | 項目 | 内容 |
 |---|---|
@@ -121,8 +121,8 @@ MongoDB レプリカセットはゾーン障害には有効ですが、リージ
 
 ## 迷ったとき
 
-- 実行手順は [Day 2: 回復性チェックリスト](day-2-resiliency-checklist.ja.md) を参照します。
+- 実行手順は [Day 2: 回復性チェックリスト](../learner/day-2-resiliency-checklist.ja.md) を参照します。
 - 症状別の切り分けは [トラブルシューティングランブック](troubleshooting-runbook.ja.md) を参照します。
-- コマンドは [クイックリファレンス](quick-reference-card.ja.md) を参照します。
+- コマンドは [クイックリファレンス](../reference/quick-reference-card.ja.md) を参照します。
 
-戻る: [受講者ポータル](index.md)
+戻る: [受講者ポータル](../index.md)

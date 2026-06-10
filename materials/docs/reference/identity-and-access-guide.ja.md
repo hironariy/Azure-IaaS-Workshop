@@ -1,6 +1,6 @@
 # アイデンティティ、アクセス、シークレットガイド（Entra ID + RBAC + Managed Identity）
 
-> **位置づけ:** このページは、Entra ID、Azure RBAC、Managed Identity の背景理解用の補足資料です。アプリ登録の作成手順は [Day 0: 事前準備](day-0-prerequisites.ja.md) に集約しています。
+> **位置づけ:** このページは、Entra ID、Azure RBAC、Managed Identity の背景理解用の補足資料です。アプリ登録の作成手順は [Day 0: 事前準備](../learner/day-0-prerequisites.ja.md) に集約しています。
 
 このガイドでは、このワークショップにおける「アイデンティティとアクセス」の全体像を、次にフォーカスして説明します。
 - Microsoft Entra ID（ユーザー認証）

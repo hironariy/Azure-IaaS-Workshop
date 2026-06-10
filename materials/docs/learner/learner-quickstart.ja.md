@@ -22,9 +22,9 @@ title: 受講者クイックスタート
 | 事前または開始直後 | [Day 0: 事前準備](day-0-prerequisites.ja.md) | Azure Portal、Cloud Shell、Entra ID 権限、クォータ、GitHub リポジトリを確認できた |
 | Day 1 の最初 | [Azure Cloud Shell ガイド](azure-cloud-shell-guide.ja.md) | Cloud Shell Bash でリポジトリを clone し、ファイルを編集できる |
 | Day 1 本編 | [Day 1: デプロイチェックリスト](day-1-deployment-checklist.ja.md) | Bicep デプロイ、デプロイ後セットアップ、疎通確認、監視確認を進められる |
-| Day 1 監視演習 | [監視ガイド](monitoring-guide.ja.md) | Log Analytics で基本クエリを実行できる |
+| Day 1 監視演習 | [監視ガイド](../operations/monitoring-guide.ja.md) | Log Analytics で基本クエリを実行できる |
 | Day 2 本編 | [Day 2: 回復性チェックリスト](day-2-resiliency-checklist.ja.md) | Backup、Restore、障害検証、ASR/test failover を安全に進められる |
-| 困ったとき | [トラブルシューティングランブック](troubleshooting-runbook.ja.md) / [クイックリファレンス](quick-reference-card.ja.md) | 症状別の確認と主要コマンドを確認できる |
+| 困ったとき | [トラブルシューティングランブック](../operations/troubleshooting-runbook.ja.md) / [クイックリファレンス](../reference/quick-reference-card.ja.md) | 症状別の確認と主要コマンドを確認できる |
 
 ## このワークショップで標準にする作業場所
 
@@ -67,4 +67,4 @@ title: 受講者クイックスタート
 
 [Day 0: 事前準備](day-0-prerequisites.ja.md) に進みます。
 
-迷ったときは [受講者ポータル](index.md) または [トラブルシューティングランブック](troubleshooting-runbook.ja.md) に戻ってください。
+迷ったときは [受講者ポータル](../index.md) または [トラブルシューティングランブック](../operations/troubleshooting-runbook.ja.md) に戻ってください。

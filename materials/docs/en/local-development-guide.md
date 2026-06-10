@@ -457,7 +457,7 @@ cd materials/backend && npm run seed
 
 ## Related Documentation
 
-- [README.md](../../README.md) - Main project documentation and Azure deployment guide
-- [dev-environment/README.md](../../dev-environment/README.md) - Docker environment details
-- [Backend Application Design](../../design/BackendApplicationDesign.md) - API specifications
-- [Frontend Application Design](../../design/FrontendApplicationDesign.md) - UI/UX specifications
+- [README.md](../../../README.md) - Main project documentation and Azure deployment guide
+- [dev-environment/README.md](../../../dev-environment/README.md) - Docker environment details
+- [Backend Application Design](../../../design/BackendApplicationDesign.md) - API specifications
+- [Frontend Application Design](../../../design/FrontendApplicationDesign.md) - UI/UX specifications

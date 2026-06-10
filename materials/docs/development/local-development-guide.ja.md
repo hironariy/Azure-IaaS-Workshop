@@ -1,6 +1,6 @@
 # ローカル開発ガイド
 
-> **位置づけ:** このページは、アプリケーションをローカルで変更・検証したい開発者向けの任意資料です。通常のワークショップ受講者が Azure へデプロイする本線では、ローカル Node.js、Docker、Azure CLI、OpenSSL の準備は必須ではありません。受講者の標準手順は [受講者クイックスタート](learner-quickstart.ja.md) と [Day 1: デプロイチェックリスト](day-1-deployment-checklist.ja.md) を参照してください。
+> **位置づけ:** このページは、アプリケーションをローカルで変更・検証したい開発者向けの任意資料です。通常のワークショップ受講者が Azure へデプロイする本線では、ローカル Node.js、Docker、Azure CLI、OpenSSL の準備は必須ではありません。受講者の標準手順は [受講者クイックスタート](../learner/learner-quickstart.ja.md) と [Day 1: デプロイチェックリスト](../learner/day-1-deployment-checklist.ja.md) を参照してください。
 
 このガイドでは、開発およびテスト用にローカルマシンでブログアプリケーションをセットアップして実行する方法を説明します。
 
@@ -459,7 +459,7 @@ cd materials/backend && npm run seed
 
 ## 関連ドキュメント
 
-- [README.ja.md](../../README.ja.md) - メインプロジェクトドキュメントとAzureデプロイガイド
-- [dev-environment/README.md](../../dev-environment/README.md) - Docker環境の詳細
-- [バックエンドアプリケーション設計](../../design/BackendApplicationDesign.md) - API仕様
-- [フロントエンドアプリケーション設計](../../design/FrontendApplicationDesign.md) - UI/UX仕様
+- [README.ja.md](../../../README.ja.md) - メインプロジェクトドキュメントとAzureデプロイガイド
+- [dev-environment/README.md](../../../dev-environment/README.md) - Docker環境の詳細
+- [バックエンドアプリケーション設計](../../../design/BackendApplicationDesign.md) - API仕様
+- [フロントエンドアプリケーション設計](../../../design/FrontendApplicationDesign.md) - UI/UX仕様

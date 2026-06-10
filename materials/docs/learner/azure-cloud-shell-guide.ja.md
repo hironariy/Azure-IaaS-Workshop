@@ -145,4 +145,4 @@ az account show --query "{subscription:name, subscriptionId:id, tenantId:tenantI
 [Day 1: デプロイチェックリスト](day-1-deployment-checklist.ja.md) に進みます。
 
 前のページ: [Day 0: 事前準備](day-0-prerequisites.ja.md)  
-迷ったとき: [受講者ポータル](index.md) / [トラブルシューティングランブック](troubleshooting-runbook.ja.md) / [クイックリファレンス](quick-reference-card.ja.md)
+迷ったとき: [受講者ポータル](../index.md) / [トラブルシューティングランブック](../operations/troubleshooting-runbook.ja.md) / [クイックリファレンス](../reference/quick-reference-card.ja.md)

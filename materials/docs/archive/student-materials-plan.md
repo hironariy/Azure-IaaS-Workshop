@@ -1,5 +1,7 @@
 # Student Learning Materials Plan (Azure IaaS Workshop)
 
+> **Archive note:** This is an earlier planning memo. Active learner materials are now organized under `materials/docs/learner/`, `materials/docs/operations/`, `materials/docs/reference/`, and `materials/docs/development/`. Some proposed paths below intentionally reflect the older flat layout.
+
 ## Purpose
 This document proposes **additional student-facing materials** to help AWS-experienced engineers understand Azure concepts faster and operate the workshop environment with less instructor intervention.
 

@@ -214,8 +214,8 @@ Heartbeat
 
 ## 次に進む
 
-- コマンドやリソース名は [クイックリファレンス](quick-reference-card.ja.md) を参照します。
-- Day 1 の手順は [Day 1: デプロイチェックリスト](day-1-deployment-checklist.ja.md) に戻ります。
-- Day 2 の手順は [Day 2: 回復性チェックリスト](day-2-resiliency-checklist.ja.md) に戻ります。
+- コマンドやリソース名は [クイックリファレンス](../reference/quick-reference-card.ja.md) を参照します。
+- Day 1 の手順は [Day 1: デプロイチェックリスト](../learner/day-1-deployment-checklist.ja.md) に戻ります。
+- Day 2 の手順は [Day 2: 回復性チェックリスト](../learner/day-2-resiliency-checklist.ja.md) に戻ります。
 
-戻る: [受講者ポータル](index.md)
+戻る: [受講者ポータル](../index.md)

@@ -97,7 +97,7 @@ The sample application is a **multi-user blog platform** with the following feat
 This section explains how to deploy the application to Azure.
 
 > **📝 Looking for local development setup?**
-> See the [Local Development Guide](materials/docs/local-development-guide.md) for running the application on your local machine.
+> See the [Local Development Guide](materials/docs/en/local-development-guide.md) for running the application on your local machine.
 
 ### 2.1 Prerequisites
 
@@ -202,7 +202,7 @@ openssl version
 # Expected: OpenSSL 3.x.x
 ```
 
-> **📝 Need Node.js and Docker?** These are only required for [local development](materials/docs/local-development-guide.md), not for Azure deployment.
+> **📝 Need Node.js and Docker?** These are only required for [local development](materials/docs/en/local-development-guide.md), not for Azure deployment.
 
 #### 2.1.2 Required Accounts
 
@@ -499,7 +499,7 @@ You need to create **two app registrations** in Microsoft Entra ID. This is requ
 
 ### 2.2 Local Development Environment (Optional)
 
-> **📖 Full Guide:** For local development setup, see the [Local Development Guide](materials/docs/local-development-guide.md).
+> **📖 Full Guide:** For local development setup, see the [Local Development Guide](materials/docs/en/local-development-guide.md).
 
 Local development requires additional tools (Node.js, Docker) and is useful for:
 - Making code changes and debugging
@@ -1481,8 +1481,8 @@ After completing these tests, you will understand:
 
 ## 4. Operational Guides
 
-- [Monitoring Guide (Azure Monitor + Log Analytics)](./materials/docs/monitoring-guide.md)
-- [BCDR Guide (Azure Backup + Azure Site Recovery)](./materials/docs/disaster-recovery-guide.md)
+- [Monitoring Guide (Azure Monitor + Log Analytics)](materials/docs/en/monitoring-guide.md)
+- [BCDR Guide (Azure Backup + Azure Site Recovery)](materials/docs/en/disaster-recovery-guide.md)
 
 ---
 
@@ -1490,9 +1490,9 @@ After completing these tests, you will understand:
 
 ### Documentation
 
-- [Local Development Guide](materials/docs/local-development-guide.md) - Run the application locally
-- [Bicep Techniques Used in This Repository](materials/docs/bicep-techniques-guide.md) - Patterns used in the workshop IaC
-- [Identity, Access, and Secrets Guide (Entra ID + RBAC + Managed Identity)](materials/docs/identity-and-access-guide.md) - How authentication/authorization and secrets work in this repo
+- [Local Development Guide](materials/docs/en/local-development-guide.md) - Run the application locally
+- [Bicep Techniques Used in This Repository](materials/docs/en/bicep-techniques-guide.md) - Patterns used in the workshop IaC
+- [Identity, Access, and Secrets Guide (Entra ID + RBAC + Managed Identity)](materials/docs/en/identity-and-access-guide.md) - How authentication/authorization and secrets work in this repo
 - [Deployment Strategy (Detailed)](AIdocs/dev-record/deployment-strategy.md) - Complete step-by-step deployment guide
 - [Azure Architecture Design](design/AzureArchitectureDesign.md) - Infrastructure specifications
 - [Backend Application Design](design/BackendApplicationDesign.md) - API design and specifications

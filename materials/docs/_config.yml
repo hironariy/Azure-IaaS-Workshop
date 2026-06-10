@@ -27,4 +27,4 @@ relative_links:
   collections: true
 
 exclude:
-  - student-materials-plan.md
+  - archive/
