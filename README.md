@@ -275,21 +275,21 @@ Register-AzResourceProvider -ProviderNamespace Microsoft.Network
 <details>
 <summary><strong>📝 Click to expand: Check VM Quota</strong></summary>
 
-This workshop deploys 6 VMs (2 Web, 2 App, 2 DB) using B-series VMs. Verify you have sufficient vCPU quota.
+This workshop deploys 6 VMs (2 Web, 2 App, 2 DB) using Basv2-series VMs. Verify you have sufficient vCPU quota.
 
 **Quota Requirements:**
 
 | VM Size | Count | vCPUs Each | Total vCPUs |
 |---------|-------|------------|-------------|
-| Standard_B2s (Web) | 2 | 2 | 4 |
-| Standard_B2s (App) | 2 | 2 | 4 |
-| Standard_B4ms (DB) | 2 | 4 | 8 |
+| Standard_B2als_v2 (Web) | 2 | 2 | 4 |
+| Standard_B2als_v2 (App) | 2 | 2 | 4 |
+| Standard_B4as_v2 (DB) | 2 | 4 | 8 |
 | **Total** | **6** | | **16 vCPUs** |
 
 **macOS/Linux (Azure CLI):**
 ```bash
-# Check B-series vCPU quota in your target region
-az vm list-usage --location japanwest --query "[?contains(name.value, 'standardBSFamily')].{Name:name.localizedValue, CurrentValue:currentValue, Limit:limit}" -o table
+# Check Basv2-series vCPU quota in your target region
+az vm list-usage --location japanwest --query "[?contains(name.value, 'standardBASv2Family')].{Name:name.localizedValue, CurrentValue:currentValue, Limit:limit}" -o table
 
 # Check total regional vCPU quota
 az vm list-usage --location japanwest --query "[?name.value=='cores'].{Name:name.localizedValue, CurrentValue:currentValue, Limit:limit}" -o table
@@ -297,8 +297,8 @@ az vm list-usage --location japanwest --query "[?name.value=='cores'].{Name:name
 
 **Windows PowerShell:**
 ```powershell
-# Check B-series vCPU quota in your target region
-Get-AzVMUsage -Location japanwest | Where-Object { $_.Name.Value -like "*standardBSFamily*" } | Select-Object @{N='Name';E={$_.Name.LocalizedValue}}, CurrentValue, Limit
+# Check Basv2-series vCPU quota in your target region
+Get-AzVMUsage -Location japanwest | Where-Object { $_.Name.Value -like "*standardBASv2Family*" } | Select-Object @{N='Name';E={$_.Name.LocalizedValue}}, CurrentValue, Limit
 
 # Check total regional vCPU quota
 Get-AzVMUsage -Location japanwest | Where-Object { $_.Name.Value -eq "cores" } | Select-Object @{N='Name';E={$_.Name.LocalizedValue}}, CurrentValue, Limit
@@ -308,12 +308,12 @@ Get-AzVMUsage -Location japanwest | Where-Object { $_.Name.Value -eq "cores" } |
 - `Limit` = Maximum allowed vCPUs
 - `CurrentValue` = Currently used vCPUs
 - Available = Limit - CurrentValue
-- You need at least **16 available vCPUs** for B-series
+- You need at least **16 available vCPUs** for Basv2-series
 
 **If quota is insufficient:**
 1. Go to [Azure Portal](https://portal.azure.com) → **Subscriptions** → Select your subscription
 2. Click **Usage + quotas** in the left menu
-3. Search for "Standard BS Family vCPUs"
+3. Search for "Standard BASv2 Family vCPUs"
 4. Click **Request increase** and submit a support request
 5. Quota increases are typically approved within a few hours for reasonable amounts
 
@@ -814,7 +814,7 @@ When deployment completes successfully, you'll see JSON output with `"provisioni
 
 **Error:**
 ```
-The requested VM size Standard_B2s is not available in the current region.
+The requested VM size Standard_B2als_v2 is not available in the current region.
 ```
 
 **Cause:** Azure VM SKU availability varies by region, availability zone, and subscription type.
@@ -823,7 +823,7 @@ The requested VM size Standard_B2s is not available in the current region.
 
 1. **Check available VM sizes in your region:**
    ```bash
-   # List available B-series VMs
+   # List available Basv2-series VMs
    az vm list-skus --location japanwest --size Standard_B --output table
    
    # Check availability in specific zone
@@ -832,18 +832,18 @@ The requested VM size Standard_B2s is not available in the current region.
 
 2. **Update your parameter file** (`main.local.bicepparam`) with available alternatives:
    ```bicep
-   // Alternative VM sizes (update if defaults are unavailable)
-   param webVmSize = 'Standard_B2als_v2'  // Alternative to Standard_B2s
-   param appVmSize = 'Standard_B2als_v2'  // Alternative to Standard_B2s
-   param dbVmSize = 'Standard_B4as_v2'    // Alternative to Standard_B4ms
+   // Alternative Basv2 VM sizes (update if defaults are unavailable)
+   param webVmSize = 'Standard_B2as_v2'   // More memory than Standard_B2als_v2
+   param appVmSize = 'Standard_B2as_v2'   // More memory than Standard_B2als_v2
+   param dbVmSize = 'Standard_B8als_v2'   // Same memory as Standard_B4as_v2, higher vCPU quota required
    ```
 
 3. **Alternative VM Size Reference:**
 
-   | Original SKU | Alternatives | vCPU | RAM |
-   |--------------|--------------|------|-----|
-   | Standard_B2s | Standard_B2als_v2, Standard_B2as_v2, Standard_B2ms | 2 | 4-8 GB |
-   | Standard_B4ms | Standard_B4as_v2, Standard_B4als_v2 | 4 | 16 GB |
+   | Default SKU | Basv2 Alternatives | vCPU | RAM |
+   |-------------|---------------------|------|-----|
+   | Standard_B2als_v2 | Standard_B2as_v2 | 2 | 4-8 GB |
+   | Standard_B4as_v2 | Standard_B8als_v2 | 4-8 | 16 GB |
 
    > **⚠️ Important for DB Tier:** Ensure the alternative VM size supports Premium SSD for MongoDB performance. Check with:
    > ```bash

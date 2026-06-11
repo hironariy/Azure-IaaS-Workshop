@@ -5388,8 +5388,8 @@ For production environments, consider blue-green deployment pattern:
 
 | Component | Specification | Rationale |
 |-----------|--------------|-----------|
-| **CPU** | 2 vCPU (Standard_B2ms) | Node.js single-threaded, 50% baseline + burst to 200% |
-| **Memory** | 8 GB RAM | ~512 MB per Node process + OS overhead + headroom |
+| **CPU** | 2 vCPU (Standard_B2als_v2) | Node.js single-threaded, Basv2 CPU credit model with burst capability |
+| **Memory** | 4 GB RAM | ~512 MB per Node process + OS overhead + workshop headroom |
 | **Storage** | 30 GB Premium SSD | Fast npm install, TypeScript compilation, logs |
 | **Network** | 1 Gbps | Sufficient for API responses (JSON payloads) |
 
@@ -5420,7 +5420,7 @@ When to add more API VMs:
 ```
 10,000 daily active users:
 - Peak RPS: ~100 requests/second
-- Recommended: 4-6 VMs (Standard_B2ms)
+- Recommended: 4-6 VMs (Standard_B2als_v2)
 - Or migrate to Azure Container Apps (auto-scaling)
 ```
 
@@ -5428,16 +5428,16 @@ When to add more API VMs:
 
 ```
 Workshop Configuration (2 VMs):
-- 2x Standard_B2ms: $60/month each = $120/month
+- 2x Standard_B2als_v2: ~$27/month each = ~$55/month
 - 2x Premium SSD 30GB: $5/month each = $10/month
 - Load Balancer: $18/month
 - Bandwidth: ~$5/month
-Total: ~$155/month
+Total: ~$88/month
 
 Scale-up Configuration (6 VMs):
-- 6x Standard_B2ms: $360/month
+- 6x Standard_B2als_v2: ~$165/month
 - Other resources: $30/month
-Total: ~$390/month
+Total: ~$195/month
 ```
 
 **Monitoring Resource Usage**:
@@ -6032,7 +6032,7 @@ Benefits: Optimal scaling, polyglot microservices
 
 | Pattern | Monthly Cost | Auto-scale? | Management Effort |
 |---------|--------------|-------------|-------------------|
-| **VMs** (Standard_B2ms) | ~$120 (2 VMs always on) | ❌ Manual | High (OS patching, systemd) |
+| **VMs** (Standard_B2als_v2) | ~$55 (2 VMs always on) | ❌ Manual | High (OS patching, systemd) |
 | **Container Apps** (consumption) | ~$60 (scale to zero) | ✅ Yes | Low (managed platform) |
 | **Azure Functions** (consumption) | ~$10 (pay per execution) | ✅ Yes | Very low (fully serverless) |
 

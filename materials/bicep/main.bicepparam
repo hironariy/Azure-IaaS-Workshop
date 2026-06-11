@@ -127,24 +127,26 @@ param deployStorage = true
 // "VM size not available", check available sizes with:
 //   az vm list-skus --location <your-region> --size Standard_B --output table
 //
+// Defaults use Basv2-series VMs. If unavailable, choose a Basv2 SKU with
+// the same or greater memory for the tier.
 // Common alternatives:
-//   Standard_B2s  → Standard_B2als_v2, Standard_B2as_v2, Standard_B2ms
-//   Standard_B4ms → Standard_B4as_v2, Standard_B4als_v2
+//   Standard_B2als_v2 → Standard_B2as_v2
+//   Standard_B4as_v2  → Standard_B8als_v2 (same memory, higher vCPU)
 // =============================================================================
 
 // Web tier: NGINX reverse proxy (2 vCPU, 4 GB RAM)
-// Alternatives if unavailable: Standard_B2als_v2, Standard_B2as_v2
-param webVmSize = 'Standard_B2s'
+// Alternative if unavailable: Standard_B2as_v2
+param webVmSize = 'Standard_B2als_v2'
 
 // App tier: Express/Node.js API (2 vCPU, 4 GB RAM)
-// Alternatives if unavailable: Standard_B2als_v2, Standard_B2as_v2
-param appVmSize = 'Standard_B2s'
+// Alternative if unavailable: Standard_B2as_v2
+param appVmSize = 'Standard_B2als_v2'
 
 // DB tier: MongoDB (4 vCPU, 16 GB RAM) - needs Premium SSD support
-// Alternatives if unavailable: Standard_B4as_v2, Standard_B4als_v2
+// Alternative if unavailable: Standard_B8als_v2
 // IMPORTANT: Verify Premium SSD support with:
 //   az vm list-skus --location <region> --size <sku> --query "[].capabilities[?name=='PremiumIO']"
-param dbVmSize = 'Standard_B4ms'
+param dbVmSize = 'Standard_B4as_v2'
 
 // MongoDB data disk size
 param dbDataDiskSizeGB = 128

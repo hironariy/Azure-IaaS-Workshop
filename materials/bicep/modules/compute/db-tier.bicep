@@ -15,12 +15,12 @@
 //   App Tier (Express) → DB Tier (MongoDB:27017)
 //   DB VM ↔ DB VM (replica set sync:27017)
 //
-// VM Sizing Rationale (B4ms):
+// VM Sizing Rationale (B4as_v2):
 //   - 4 vCPU, 16 GB RAM
-//   - 60% CPU baseline with burst capability
+//   - Basv2 CPU credit model with burst capability
 //   - 16 GB RAM optimal for MongoDB working set
 //   - Supports Premium SSD (required for DB performance)
-//   - Cost-effective: $0.166/hr
+//   - Cost-effective Basv2 option for workshop database traffic
 //
 // 2-Node Replica Set Considerations:
 //   - Educational value: Demonstrates replication without complexity
@@ -49,7 +49,7 @@ param adminUsername string = 'azureuser'
 param sshPublicKey string
 
 @description('VM size for database tier')
-param vmSize string = 'Standard_B4ms'
+param vmSize string = 'Standard_B4as_v2'
 
 @description('Data disk size in GB for MongoDB data')
 param dataDiskSizeGB int = 128

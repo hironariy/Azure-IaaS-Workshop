@@ -27,7 +27,7 @@ param location string
 @description('Name of the Virtual Machine')
 param vmName string
 
-@description('VM size (e.g., Standard_B2s for web/app, Standard_B4ms for db)')
+@description('VM size (e.g., Standard_B2als_v2 for web/app, Standard_B4as_v2 for db)')
 param vmSize string
 
 @description('Availability Zone for the VM (1, 2, or 3)')
@@ -134,8 +134,8 @@ resource nic 'Microsoft.Network/networkInterfaces@2023-11-01' = if (!skipVmCreat
         }
       }
     ]
-    // Enable accelerated networking for better performance (if VM size supports it)
-    // B-series VMs don't support accelerated networking
+    // Accelerated networking is disabled for workshop consistency.
+    // Basv2 supports it, but it is not required for this workload.
     enableAcceleratedNetworking: false
   }
 }

@@ -74,13 +74,13 @@ param deployKeyVault = true
 param deployStorage = true
 
 // =============================================================================
-// Smaller VM Sizes for Development
+// Smaller Basv2 VM Sizes for Development
 // =============================================================================
 
-// Use smallest B-series VMs
-param webVmSize = 'Standard_B1s'  // 1 vCPU, 1 GB RAM - $7/month
-param appVmSize = 'Standard_B1s'  // 1 vCPU, 1 GB RAM - $7/month
-param dbVmSize = 'Standard_B2s'   // 2 vCPU, 4 GB RAM - $30/month (needs some memory for MongoDB)
+// Use low-memory Basv2-series VMs while keeping the same VM family as production.
+param webVmSize = 'Standard_B2ats_v2'  // 2 vCPU, 1 GB RAM
+param appVmSize = 'Standard_B2ats_v2'  // 2 vCPU, 1 GB RAM
+param dbVmSize = 'Standard_B2als_v2'   // 2 vCPU, 4 GB RAM (needs some memory for MongoDB)
 
 // Smaller data disk
 param dbDataDiskSizeGB = 64

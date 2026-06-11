@@ -4,8 +4,8 @@
   "metadata": {
     "_generator": {
       "name": "bicep",
-      "version": "0.39.26.7824",
-      "templateHash": "17750527540264374016"
+      "version": "0.44.1.10279",
+      "templateHash": "12757037672849706655"
     }
   },
   "parameters": {
@@ -33,6 +33,26 @@
       "defaultValue": "blogapp",
       "metadata": {
         "description": "Workload name for naming convention"
+      }
+    },
+    "groupId": {
+      "type": "string",
+      "defaultValue": "",
+      "allowedValues": [
+        "",
+        "A",
+        "B",
+        "C",
+        "D",
+        "E",
+        "F",
+        "G",
+        "H",
+        "I",
+        "J"
+      ],
+      "metadata": {
+        "description": "Workshop group identifier (A-J) for multi-group deployments. Leave empty for single-group."
       }
     },
     "adminUsername": {
@@ -91,21 +111,21 @@
     },
     "webVmSize": {
       "type": "string",
-      "defaultValue": "Standard_B2s",
+      "defaultValue": "Standard_B2als_v2",
       "metadata": {
         "description": "VM size for Web tier"
       }
     },
     "appVmSize": {
       "type": "string",
-      "defaultValue": "Standard_B2s",
+      "defaultValue": "Standard_B2als_v2",
       "metadata": {
         "description": "VM size for App tier"
       }
     },
     "dbVmSize": {
       "type": "string",
-      "defaultValue": "Standard_B4ms",
+      "defaultValue": "Standard_B4as_v2",
       "metadata": {
         "description": "VM size for DB tier"
       }
@@ -183,6 +203,33 @@
       "metadata": {
         "description": "Microsoft Entra client ID for frontend SPA (registered app)"
       }
+    },
+    "sslCertificateData": {
+      "type": "securestring",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Self-signed SSL certificate in PFX format (base64 encoded). Leave empty to use HTTP only."
+      }
+    },
+    "sslCertificatePassword": {
+      "type": "securestring",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Password for the PFX certificate. Required if sslCertificateData is provided."
+      }
+    },
+    "appGatewayDnsLabel": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "DNS label for Application Gateway public IP (creates <label>.<region>.cloudapp.azure.com)"
+      }
+    },
+    "mongoDbAppPassword": {
+      "type": "securestring",
+      "metadata": {
+        "description": "Password for MongoDB application user (blogapp). Must match the password used in post-deployment-setup script."
+      }
     }
   },
   "variables": {
@@ -195,6 +242,7 @@
     },
     "allTags": "[union(variables('defaultTags'), parameters('tags'))]",
     "vnetAddressPrefix": "10.0.0.0/16",
+    "appGatewaySubnetPrefix": "10.0.0.0/24",
     "webSubnetPrefix": "10.0.1.0/24",
     "appSubnetPrefix": "10.0.2.0/24",
     "dbSubnetPrefix": "10.0.3.0/24",
@@ -234,8 +282,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.39.26.7824",
-              "templateHash": "6824841165440596128"
+              "version": "0.44.1.10279",
+              "templateHash": "13431666185211960464"
             }
           },
           "parameters": {
@@ -337,204 +385,6 @@
       }
     },
     {
-      "condition": "[parameters('deployMonitoring')]",
-      "type": "Microsoft.Resources/deployments",
-      "apiVersion": "2025-04-01",
-      "name": "deploy-dcr",
-      "properties": {
-        "expressionEvaluationOptions": {
-          "scope": "inner"
-        },
-        "mode": "Incremental",
-        "parameters": {
-          "location": {
-            "value": "[parameters('location')]"
-          },
-          "environment": {
-            "value": "[parameters('environment')]"
-          },
-          "workloadName": {
-            "value": "[parameters('workloadName')]"
-          },
-          "logAnalyticsWorkspaceId": {
-            "value": "[coalesce(tryGet(tryGet(tryGet(if(parameters('deployMonitoring'), reference(resourceId('Microsoft.Resources/deployments', 'deploy-log-analytics'), '2025-04-01'), null()), 'outputs'), 'workspaceId'), 'value'), '')]"
-          },
-          "tags": {
-            "value": "[variables('allTags')]"
-          }
-        },
-        "template": {
-          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
-          "contentVersion": "1.0.0.0",
-          "metadata": {
-            "_generator": {
-              "name": "bicep",
-              "version": "0.39.26.7824",
-              "templateHash": "2853483368337662336"
-            }
-          },
-          "parameters": {
-            "location": {
-              "type": "string",
-              "metadata": {
-                "description": "Azure region for all resources"
-              }
-            },
-            "environment": {
-              "type": "string",
-              "defaultValue": "prod",
-              "allowedValues": [
-                "prod",
-                "dev",
-                "test"
-              ],
-              "metadata": {
-                "description": "Environment name (prod, dev, test)"
-              }
-            },
-            "workloadName": {
-              "type": "string",
-              "defaultValue": "blogapp",
-              "metadata": {
-                "description": "Workload name for naming convention"
-              }
-            },
-            "logAnalyticsWorkspaceId": {
-              "type": "string",
-              "metadata": {
-                "description": "Resource ID of the Log Analytics workspace"
-              }
-            },
-            "tags": {
-              "type": "object",
-              "defaultValue": {},
-              "metadata": {
-                "description": "Tags to apply to all resources"
-              }
-            }
-          },
-          "variables": {
-            "dcrName": "[format('dcr-{0}-{1}', parameters('workloadName'), parameters('environment'))]",
-            "defaultTags": {
-              "Environment": "[parameters('environment')]",
-              "Workload": "[parameters('workloadName')]",
-              "ManagedBy": "Bicep"
-            },
-            "allTags": "[union(variables('defaultTags'), parameters('tags'))]"
-          },
-          "resources": [
-            {
-              "type": "Microsoft.Insights/dataCollectionRules",
-              "apiVersion": "2023-03-11",
-              "name": "[variables('dcrName')]",
-              "location": "[parameters('location')]",
-              "tags": "[variables('allTags')]",
-              "kind": "Linux",
-              "properties": {
-                "description": "[format('Data Collection Rule for {0} workshop VMs', parameters('workloadName'))]",
-                "dataSources": {
-                  "syslog": [
-                    {
-                      "name": "syslogDataSource",
-                      "streams": [
-                        "Microsoft-Syslog"
-                      ],
-                      "facilityNames": [
-                        "auth",
-                        "authpriv",
-                        "daemon",
-                        "syslog",
-                        "user"
-                      ],
-                      "logLevels": [
-                        "Debug",
-                        "Info",
-                        "Notice",
-                        "Warning",
-                        "Error",
-                        "Critical",
-                        "Alert",
-                        "Emergency"
-                      ]
-                    }
-                  ],
-                  "performanceCounters": [
-                    {
-                      "name": "perfCounterDataSource",
-                      "streams": [
-                        "Microsoft-Perf"
-                      ],
-                      "samplingFrequencyInSeconds": 60,
-                      "counterSpecifiers": [
-                        "Processor(*)\\% Processor Time",
-                        "Processor(*)\\% User Time",
-                        "Processor(*)\\% Idle Time",
-                        "Memory(*)\\% Used Memory",
-                        "Memory(*)\\Available MBytes Memory",
-                        "Memory(*)\\Used Memory MBytes",
-                        "LogicalDisk(*)\\% Used Space",
-                        "LogicalDisk(*)\\Free Megabytes",
-                        "LogicalDisk(*)\\Disk Reads/sec",
-                        "LogicalDisk(*)\\Disk Writes/sec",
-                        "Network(*)\\Total Bytes Transmitted",
-                        "Network(*)\\Total Bytes Received",
-                        "Network(*)\\Bytes Total/sec"
-                      ]
-                    }
-                  ]
-                },
-                "destinations": {
-                  "logAnalytics": [
-                    {
-                      "name": "logAnalyticsDestination",
-                      "workspaceResourceId": "[parameters('logAnalyticsWorkspaceId')]"
-                    }
-                  ]
-                },
-                "dataFlows": [
-                  {
-                    "streams": [
-                      "Microsoft-Syslog"
-                    ],
-                    "destinations": [
-                      "logAnalyticsDestination"
-                    ]
-                  },
-                  {
-                    "streams": [
-                      "Microsoft-Perf"
-                    ],
-                    "destinations": [
-                      "logAnalyticsDestination"
-                    ]
-                  }
-                ]
-              }
-            }
-          ],
-          "outputs": {
-            "dcrId": {
-              "type": "string",
-              "metadata": {
-                "description": "Resource ID of the Data Collection Rule"
-              },
-              "value": "[resourceId('Microsoft.Insights/dataCollectionRules', variables('dcrName'))]"
-            },
-            "dcrName": {
-              "type": "string",
-              "metadata": {
-                "description": "Name of the Data Collection Rule"
-              },
-              "value": "[variables('dcrName')]"
-            }
-          }
-        }
-      },
-      "dependsOn": [
-        "[resourceId('Microsoft.Resources/deployments', 'deploy-log-analytics')]"
-      ]
-    },
-    {
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
       "name": "deploy-nsg-web",
@@ -556,6 +406,9 @@
           "bastionSubnetPrefix": {
             "value": "[variables('bastionSubnetPrefix')]"
           },
+          "appGatewaySubnetPrefix": {
+            "value": "[variables('appGatewaySubnetPrefix')]"
+          },
           "tags": {
             "value": "[variables('allTags')]"
           }
@@ -566,8 +419,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.39.26.7824",
-              "templateHash": "12425004405698961863"
+              "version": "0.44.1.10279",
+              "templateHash": "1110345785792661433"
             }
           },
           "parameters": {
@@ -603,6 +456,13 @@
                 "description": "CIDR of the Bastion subnet for SSH access"
               }
             },
+            "appGatewaySubnetPrefix": {
+              "type": "string",
+              "defaultValue": "10.0.0.0/24",
+              "metadata": {
+                "description": "CIDR of the Application Gateway subnet"
+              }
+            },
             "tags": {
               "type": "object",
               "defaultValue": {},
@@ -631,7 +491,7 @@
               "properties": {
                 "securityRules": [
                   {
-                    "name": "AllowHTTPInbound",
+                    "name": "AllowHTTPFromAppGateway",
                     "properties": {
                       "priority": 100,
                       "direction": "Inbound",
@@ -639,23 +499,23 @@
                       "protocol": "Tcp",
                       "sourcePortRange": "*",
                       "destinationPortRange": "80",
-                      "sourceAddressPrefix": "Internet",
+                      "sourceAddressPrefix": "[parameters('appGatewaySubnetPrefix')]",
                       "destinationAddressPrefix": "*",
-                      "description": "Allow HTTP traffic from Internet via Load Balancer"
+                      "description": "Allow HTTP from Application Gateway (SSL terminated at gateway)"
                     }
                   },
                   {
-                    "name": "AllowHTTPSInbound",
+                    "name": "AllowAppGatewayHealthProbe",
                     "properties": {
                       "priority": 110,
                       "direction": "Inbound",
                       "access": "Allow",
                       "protocol": "Tcp",
                       "sourcePortRange": "*",
-                      "destinationPortRange": "443",
-                      "sourceAddressPrefix": "Internet",
+                      "destinationPortRange": "65200-65535",
+                      "sourceAddressPrefix": "GatewayManager",
                       "destinationAddressPrefix": "*",
-                      "description": "Allow HTTPS traffic from Internet via Load Balancer"
+                      "description": "Required for Application Gateway v2 health probes"
                     }
                   },
                   {
@@ -703,7 +563,7 @@
                   {
                     "name": "AllowOutboundToAppTier",
                     "properties": {
-                      "priority": 100,
+                      "priority": 200,
                       "direction": "Outbound",
                       "access": "Allow",
                       "protocol": "Tcp",
@@ -717,7 +577,7 @@
                   {
                     "name": "AllowOutboundToAzureServices",
                     "properties": {
-                      "priority": 200,
+                      "priority": 300,
                       "direction": "Outbound",
                       "access": "Allow",
                       "protocol": "Tcp",
@@ -731,7 +591,7 @@
                   {
                     "name": "AllowDNS",
                     "properties": {
-                      "priority": 300,
+                      "priority": 400,
                       "direction": "Outbound",
                       "access": "Allow",
                       "protocol": "Udp",
@@ -745,7 +605,7 @@
                   {
                     "name": "AllowNTP",
                     "properties": {
-                      "priority": 310,
+                      "priority": 410,
                       "direction": "Outbound",
                       "access": "Allow",
                       "protocol": "Udp",
@@ -759,7 +619,7 @@
                   {
                     "name": "AllowHTTPOutbound",
                     "properties": {
-                      "priority": 400,
+                      "priority": 500,
                       "direction": "Outbound",
                       "access": "Allow",
                       "protocol": "Tcp",
@@ -773,7 +633,7 @@
                   {
                     "name": "AllowHTTPSOutbound",
                     "properties": {
-                      "priority": 410,
+                      "priority": 510,
                       "direction": "Outbound",
                       "access": "Allow",
                       "protocol": "Tcp",
@@ -845,8 +705,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.39.26.7824",
-              "templateHash": "5739670785509626289"
+              "version": "0.44.1.10279",
+              "templateHash": "4068287077450858655"
             }
           },
           "parameters": {
@@ -982,7 +842,7 @@
                   {
                     "name": "AllowMongoDBToDBTier",
                     "properties": {
-                      "priority": 100,
+                      "priority": 200,
                       "direction": "Outbound",
                       "access": "Allow",
                       "protocol": "Tcp",
@@ -996,7 +856,7 @@
                   {
                     "name": "AllowOutboundToAzureServices",
                     "properties": {
-                      "priority": 200,
+                      "priority": 300,
                       "direction": "Outbound",
                       "access": "Allow",
                       "protocol": "Tcp",
@@ -1010,7 +870,7 @@
                   {
                     "name": "AllowDNS",
                     "properties": {
-                      "priority": 300,
+                      "priority": 400,
                       "direction": "Outbound",
                       "access": "Allow",
                       "protocol": "Udp",
@@ -1024,7 +884,7 @@
                   {
                     "name": "AllowNTP",
                     "properties": {
-                      "priority": 310,
+                      "priority": 410,
                       "direction": "Outbound",
                       "access": "Allow",
                       "protocol": "Udp",
@@ -1038,7 +898,7 @@
                   {
                     "name": "AllowHTTPSToEntraID",
                     "properties": {
-                      "priority": 400,
+                      "priority": 500,
                       "direction": "Outbound",
                       "access": "Allow",
                       "protocol": "Tcp",
@@ -1052,7 +912,7 @@
                   {
                     "name": "AllowHTTPSOutbound",
                     "properties": {
-                      "priority": 410,
+                      "priority": 510,
                       "direction": "Outbound",
                       "access": "Allow",
                       "protocol": "Tcp",
@@ -1066,7 +926,7 @@
                   {
                     "name": "AllowHTTPOutbound",
                     "properties": {
-                      "priority": 420,
+                      "priority": 520,
                       "direction": "Outbound",
                       "access": "Allow",
                       "protocol": "Tcp",
@@ -1138,8 +998,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.39.26.7824",
-              "templateHash": "12096026720307476487"
+              "version": "0.44.1.10279",
+              "templateHash": "4754980978597858247"
             }
           },
           "parameters": {
@@ -1289,7 +1149,7 @@
                   {
                     "name": "AllowMongoDBReplicaSetOutbound",
                     "properties": {
-                      "priority": 100,
+                      "priority": 200,
                       "direction": "Outbound",
                       "access": "Allow",
                       "protocol": "Tcp",
@@ -1303,7 +1163,7 @@
                   {
                     "name": "AllowOutboundToAzureServices",
                     "properties": {
-                      "priority": 200,
+                      "priority": 300,
                       "direction": "Outbound",
                       "access": "Allow",
                       "protocol": "Tcp",
@@ -1317,7 +1177,7 @@
                   {
                     "name": "AllowOutboundToStorage",
                     "properties": {
-                      "priority": 210,
+                      "priority": 310,
                       "direction": "Outbound",
                       "access": "Allow",
                       "protocol": "Tcp",
@@ -1331,7 +1191,7 @@
                   {
                     "name": "AllowDNS",
                     "properties": {
-                      "priority": 300,
+                      "priority": 400,
                       "direction": "Outbound",
                       "access": "Allow",
                       "protocol": "Udp",
@@ -1345,7 +1205,7 @@
                   {
                     "name": "AllowNTP",
                     "properties": {
-                      "priority": 310,
+                      "priority": 410,
                       "direction": "Outbound",
                       "access": "Allow",
                       "protocol": "Udp",
@@ -1359,7 +1219,7 @@
                   {
                     "name": "AllowHTTPOutbound",
                     "properties": {
-                      "priority": 400,
+                      "priority": 500,
                       "direction": "Outbound",
                       "access": "Allow",
                       "protocol": "Tcp",
@@ -1373,7 +1233,7 @@
                   {
                     "name": "AllowHTTPSOutbound",
                     "properties": {
-                      "priority": 410,
+                      "priority": 510,
                       "direction": "Outbound",
                       "access": "Allow",
                       "protocol": "Tcp",
@@ -1440,8 +1300,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.39.26.7824",
-              "templateHash": "6560198560547204469"
+              "version": "0.44.1.10279",
+              "templateHash": "8630775321113472818"
             }
           },
           "parameters": {
@@ -1591,6 +1451,9 @@
           "vnetAddressPrefix": {
             "value": "[variables('vnetAddressPrefix')]"
           },
+          "appGatewaySubnetPrefix": {
+            "value": "[variables('appGatewaySubnetPrefix')]"
+          },
           "webSubnetPrefix": {
             "value": "[variables('webSubnetPrefix')]"
           },
@@ -1628,8 +1491,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.39.26.7824",
-              "templateHash": "6594491599254406494"
+              "version": "0.44.1.10279",
+              "templateHash": "17636155239143603838"
             }
           },
           "parameters": {
@@ -1693,6 +1556,13 @@
                 "description": "Azure Bastion subnet CIDR block (minimum /26)"
               }
             },
+            "appGatewaySubnetPrefix": {
+              "type": "string",
+              "defaultValue": "10.0.0.0/24",
+              "metadata": {
+                "description": "Application Gateway subnet CIDR block (minimum /26, /24 recommended)"
+              }
+            },
             "webNsgId": {
               "type": "string",
               "metadata": {
@@ -1735,6 +1605,7 @@
           },
           "variables": {
             "vnetName": "[format('vnet-{0}-{1}-{2}', parameters('workloadName'), parameters('environment'), parameters('location'))]",
+            "appGatewaySubnetName": "[format('snet-agw-{0}', parameters('environment'))]",
             "webSubnetName": "[format('snet-web-{0}', parameters('environment'))]",
             "appSubnetName": "[format('snet-app-{0}', parameters('environment'))]",
             "dbSubnetName": "[format('snet-db-{0}', parameters('environment'))]",
@@ -1760,6 +1631,13 @@
                   ]
                 },
                 "subnets": [
+                  {
+                    "name": "[variables('appGatewaySubnetName')]",
+                    "properties": {
+                      "addressPrefix": "[parameters('appGatewaySubnetPrefix')]",
+                      "privateEndpointNetworkPolicies": "Enabled"
+                    }
+                  },
                   {
                     "name": "[variables('webSubnetName')]",
                     "properties": {
@@ -1841,33 +1719,47 @@
               },
               "value": "[variables('vnetName')]"
             },
+            "appGatewaySubnetId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the Application Gateway subnet"
+              },
+              "value": "[reference(resourceId('Microsoft.Network/virtualNetworks', variables('vnetName')), '2023-11-01').subnets[0].id]"
+            },
             "webSubnetId": {
               "type": "string",
               "metadata": {
                 "description": "Resource ID of the Web tier subnet"
               },
-              "value": "[reference(resourceId('Microsoft.Network/virtualNetworks', variables('vnetName')), '2023-11-01').subnets[0].id]"
+              "value": "[reference(resourceId('Microsoft.Network/virtualNetworks', variables('vnetName')), '2023-11-01').subnets[1].id]"
             },
             "appSubnetId": {
               "type": "string",
               "metadata": {
                 "description": "Resource ID of the App tier subnet"
               },
-              "value": "[reference(resourceId('Microsoft.Network/virtualNetworks', variables('vnetName')), '2023-11-01').subnets[1].id]"
+              "value": "[reference(resourceId('Microsoft.Network/virtualNetworks', variables('vnetName')), '2023-11-01').subnets[2].id]"
             },
             "dbSubnetId": {
               "type": "string",
               "metadata": {
                 "description": "Resource ID of the DB tier subnet"
               },
-              "value": "[reference(resourceId('Microsoft.Network/virtualNetworks', variables('vnetName')), '2023-11-01').subnets[2].id]"
+              "value": "[reference(resourceId('Microsoft.Network/virtualNetworks', variables('vnetName')), '2023-11-01').subnets[3].id]"
             },
             "bastionSubnetId": {
               "type": "string",
               "metadata": {
                 "description": "Resource ID of the Bastion subnet"
               },
-              "value": "[reference(resourceId('Microsoft.Network/virtualNetworks', variables('vnetName')), '2023-11-01').subnets[3].id]"
+              "value": "[reference(resourceId('Microsoft.Network/virtualNetworks', variables('vnetName')), '2023-11-01').subnets[4].id]"
+            },
+            "appGatewaySubnetName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the Application Gateway subnet"
+              },
+              "value": "[variables('appGatewaySubnetName')]"
             },
             "webSubnetName": {
               "type": "string",
@@ -1889,6 +1781,13 @@
                 "description": "Name of the DB tier subnet"
               },
               "value": "[variables('dbSubnetName')]"
+            },
+            "appGatewaySubnetAddressPrefix": {
+              "type": "string",
+              "metadata": {
+                "description": "Address prefix of the Application Gateway subnet"
+              },
+              "value": "[parameters('appGatewaySubnetPrefix')]"
             },
             "webSubnetAddressPrefix": {
               "type": "string",
@@ -1957,8 +1856,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.39.26.7824",
-              "templateHash": "2790187020448208416"
+              "version": "0.44.1.10279",
+              "templateHash": "394912900747675941"
             }
           },
           "parameters": {
@@ -2120,7 +2019,7 @@
     {
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
-      "name": "deploy-load-balancer",
+      "name": "deploy-application-gateway",
       "properties": {
         "expressionEvaluationOptions": {
           "scope": "inner"
@@ -2138,6 +2037,21 @@
           },
           "tags": {
             "value": "[variables('allTags')]"
+          },
+          "subnetId": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'deploy-vnet'), '2025-04-01').outputs.appGatewaySubnetId.value]"
+          },
+          "webTierPrivateIps": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'deploy-web-tier'), '2025-04-01').outputs.privateIpAddresses.value]"
+          },
+          "sslCertificateData": {
+            "value": "[parameters('sslCertificateData')]"
+          },
+          "sslCertificatePassword": {
+            "value": "[parameters('sslCertificatePassword')]"
+          },
+          "dnsLabel": {
+            "value": "[parameters('appGatewayDnsLabel')]"
           }
         },
         "template": {
@@ -2146,8 +2060,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.39.26.7824",
-              "templateHash": "13227489126187721274"
+              "version": "0.44.1.10279",
+              "templateHash": "8486765189953851527"
             }
           },
           "parameters": {
@@ -2176,6 +2090,55 @@
                 "description": "Workload name for naming convention"
               }
             },
+            "subnetId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the Application Gateway subnet"
+              }
+            },
+            "webTierPrivateIps": {
+              "type": "array",
+              "metadata": {
+                "description": "Private IP addresses of Web tier VMs for backend pool"
+              }
+            },
+            "sslCertificateData": {
+              "type": "securestring",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Self-signed SSL certificate in PFX format (base64 encoded)"
+              }
+            },
+            "sslCertificatePassword": {
+              "type": "securestring",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Password for the PFX certificate"
+              }
+            },
+            "dnsLabel": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "DNS label for public IP (creates <label>.<region>.cloudapp.azure.com)"
+              }
+            },
+            "enableWaf": {
+              "type": "bool",
+              "defaultValue": false,
+              "metadata": {
+                "description": "Enable WAF (Web Application Firewall) - Detection mode for workshop"
+              }
+            },
+            "capacity": {
+              "type": "int",
+              "defaultValue": 1,
+              "minValue": 1,
+              "maxValue": 10,
+              "metadata": {
+                "description": "Application Gateway capacity (instance count)"
+              }
+            },
             "tags": {
               "type": "object",
               "defaultValue": {},
@@ -2185,14 +2148,24 @@
             }
           },
           "variables": {
-            "loadBalancerName": "[format('lbe-{0}-{1}', parameters('workloadName'), parameters('environment'))]",
-            "publicIpName": "[format('pip-lb-{0}-{1}', parameters('workloadName'), parameters('environment'))]",
-            "frontendName": "frontend-web",
+            "appGatewayName": "[format('agw-{0}-{1}', parameters('workloadName'), parameters('environment'))]",
+            "publicIpName": "[format('pip-agw-{0}-{1}', parameters('workloadName'), parameters('environment'))]",
+            "frontendIpConfigName": "frontend-ip",
+            "frontendPortHttpName": "frontend-port-http",
+            "frontendPortHttpsName": "frontend-port-https",
             "backendPoolName": "backend-web",
-            "healthProbeName": "probe-http",
-            "lbRuleHttpName": "rule-http",
-            "lbRuleHttpsName": "rule-https",
-            "outboundRuleName": "outbound-web",
+            "backendHttpSettingsName": "backend-http-settings",
+            "httpListenerName": "listener-http",
+            "httpsListenerName": "listener-https",
+            "requestRoutingRuleHttpName": "rule-http-redirect",
+            "requestRoutingRuleHttpsName": "rule-https",
+            "redirectConfigName": "redirect-http-to-https",
+            "healthProbeName": "probe-web",
+            "sslCertificateName": "ssl-cert-workshop",
+            "actualDnsLabel": "[if(not(empty(parameters('dnsLabel'))), parameters('dnsLabel'), format('{0}-{1}', parameters('workloadName'), uniqueString(resourceGroup().id)))]",
+            "sslConfigured": "[and(not(empty(parameters('sslCertificateData'))), not(empty(parameters('sslCertificatePassword'))))]",
+            "skuName": "[if(parameters('enableWaf'), 'WAF_v2', 'Standard_v2')]",
+            "skuTier": "[if(parameters('enableWaf'), 'WAF_v2', 'Standard_v2')]",
             "defaultTags": {
               "Environment": "[parameters('environment')]",
               "Workload": "[parameters('workloadName')]",
@@ -2215,7 +2188,7 @@
                 "publicIPAllocationMethod": "Static",
                 "publicIPAddressVersion": "IPv4",
                 "dnsSettings": {
-                  "domainNameLabel": "[format('{0}-{1}-{2}', parameters('workloadName'), parameters('environment'), uniqueString(resourceGroup().id))]"
+                  "domainNameLabel": "[variables('actualDnsLabel')]"
                 }
               },
               "zones": [
@@ -2225,19 +2198,30 @@
               ]
             },
             {
-              "type": "Microsoft.Network/loadBalancers",
+              "type": "Microsoft.Network/applicationGateways",
               "apiVersion": "2023-11-01",
-              "name": "[variables('loadBalancerName')]",
+              "name": "[variables('appGatewayName')]",
               "location": "[parameters('location')]",
               "tags": "[variables('allTags')]",
-              "sku": {
-                "name": "Standard",
-                "tier": "Regional"
-              },
               "properties": {
+                "sku": {
+                  "name": "[variables('skuName')]",
+                  "tier": "[variables('skuTier')]",
+                  "capacity": "[parameters('capacity')]"
+                },
+                "gatewayIPConfigurations": [
+                  {
+                    "name": "gateway-ip-config",
+                    "properties": {
+                      "subnet": {
+                        "id": "[parameters('subnetId')]"
+                      }
+                    }
+                  }
+                ],
                 "frontendIPConfigurations": [
                   {
-                    "name": "[variables('frontendName')]",
+                    "name": "[variables('frontendIpConfigName')]",
                     "properties": {
                       "publicIPAddress": {
                         "id": "[resourceId('Microsoft.Network/publicIPAddresses', variables('publicIpName'))]"
@@ -2245,9 +2229,49 @@
                     }
                   }
                 ],
+                "frontendPorts": [
+                  {
+                    "name": "[variables('frontendPortHttpName')]",
+                    "properties": {
+                      "port": 80
+                    }
+                  },
+                  {
+                    "name": "[variables('frontendPortHttpsName')]",
+                    "properties": {
+                      "port": 443
+                    }
+                  }
+                ],
+                "sslCertificates": "[if(variables('sslConfigured'), createArray(createObject('name', variables('sslCertificateName'), 'properties', createObject('data', parameters('sslCertificateData'), 'password', parameters('sslCertificatePassword')))), createArray())]",
                 "backendAddressPools": [
                   {
-                    "name": "[variables('backendPoolName')]"
+                    "name": "[variables('backendPoolName')]",
+                    "properties": {
+                      "copy": [
+                        {
+                          "name": "backendAddresses",
+                          "count": "[length(parameters('webTierPrivateIps'))]",
+                          "input": {
+                            "ipAddress": "[parameters('webTierPrivateIps')[copyIndex('backendAddresses')]]"
+                          }
+                        }
+                      ]
+                    }
+                  }
+                ],
+                "backendHttpSettingsCollection": [
+                  {
+                    "name": "[variables('backendHttpSettingsName')]",
+                    "properties": {
+                      "port": 80,
+                      "protocol": "Http",
+                      "cookieBasedAffinity": "Disabled",
+                      "requestTimeout": 30,
+                      "probe": {
+                        "id": "[resourceId('Microsoft.Network/applicationGateways/probes', variables('appGatewayName'), variables('healthProbeName'))]"
+                      }
+                    }
                   }
                 ],
                 "probes": [
@@ -2255,79 +2279,24 @@
                     "name": "[variables('healthProbeName')]",
                     "properties": {
                       "protocol": "Http",
-                      "port": 80,
-                      "requestPath": "/health",
-                      "intervalInSeconds": 15,
-                      "numberOfProbes": 2,
-                      "probeThreshold": 1
+                      "host": "127.0.0.1",
+                      "path": "/health",
+                      "interval": 15,
+                      "timeout": 10,
+                      "unhealthyThreshold": 3,
+                      "pickHostNameFromBackendHttpSettings": false,
+                      "match": {
+                        "statusCodes": [
+                          "200-399"
+                        ]
+                      }
                     }
                   }
                 ],
-                "loadBalancingRules": [
-                  {
-                    "name": "[variables('lbRuleHttpName')]",
-                    "properties": {
-                      "frontendIPConfiguration": {
-                        "id": "[resourceId('Microsoft.Network/loadBalancers/frontendIPConfigurations', variables('loadBalancerName'), variables('frontendName'))]"
-                      },
-                      "backendAddressPool": {
-                        "id": "[resourceId('Microsoft.Network/loadBalancers/backendAddressPools', variables('loadBalancerName'), variables('backendPoolName'))]"
-                      },
-                      "probe": {
-                        "id": "[resourceId('Microsoft.Network/loadBalancers/probes', variables('loadBalancerName'), variables('healthProbeName'))]"
-                      },
-                      "protocol": "Tcp",
-                      "frontendPort": 80,
-                      "backendPort": 80,
-                      "enableFloatingIP": false,
-                      "idleTimeoutInMinutes": 4,
-                      "loadDistribution": "Default",
-                      "enableTcpReset": true,
-                      "disableOutboundSnat": true
-                    }
-                  },
-                  {
-                    "name": "[variables('lbRuleHttpsName')]",
-                    "properties": {
-                      "frontendIPConfiguration": {
-                        "id": "[resourceId('Microsoft.Network/loadBalancers/frontendIPConfigurations', variables('loadBalancerName'), variables('frontendName'))]"
-                      },
-                      "backendAddressPool": {
-                        "id": "[resourceId('Microsoft.Network/loadBalancers/backendAddressPools', variables('loadBalancerName'), variables('backendPoolName'))]"
-                      },
-                      "probe": {
-                        "id": "[resourceId('Microsoft.Network/loadBalancers/probes', variables('loadBalancerName'), variables('healthProbeName'))]"
-                      },
-                      "protocol": "Tcp",
-                      "frontendPort": 443,
-                      "backendPort": 443,
-                      "enableFloatingIP": false,
-                      "idleTimeoutInMinutes": 4,
-                      "loadDistribution": "Default",
-                      "enableTcpReset": true,
-                      "disableOutboundSnat": true
-                    }
-                  }
-                ],
-                "outboundRules": [
-                  {
-                    "name": "[variables('outboundRuleName')]",
-                    "properties": {
-                      "frontendIPConfigurations": [
-                        {
-                          "id": "[resourceId('Microsoft.Network/loadBalancers/frontendIPConfigurations', variables('loadBalancerName'), variables('frontendName'))]"
-                        }
-                      ],
-                      "backendAddressPool": {
-                        "id": "[resourceId('Microsoft.Network/loadBalancers/backendAddressPools', variables('loadBalancerName'), variables('backendPoolName'))]"
-                      },
-                      "protocol": "All",
-                      "allocatedOutboundPorts": 10000,
-                      "enableTcpReset": true,
-                      "idleTimeoutInMinutes": 4
-                    }
-                  }
-                ]
+                "httpListeners": "[concat(createArray(createObject('name', variables('httpListenerName'), 'properties', createObject('frontendIPConfiguration', createObject('id', resourceId('Microsoft.Network/applicationGateways/frontendIPConfigurations', variables('appGatewayName'), variables('frontendIpConfigName'))), 'frontendPort', createObject('id', resourceId('Microsoft.Network/applicationGateways/frontendPorts', variables('appGatewayName'), variables('frontendPortHttpName'))), 'protocol', 'Http'))), if(variables('sslConfigured'), createArray(createObject('name', variables('httpsListenerName'), 'properties', createObject('frontendIPConfiguration', createObject('id', resourceId('Microsoft.Network/applicationGateways/frontendIPConfigurations', variables('appGatewayName'), variables('frontendIpConfigName'))), 'frontendPort', createObject('id', resourceId('Microsoft.Network/applicationGateways/frontendPorts', variables('appGatewayName'), variables('frontendPortHttpsName'))), 'protocol', 'Https', 'sslCertificate', createObject('id', resourceId('Microsoft.Network/applicationGateways/sslCertificates', variables('appGatewayName'), variables('sslCertificateName')))))), createArray()))]",
+                "redirectConfigurations": "[if(variables('sslConfigured'), createArray(createObject('name', variables('redirectConfigName'), 'properties', createObject('redirectType', 'Permanent', 'targetListener', createObject('id', resourceId('Microsoft.Network/applicationGateways/httpListeners', variables('appGatewayName'), variables('httpsListenerName'))), 'includePath', true(), 'includeQueryString', true()))), createArray())]",
+                "requestRoutingRules": "[concat(createArray(createObject('name', variables('requestRoutingRuleHttpName'), 'properties', createObject('ruleType', 'Basic', 'priority', 200, 'httpListener', createObject('id', resourceId('Microsoft.Network/applicationGateways/httpListeners', variables('appGatewayName'), variables('httpListenerName'))), 'redirectConfiguration', if(variables('sslConfigured'), createObject('id', resourceId('Microsoft.Network/applicationGateways/redirectConfigurations', variables('appGatewayName'), variables('redirectConfigName'))), null()), 'backendAddressPool', if(not(variables('sslConfigured')), createObject('id', resourceId('Microsoft.Network/applicationGateways/backendAddressPools', variables('appGatewayName'), variables('backendPoolName'))), null()), 'backendHttpSettings', if(not(variables('sslConfigured')), createObject('id', resourceId('Microsoft.Network/applicationGateways/backendHttpSettingsCollection', variables('appGatewayName'), variables('backendHttpSettingsName'))), null())))), if(variables('sslConfigured'), createArray(createObject('name', variables('requestRoutingRuleHttpsName'), 'properties', createObject('ruleType', 'Basic', 'priority', 100, 'httpListener', createObject('id', resourceId('Microsoft.Network/applicationGateways/httpListeners', variables('appGatewayName'), variables('httpsListenerName'))), 'backendAddressPool', createObject('id', resourceId('Microsoft.Network/applicationGateways/backendAddressPools', variables('appGatewayName'), variables('backendPoolName'))), 'backendHttpSettings', createObject('id', resourceId('Microsoft.Network/applicationGateways/backendHttpSettingsCollection', variables('appGatewayName'), variables('backendHttpSettingsName')))))), createArray()))]",
+                "webApplicationFirewallConfiguration": "[if(parameters('enableWaf'), createObject('enabled', true(), 'firewallMode', 'Detection', 'ruleSetType', 'OWASP', 'ruleSetVersion', '3.2', 'disabledRuleGroups', createArray(), 'requestBodyCheck', true(), 'maxRequestBodySizeInKb', 128, 'fileUploadLimitInMb', 100), null())]"
               },
               "dependsOn": [
                 "[resourceId('Microsoft.Network/publicIPAddresses', variables('publicIpName'))]"
@@ -2335,51 +2304,69 @@
             }
           ],
           "outputs": {
-            "loadBalancerId": {
+            "applicationGatewayId": {
               "type": "string",
               "metadata": {
-                "description": "Resource ID of the Load Balancer"
+                "description": "Resource ID of the Application Gateway"
               },
-              "value": "[resourceId('Microsoft.Network/loadBalancers', variables('loadBalancerName'))]"
+              "value": "[resourceId('Microsoft.Network/applicationGateways', variables('appGatewayName'))]"
             },
-            "loadBalancerName": {
+            "applicationGatewayName": {
               "type": "string",
               "metadata": {
-                "description": "Name of the Load Balancer"
+                "description": "Name of the Application Gateway"
               },
-              "value": "[variables('loadBalancerName')]"
+              "value": "[variables('appGatewayName')]"
             },
             "publicIpAddress": {
               "type": "string",
               "metadata": {
-                "description": "Public IP address of the Load Balancer"
+                "description": "Public IP address of the Application Gateway"
               },
               "value": "[reference(resourceId('Microsoft.Network/publicIPAddresses', variables('publicIpName')), '2023-11-01').ipAddress]"
             },
             "fqdn": {
               "type": "string",
               "metadata": {
-                "description": "FQDN of the Load Balancer"
+                "description": "FQDN of the Application Gateway (Azure DNS label)"
               },
               "value": "[reference(resourceId('Microsoft.Network/publicIPAddresses', variables('publicIpName')), '2023-11-01').dnsSettings.fqdn]"
             },
-            "backendPoolId": {
+            "httpsUrl": {
               "type": "string",
               "metadata": {
-                "description": "Resource ID of the backend address pool (for VM NIC association)"
+                "description": "HTTPS URL for the application"
               },
-              "value": "[reference(resourceId('Microsoft.Network/loadBalancers', variables('loadBalancerName')), '2023-11-01').backendAddressPools[0].id]"
+              "value": "[if(variables('sslConfigured'), format('https://{0}', reference(resourceId('Microsoft.Network/publicIPAddresses', variables('publicIpName')), '2023-11-01').dnsSettings.fqdn), format('http://{0}', reference(resourceId('Microsoft.Network/publicIPAddresses', variables('publicIpName')), '2023-11-01').dnsSettings.fqdn))]"
+            },
+            "dnsLabel": {
+              "type": "string",
+              "metadata": {
+                "description": "DNS label used for the public IP"
+              },
+              "value": "[variables('actualDnsLabel')]"
             },
             "backendPoolName": {
               "type": "string",
               "metadata": {
-                "description": "Name of the backend address pool"
+                "description": "Backend pool name for reference"
               },
               "value": "[variables('backendPoolName')]"
+            },
+            "sslEnabled": {
+              "type": "bool",
+              "metadata": {
+                "description": "Indicates if SSL/TLS is configured"
+              },
+              "value": "[variables('sslConfigured')]"
             }
           }
         }
-      }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', 'deploy-vnet')]",
+        "[resourceId('Microsoft.Resources/deployments', 'deploy-web-tier')]"
+      ]
     },
     {
       "type": "Microsoft.Resources/deployments",
@@ -2416,8 +2403,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.39.26.7824",
-              "templateHash": "15948876644778227689"
+              "version": "0.44.1.10279",
+              "templateHash": "15979768226588699120"
             }
           },
           "parameters": {
@@ -2637,8 +2624,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.39.26.7824",
-              "templateHash": "9469222263178747129"
+              "version": "0.44.1.10279",
+              "templateHash": "1552979353389839223"
             }
           },
           "parameters": {
@@ -2864,9 +2851,6 @@
           "subnetId": {
             "value": "[reference(resourceId('Microsoft.Resources/deployments', 'deploy-vnet'), '2025-04-01').outputs.webSubnetId.value]"
           },
-          "loadBalancerBackendPoolId": {
-            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'deploy-load-balancer'), '2025-04-01').outputs.backendPoolId.value]"
-          },
           "adminUsername": {
             "value": "[parameters('adminUsername')]"
           },
@@ -2883,7 +2867,7 @@
             "value": "[coalesce(tryGet(tryGet(tryGet(if(parameters('deployMonitoring'), reference(resourceId('Microsoft.Resources/deployments', 'deploy-log-analytics'), '2025-04-01'), null()), 'outputs'), 'workspaceId'), 'value'), '')]"
           },
           "dataCollectionRuleId": {
-            "value": "[coalesce(tryGet(tryGet(tryGet(if(parameters('deployMonitoring'), reference(resourceId('Microsoft.Resources/deployments', 'deploy-dcr'), '2025-04-01'), null()), 'outputs'), 'dcrId'), 'value'), '')]"
+            "value": ""
           },
           "entraTenantId": {
             "value": "[parameters('entraTenantId')]"
@@ -2910,8 +2894,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.39.26.7824",
-              "templateHash": "11426911099967267729"
+              "version": "0.44.1.10279",
+              "templateHash": "14009695987338621997"
             }
           },
           "parameters": {
@@ -2948,8 +2932,9 @@
             },
             "loadBalancerBackendPoolId": {
               "type": "string",
+              "defaultValue": "",
               "metadata": {
-                "description": "Resource ID of the Load Balancer backend pool"
+                "description": "Resource ID of the Load Balancer backend pool (optional - not used with Application Gateway)"
               }
             },
             "adminUsername": {
@@ -2967,7 +2952,7 @@
             },
             "vmSize": {
               "type": "string",
-              "defaultValue": "Standard_B2s",
+              "defaultValue": "Standard_B2als_v2",
               "metadata": {
                 "description": "VM size for web tier"
               }
@@ -3041,7 +3026,7 @@
               "ManagedBy": "Bicep"
             },
             "allTags": "[union(variables('defaultTags'), parameters('tags'))]",
-            "nginxInstallScriptRaw": "#!/bin/bash\nset -e\n\n# ==========================================================\n# Wait for dpkg/apt locks to be released\n# ==========================================================\n# Azure Linux Agent may be running unattended-upgrades on first boot\n# This can hold dpkg lock for 1-5 minutes\n# We wait up to 5 minutes for the lock to be released\n# ==========================================================\n\nwait_for_apt_lock() {\n  local timeout=300\n  local interval=10\n  local elapsed=0\n  \n  echo \"Checking for dpkg/apt locks...\"\n  \n  while true; do\n    # Check if any apt/dpkg processes are running\n    if ! fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 && \\\n       ! fuser /var/lib/apt/lists/lock >/dev/null 2>&1 && \\\n       ! fuser /var/cache/apt/archives/lock >/dev/null 2>&1; then\n      echo \"All apt/dpkg locks are free, proceeding...\"\n      return 0\n    fi\n    \n    if [ $elapsed -ge $timeout ]; then\n      echo \"ERROR: Timeout waiting for apt/dpkg locks after ${timeout}s\"\n      return 1\n    fi\n    \n    echo \"apt/dpkg lock is held, waiting ${interval}s... (${elapsed}s elapsed)\"\n    sleep $interval\n    elapsed=$((elapsed + interval))\n  done\n}\n\n# Set non-interactive mode to prevent prompts during package installation\nexport DEBIAN_FRONTEND=noninteractive\n\n# Execute wait function (initial check to reduce log spam)\nwait_for_apt_lock\n\n# Update packages with lock timeout (backup protection against race conditions)\n# DPkg::Lock::Timeout waits up to 120 seconds if another process holds the lock\napt-get -o DPkg::Lock::Timeout=120 update\napt-get -o DPkg::Lock::Timeout=120 -y upgrade\n\n# Install NGINX\napt-get -o DPkg::Lock::Timeout=120 -y install nginx\n\n# Create health check endpoint\nmkdir -p /var/www/html\necho 'OK' > /var/www/html/health\n\n# Basic NGINX configuration for reverse proxy\n# Configured to use Internal Load Balancer for high availability\ncat > /etc/nginx/sites-available/default << 'EOF'\nserver {\n    listen 80 default_server;\n    listen [::]:80 default_server;\n\n    root /var/www/html;\n    index index.html;\n\n    # Security Headers\n    add_header X-Frame-Options \"SAMEORIGIN\" always;\n    add_header X-Content-Type-Options \"nosniff\" always;\n    add_header X-XSS-Protection \"1; mode=block\" always;\n    add_header Referrer-Policy \"strict-origin-when-cross-origin\" always;\n\n    # Gzip compression\n    gzip on;\n    gzip_vary on;\n    gzip_min_length 1024;\n    gzip_types text/plain text/css text/xml text/javascript application/javascript application/json application/xml;\n\n    # Health check endpoint for Load Balancer\n    location /health {\n        access_log off;\n        return 200 'healthy\\n';\n        add_header Content-Type text/plain;\n    }\n\n    # Serve static files (React frontend) with SPA routing\n    location / {\n        try_files $uri $uri/ /index.html;\n    }\n\n    # API proxy to Internal Load Balancer (10.0.2.10)\n    # This provides high availability across both App tier VMs\n    location /api/ {\n        proxy_pass http://10.0.2.10:3000;\n        proxy_http_version 1.1;\n        proxy_set_header Host $host;\n        proxy_set_header X-Real-IP $remote_addr;\n        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n        proxy_set_header X-Forwarded-Proto $scheme;\n        proxy_connect_timeout 30s;\n        proxy_send_timeout 30s;\n        proxy_read_timeout 30s;\n    }\n\n    # Cache static assets\n    location ~* \\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {\n        expires 1y;\n        add_header Cache-Control \"public, immutable\";\n    }\n}\nEOF\n\n# Enable and restart NGINX\nsystemctl enable nginx\nsystemctl restart nginx\n\n# ==========================================================\n# Create Frontend Runtime Configuration\n# ==========================================================\n# /config.json is fetched by the frontend at runtime\n# This allows Bicep to inject Entra IDs without rebuilding the frontend\n# Reference: /design/FrontendApplicationDesign.md - Runtime Config Pattern\n# ==========================================================\n\necho \"Creating frontend runtime configuration...\"\n\ncat > /var/www/html/config.json << CONFIGEOF\n{\n  \"ENTRA_TENANT_ID\": \"__ENTRA_TENANT_ID__\",\n  \"ENTRA_FRONTEND_CLIENT_ID\": \"__ENTRA_FRONTEND_CLIENT_ID__\",\n  \"ENTRA_BACKEND_CLIENT_ID\": \"__ENTRA_BACKEND_CLIENT_ID__\",\n  \"API_BASE_URL\": \"/api\"\n}\nCONFIGEOF\n\n# Set proper permissions\nchmod 644 /var/www/html/config.json\n\necho \"Frontend runtime configuration created at /var/www/html/config.json\"\necho \"NGINX installation completed successfully\"\n",
+            "nginxInstallScriptRaw": "#!/bin/bash\nset -e\n\n# ==========================================================\n# Wait for dpkg/apt locks to be released\n# ==========================================================\n# Azure Linux Agent may be running unattended-upgrades on first boot\n# This can hold dpkg lock for 1-5 minutes\n# We wait up to 5 minutes for the lock to be released\n# ==========================================================\n\nwait_for_apt_lock() {\n  local timeout=300\n  local interval=10\n  local elapsed=0\n  \n  echo \"Checking for dpkg/apt locks...\"\n  \n  while true; do\n    # Check if any apt/dpkg processes are running\n    if ! fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 && \\\n       ! fuser /var/lib/apt/lists/lock >/dev/null 2>&1 && \\\n       ! fuser /var/cache/apt/archives/lock >/dev/null 2>&1; then\n      echo \"All apt/dpkg locks are free, proceeding...\"\n      return 0\n    fi\n    \n    if [ $elapsed -ge $timeout ]; then\n      echo \"ERROR: Timeout waiting for apt/dpkg locks after ${timeout}s\"\n      return 1\n    fi\n    \n    echo \"apt/dpkg lock is held, waiting ${interval}s... (${elapsed}s elapsed)\"\n    sleep $interval\n    elapsed=$((elapsed + interval))\n  done\n}\n\n# Set non-interactive mode to prevent prompts during package installation\nexport DEBIAN_FRONTEND=noninteractive\n\n# Execute wait function (initial check to reduce log spam)\nwait_for_apt_lock\n\n# Update packages with lock timeout (backup protection against race conditions)\n# DPkg::Lock::Timeout waits up to 120 seconds if another process holds the lock\napt-get -o DPkg::Lock::Timeout=120 update\napt-get -o DPkg::Lock::Timeout=120 -y upgrade\n\n# Install NGINX\napt-get -o DPkg::Lock::Timeout=120 -y install nginx\n\n# Create health check endpoint\nmkdir -p /var/www/html\necho 'OK' > /var/www/html/health\n\n# ==========================================================\n# NGINX Configuration for Application Gateway SSL Offloading\n# ==========================================================\n# Application Gateway terminates SSL and sends HTTP to backend\n# NGINX serves content on HTTP:80 only (no HTTPS redirect)\n# Traffic flow: Client → AppGW (HTTPS) → NGINX (HTTP)\n# ==========================================================\n\ncat > /etc/nginx/sites-available/default << 'EOF'\nserver {\n    listen 80 default_server;\n    listen [::]:80 default_server;\n\n    root /var/www/html;\n    index index.html;\n\n    # Security Headers\n    # Note: HSTS is handled by Application Gateway, not NGINX\n    add_header X-Frame-Options \"SAMEORIGIN\" always;\n    add_header X-Content-Type-Options \"nosniff\" always;\n    add_header X-XSS-Protection \"1; mode=block\" always;\n    add_header Referrer-Policy \"strict-origin-when-cross-origin\" always;\n\n    # Gzip compression\n    gzip on;\n    gzip_vary on;\n    gzip_min_length 1024;\n    gzip_types text/plain text/css text/xml text/javascript application/javascript application/json application/xml;\n\n    # Health check endpoint for Application Gateway probe\n    location /health {\n        access_log off;\n        return 200 'healthy\\n';\n        add_header Content-Type text/plain;\n    }\n\n    # Serve static files (React frontend) with SPA routing\n    location / {\n        try_files $uri $uri/ /index.html;\n    }\n\n    # API proxy to Internal Load Balancer (10.0.2.10)\n    # This provides high availability across both App tier VMs\n    # Note: NO trailing slash - preserves /api prefix (backend expects /api/posts)\n    location /api/ {\n        proxy_pass http://10.0.2.10:3000;\n        proxy_http_version 1.1;\n        proxy_set_header Host $host;\n        proxy_set_header X-Real-IP $remote_addr;\n        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n        proxy_set_header X-Forwarded-Proto $scheme;\n        proxy_connect_timeout 30s;\n        proxy_send_timeout 30s;\n        proxy_read_timeout 30s;\n    }\n\n    # Cache static assets\n    location ~* \\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {\n        expires 1y;\n        add_header Cache-Control \"public, immutable\";\n    }\n}\nEOF\n\n# Enable and restart NGINX\nsystemctl enable nginx\nsystemctl restart nginx\n\n# ==========================================================\n# Create Frontend Runtime Configuration\n# ==========================================================\n# /config.json is fetched by the frontend at runtime\n# This allows Bicep to inject Entra IDs without rebuilding the frontend\n# Reference: /design/FrontendApplicationDesign.md - Runtime Config Pattern\n# ==========================================================\n\necho \"Creating frontend runtime configuration...\"\n\ncat > /var/www/html/config.json << CONFIGEOF\n{\n  \"ENTRA_TENANT_ID\": \"__ENTRA_TENANT_ID__\",\n  \"ENTRA_FRONTEND_CLIENT_ID\": \"__ENTRA_FRONTEND_CLIENT_ID__\",\n  \"ENTRA_BACKEND_CLIENT_ID\": \"__ENTRA_BACKEND_CLIENT_ID__\",\n  \"API_BASE_URL\": \"/api\"\n}\nCONFIGEOF\n\n# Set proper permissions\nchmod 644 /var/www/html/config.json\n\necho \"Frontend runtime configuration created at /var/www/html/config.json\"\necho \"NGINX installation completed successfully\"\n",
             "nginxInstallScript": "[replace(replace(replace(variables('nginxInstallScriptRaw'), '__ENTRA_TENANT_ID__', parameters('entraTenantId')), '__ENTRA_FRONTEND_CLIENT_ID__', parameters('entraFrontendClientId')), '__ENTRA_BACKEND_CLIENT_ID__', parameters('entraClientId'))]"
           },
           "resources": [
@@ -3113,8 +3098,8 @@
                   "metadata": {
                     "_generator": {
                       "name": "bicep",
-                      "version": "0.39.26.7824",
-                      "templateHash": "13423450180752322404"
+                      "version": "0.44.1.10279",
+                      "templateHash": "16393627070178450328"
                     }
                   },
                   "parameters": {
@@ -3133,7 +3118,7 @@
                     "vmSize": {
                       "type": "string",
                       "metadata": {
-                        "description": "VM size (e.g., Standard_B2s for web/app, Standard_B4ms for db)"
+                        "description": "VM size (e.g., Standard_B2als_v2 for web/app, Standard_B4as_v2 for db)"
                       }
                     },
                     "availabilityZone": {
@@ -3196,6 +3181,13 @@
                       "defaultValue": "",
                       "metadata": {
                         "description": "Resource ID of Load Balancer backend pool (optional, for web tier)"
+                      }
+                    },
+                    "privateIPAddress": {
+                      "type": "string",
+                      "defaultValue": "",
+                      "metadata": {
+                        "description": "Static private IP address (optional, uses Dynamic if empty)"
                       }
                     },
                     "enableMonitoring": {
@@ -3274,7 +3266,8 @@
                           {
                             "name": "ipconfig1",
                             "properties": {
-                              "privateIPAllocationMethod": "Dynamic",
+                              "privateIPAllocationMethod": "[if(not(empty(parameters('privateIPAddress'))), 'Static', 'Dynamic')]",
+                              "privateIPAddress": "[if(not(empty(parameters('privateIPAddress'))), parameters('privateIPAddress'), null())]",
                               "subnet": {
                                 "id": "[parameters('subnetId')]"
                               },
@@ -3434,7 +3427,7 @@
                       "condition": "[and(and(not(parameters('skipVmCreation')), parameters('enableMonitoring')), not(empty(parameters('dataCollectionRuleId'))))]",
                       "type": "Microsoft.Insights/dataCollectionRuleAssociations",
                       "apiVersion": "2022-06-01",
-                      "scope": "[format('Microsoft.Compute/virtualMachines/{0}', parameters('vmName'))]",
+                      "scope": "[resourceId('Microsoft.Compute/virtualMachines', parameters('vmName'))]",
                       "name": "configurationAccessEndpoint",
                       "properties": {
                         "dataCollectionRuleId": "[parameters('dataCollectionRuleId')]"
@@ -3448,7 +3441,7 @@
                       "condition": "[and(and(parameters('skipVmCreation'), parameters('enableMonitoring')), not(empty(parameters('dataCollectionRuleId'))))]",
                       "type": "Microsoft.Insights/dataCollectionRuleAssociations",
                       "apiVersion": "2022-06-01",
-                      "scope": "[format('Microsoft.Compute/virtualMachines/{0}', parameters('vmName'))]",
+                      "scope": "[resourceId('Microsoft.Compute/virtualMachines', parameters('vmName'))]",
                       "name": "configurationAccessEndpoint",
                       "properties": {
                         "dataCollectionRuleId": "[parameters('dataCollectionRuleId')]"
@@ -3616,8 +3609,8 @@
                   "metadata": {
                     "_generator": {
                       "name": "bicep",
-                      "version": "0.39.26.7824",
-                      "templateHash": "13423450180752322404"
+                      "version": "0.44.1.10279",
+                      "templateHash": "16393627070178450328"
                     }
                   },
                   "parameters": {
@@ -3636,7 +3629,7 @@
                     "vmSize": {
                       "type": "string",
                       "metadata": {
-                        "description": "VM size (e.g., Standard_B2s for web/app, Standard_B4ms for db)"
+                        "description": "VM size (e.g., Standard_B2als_v2 for web/app, Standard_B4as_v2 for db)"
                       }
                     },
                     "availabilityZone": {
@@ -3699,6 +3692,13 @@
                       "defaultValue": "",
                       "metadata": {
                         "description": "Resource ID of Load Balancer backend pool (optional, for web tier)"
+                      }
+                    },
+                    "privateIPAddress": {
+                      "type": "string",
+                      "defaultValue": "",
+                      "metadata": {
+                        "description": "Static private IP address (optional, uses Dynamic if empty)"
                       }
                     },
                     "enableMonitoring": {
@@ -3777,7 +3777,8 @@
                           {
                             "name": "ipconfig1",
                             "properties": {
-                              "privateIPAllocationMethod": "Dynamic",
+                              "privateIPAllocationMethod": "[if(not(empty(parameters('privateIPAddress'))), 'Static', 'Dynamic')]",
+                              "privateIPAddress": "[if(not(empty(parameters('privateIPAddress'))), parameters('privateIPAddress'), null())]",
                               "subnet": {
                                 "id": "[parameters('subnetId')]"
                               },
@@ -3937,7 +3938,7 @@
                       "condition": "[and(and(not(parameters('skipVmCreation')), parameters('enableMonitoring')), not(empty(parameters('dataCollectionRuleId'))))]",
                       "type": "Microsoft.Insights/dataCollectionRuleAssociations",
                       "apiVersion": "2022-06-01",
-                      "scope": "[format('Microsoft.Compute/virtualMachines/{0}', parameters('vmName'))]",
+                      "scope": "[resourceId('Microsoft.Compute/virtualMachines', parameters('vmName'))]",
                       "name": "configurationAccessEndpoint",
                       "properties": {
                         "dataCollectionRuleId": "[parameters('dataCollectionRuleId')]"
@@ -3951,7 +3952,7 @@
                       "condition": "[and(and(parameters('skipVmCreation'), parameters('enableMonitoring')), not(empty(parameters('dataCollectionRuleId'))))]",
                       "type": "Microsoft.Insights/dataCollectionRuleAssociations",
                       "apiVersion": "2022-06-01",
-                      "scope": "[format('Microsoft.Compute/virtualMachines/{0}', parameters('vmName'))]",
+                      "scope": "[resourceId('Microsoft.Compute/virtualMachines', parameters('vmName'))]",
                       "name": "configurationAccessEndpoint",
                       "properties": {
                         "dataCollectionRuleId": "[parameters('dataCollectionRuleId')]"
@@ -4097,8 +4098,6 @@
         }
       },
       "dependsOn": [
-        "[resourceId('Microsoft.Resources/deployments', 'deploy-dcr')]",
-        "[resourceId('Microsoft.Resources/deployments', 'deploy-load-balancer')]",
         "[resourceId('Microsoft.Resources/deployments', 'deploy-log-analytics')]",
         "[resourceId('Microsoft.Resources/deployments', 'deploy-vnet')]"
       ]
@@ -4144,13 +4143,16 @@
             "value": "[coalesce(tryGet(tryGet(tryGet(if(parameters('deployMonitoring'), reference(resourceId('Microsoft.Resources/deployments', 'deploy-log-analytics'), '2025-04-01'), null()), 'outputs'), 'workspaceId'), 'value'), '')]"
           },
           "dataCollectionRuleId": {
-            "value": "[coalesce(tryGet(tryGet(tryGet(if(parameters('deployMonitoring'), reference(resourceId('Microsoft.Resources/deployments', 'deploy-dcr'), '2025-04-01'), null()), 'outputs'), 'dcrId'), 'value'), '')]"
+            "value": ""
           },
           "entraTenantId": {
             "value": "[parameters('entraTenantId')]"
           },
           "entraClientId": {
             "value": "[parameters('entraClientId')]"
+          },
+          "mongoDbAppPassword": {
+            "value": "[parameters('mongoDbAppPassword')]"
           },
           "forceUpdateTag": {
             "value": "[parameters('forceUpdateTagApp')]"
@@ -4168,8 +4170,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.39.26.7824",
-              "templateHash": "5546385792752731217"
+              "version": "0.44.1.10279",
+              "templateHash": "2150017381538319958"
             }
           },
           "parameters": {
@@ -4219,7 +4221,7 @@
             },
             "vmSize": {
               "type": "string",
-              "defaultValue": "Standard_B2s",
+              "defaultValue": "Standard_B2als_v2",
               "metadata": {
                 "description": "VM size for app tier"
               }
@@ -4284,6 +4286,12 @@
               "metadata": {
                 "description": "Microsoft Entra client ID for backend API (registered app)"
               }
+            },
+            "mongoDbAppPassword": {
+              "type": "securestring",
+              "metadata": {
+                "description": "Password for MongoDB application user. Must match the password used in post-deployment-setup script."
+              }
             }
           },
           "variables": {
@@ -4294,7 +4302,7 @@
               "ManagedBy": "Bicep"
             },
             "allTags": "[union(variables('defaultTags'), parameters('tags'))]",
-            "mongoDbUri": "mongodb://blogapp:BlogAppUser2024@10.0.3.4:27017,10.0.3.5:27017/blogapp?replicaSet=blogapp-rs0&authSource=blogapp",
+            "mongoDbUri": "[format('mongodb://blogapp:{0}@10.0.3.4:27017,10.0.3.5:27017/blogapp?replicaSet=blogapp-rs0&authSource=blogapp', parameters('mongoDbAppPassword'))]",
             "nodeInstallScriptRaw": "#!/bin/bash\nset -e\n\n# ==========================================================\n# Wait for dpkg/apt locks to be released\n# ==========================================================\n# Azure Linux Agent may be running unattended-upgrades on first boot\n# This can hold dpkg lock for 1-5 minutes\n# We wait up to 5 minutes for the lock to be released\n# ==========================================================\n\nwait_for_apt_lock() {\n  local timeout=300\n  local interval=10\n  local elapsed=0\n  \n  echo \"Checking for dpkg/apt locks...\"\n  \n  while true; do\n    # Check if any apt/dpkg processes are running\n    if ! fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 && \\\n       ! fuser /var/lib/apt/lists/lock >/dev/null 2>&1 && \\\n       ! fuser /var/cache/apt/archives/lock >/dev/null 2>&1; then\n      echo \"All apt/dpkg locks are free, proceeding...\"\n      return 0\n    fi\n    \n    if [ $elapsed -ge $timeout ]; then\n      echo \"ERROR: Timeout waiting for apt/dpkg locks after ${timeout}s\"\n      return 1\n    fi\n    \n    echo \"apt/dpkg lock is held, waiting ${interval}s... (${elapsed}s elapsed)\"\n    sleep $interval\n    elapsed=$((elapsed + interval))\n  done\n}\n\n# Set non-interactive mode to prevent prompts during package installation\nexport DEBIAN_FRONTEND=noninteractive\n\n# Execute wait function (initial check to reduce log spam)\nwait_for_apt_lock\n\n# Update packages with lock timeout (backup protection against race conditions)\n# DPkg::Lock::Timeout waits up to 120 seconds if another process holds the lock\napt-get -o DPkg::Lock::Timeout=120 update\napt-get -o DPkg::Lock::Timeout=120 -y upgrade\n\n# Install prerequisites\napt-get -o DPkg::Lock::Timeout=120 -y install ca-certificates curl gnupg\n\n# Add NodeSource repository for Node.js 20 LTS\nmkdir -p /etc/apt/keyrings\n\n# Use --batch flag for non-interactive GPG operation (no TTY available in CustomScript)\n# Check if keyring already exists to make script idempotent (re-runnable)\nif [ ! -f /etc/apt/keyrings/nodesource.gpg ]; then\n  echo \"Downloading NodeSource GPG key...\"\n  curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --batch --dearmor -o /etc/apt/keyrings/nodesource.gpg\nelse\n  echo \"NodeSource GPG key already exists, skipping download\"\nfi\n\n# Add repository if not already present\nif [ ! -f /etc/apt/sources.list.d/nodesource.list ]; then\n  echo \"deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main\" | tee /etc/apt/sources.list.d/nodesource.list\nfi\n\n# Install Node.js 20 LTS\napt-get -o DPkg::Lock::Timeout=120 update\napt-get -o DPkg::Lock::Timeout=120 -y install nodejs\n\n# Verify installation\nnode --version\nnpm --version\n\n# Install PM2 globally (process manager for Node.js)\nnpm install -g pm2\n\n# Create application directory\nmkdir -p /opt/blogapp\nchown -R azureuser:azureuser /opt/blogapp\n\n# Create systemd service for PM2\npm2 startup systemd -u azureuser --hp /home/azureuser\n\n# Create a placeholder health check server\ncat > /opt/blogapp/health-server.js << 'EOF'\nconst http = require('http');\n\nconst server = http.createServer((req, res) => {\n  if (req.url === '/api/health' || req.url === '/health') {\n    res.writeHead(200, { 'Content-Type': 'application/json' });\n    res.end(JSON.stringify({ status: 'healthy', timestamp: new Date().toISOString() }));\n  } else {\n    res.writeHead(404);\n    res.end('Not Found');\n  }\n});\n\nconst PORT = process.env.PORT || 3000;\nserver.listen(PORT, () => {\n  console.log(`Health check server running on port ${PORT}`);\n});\nEOF\n\n# Start health check server with PM2 (temporary until app is deployed)\ncd /opt/blogapp\nsudo -u azureuser pm2 start health-server.js --name blogapp-health\nsudo -u azureuser pm2 save\n\n# ==========================================================\n# Inject Production Environment Variables\n# ==========================================================\n# These environment variables are loaded by Node.js process.env\n# /etc/environment makes them available to all users and services\n# Reference: /design/BackendApplicationDesign.md - Environment-Aware Configuration\n# ==========================================================\n\necho \"Configuring production environment variables...\"\n\ncat >> /etc/environment << ENVEOF\n# ==========================================================\n# Backend Application Environment Variables\n# Injected by Bicep CustomScript Extension\n# DO NOT EDIT MANUALLY - regenerated on VM provisioning\n# ==========================================================\nNODE_ENV=production\nPORT=3000\nLOG_LEVEL=info\nMONGODB_URI=__MONGODB_URI__\nENTRA_TENANT_ID=__ENTRA_TENANT_ID__\nENTRA_CLIENT_ID=__ENTRA_CLIENT_ID__\nENVEOF\n\n# Make environment variables available immediately for current session\nexport NODE_ENV=production\nexport PORT=3000\nexport LOG_LEVEL=info\nexport MONGODB_URI=\"__MONGODB_URI__\"\nexport ENTRA_TENANT_ID=\"__ENTRA_TENANT_ID__\"\nexport ENTRA_CLIENT_ID=\"__ENTRA_CLIENT_ID__\"\n\n# Also create /opt/blogapp/.env for PM2 and direct Node.js execution\ncat > /opt/blogapp/.env << DOTENVEOF\n# Production environment configuration\n# Injected by Bicep CustomScript Extension\nNODE_ENV=production\nPORT=3000\nLOG_LEVEL=info\nMONGODB_URI=__MONGODB_URI__\nENTRA_TENANT_ID=__ENTRA_TENANT_ID__\nENTRA_CLIENT_ID=__ENTRA_CLIENT_ID__\nDOTENVEOF\n\nchown azureuser:azureuser /opt/blogapp/.env\nchmod 600 /opt/blogapp/.env\n\necho \"Environment variables configured successfully\"\necho \"Node.js installation completed successfully\"\n",
             "nodeInstallScript": "[replace(replace(replace(variables('nodeInstallScriptRaw'), '__MONGODB_URI__', variables('mongoDbUri')), '__ENTRA_TENANT_ID__', parameters('entraTenantId')), '__ENTRA_CLIENT_ID__', parameters('entraClientId'))]"
           },
@@ -4367,8 +4375,8 @@
                   "metadata": {
                     "_generator": {
                       "name": "bicep",
-                      "version": "0.39.26.7824",
-                      "templateHash": "13423450180752322404"
+                      "version": "0.44.1.10279",
+                      "templateHash": "16393627070178450328"
                     }
                   },
                   "parameters": {
@@ -4387,7 +4395,7 @@
                     "vmSize": {
                       "type": "string",
                       "metadata": {
-                        "description": "VM size (e.g., Standard_B2s for web/app, Standard_B4ms for db)"
+                        "description": "VM size (e.g., Standard_B2als_v2 for web/app, Standard_B4as_v2 for db)"
                       }
                     },
                     "availabilityZone": {
@@ -4450,6 +4458,13 @@
                       "defaultValue": "",
                       "metadata": {
                         "description": "Resource ID of Load Balancer backend pool (optional, for web tier)"
+                      }
+                    },
+                    "privateIPAddress": {
+                      "type": "string",
+                      "defaultValue": "",
+                      "metadata": {
+                        "description": "Static private IP address (optional, uses Dynamic if empty)"
                       }
                     },
                     "enableMonitoring": {
@@ -4528,7 +4543,8 @@
                           {
                             "name": "ipconfig1",
                             "properties": {
-                              "privateIPAllocationMethod": "Dynamic",
+                              "privateIPAllocationMethod": "[if(not(empty(parameters('privateIPAddress'))), 'Static', 'Dynamic')]",
+                              "privateIPAddress": "[if(not(empty(parameters('privateIPAddress'))), parameters('privateIPAddress'), null())]",
                               "subnet": {
                                 "id": "[parameters('subnetId')]"
                               },
@@ -4688,7 +4704,7 @@
                       "condition": "[and(and(not(parameters('skipVmCreation')), parameters('enableMonitoring')), not(empty(parameters('dataCollectionRuleId'))))]",
                       "type": "Microsoft.Insights/dataCollectionRuleAssociations",
                       "apiVersion": "2022-06-01",
-                      "scope": "[format('Microsoft.Compute/virtualMachines/{0}', parameters('vmName'))]",
+                      "scope": "[resourceId('Microsoft.Compute/virtualMachines', parameters('vmName'))]",
                       "name": "configurationAccessEndpoint",
                       "properties": {
                         "dataCollectionRuleId": "[parameters('dataCollectionRuleId')]"
@@ -4702,7 +4718,7 @@
                       "condition": "[and(and(parameters('skipVmCreation'), parameters('enableMonitoring')), not(empty(parameters('dataCollectionRuleId'))))]",
                       "type": "Microsoft.Insights/dataCollectionRuleAssociations",
                       "apiVersion": "2022-06-01",
-                      "scope": "[format('Microsoft.Compute/virtualMachines/{0}', parameters('vmName'))]",
+                      "scope": "[resourceId('Microsoft.Compute/virtualMachines', parameters('vmName'))]",
                       "name": "configurationAccessEndpoint",
                       "properties": {
                         "dataCollectionRuleId": "[parameters('dataCollectionRuleId')]"
@@ -4870,8 +4886,8 @@
                   "metadata": {
                     "_generator": {
                       "name": "bicep",
-                      "version": "0.39.26.7824",
-                      "templateHash": "13423450180752322404"
+                      "version": "0.44.1.10279",
+                      "templateHash": "16393627070178450328"
                     }
                   },
                   "parameters": {
@@ -4890,7 +4906,7 @@
                     "vmSize": {
                       "type": "string",
                       "metadata": {
-                        "description": "VM size (e.g., Standard_B2s for web/app, Standard_B4ms for db)"
+                        "description": "VM size (e.g., Standard_B2als_v2 for web/app, Standard_B4as_v2 for db)"
                       }
                     },
                     "availabilityZone": {
@@ -4953,6 +4969,13 @@
                       "defaultValue": "",
                       "metadata": {
                         "description": "Resource ID of Load Balancer backend pool (optional, for web tier)"
+                      }
+                    },
+                    "privateIPAddress": {
+                      "type": "string",
+                      "defaultValue": "",
+                      "metadata": {
+                        "description": "Static private IP address (optional, uses Dynamic if empty)"
                       }
                     },
                     "enableMonitoring": {
@@ -5031,7 +5054,8 @@
                           {
                             "name": "ipconfig1",
                             "properties": {
-                              "privateIPAllocationMethod": "Dynamic",
+                              "privateIPAllocationMethod": "[if(not(empty(parameters('privateIPAddress'))), 'Static', 'Dynamic')]",
+                              "privateIPAddress": "[if(not(empty(parameters('privateIPAddress'))), parameters('privateIPAddress'), null())]",
                               "subnet": {
                                 "id": "[parameters('subnetId')]"
                               },
@@ -5191,7 +5215,7 @@
                       "condition": "[and(and(not(parameters('skipVmCreation')), parameters('enableMonitoring')), not(empty(parameters('dataCollectionRuleId'))))]",
                       "type": "Microsoft.Insights/dataCollectionRuleAssociations",
                       "apiVersion": "2022-06-01",
-                      "scope": "[format('Microsoft.Compute/virtualMachines/{0}', parameters('vmName'))]",
+                      "scope": "[resourceId('Microsoft.Compute/virtualMachines', parameters('vmName'))]",
                       "name": "configurationAccessEndpoint",
                       "properties": {
                         "dataCollectionRuleId": "[parameters('dataCollectionRuleId')]"
@@ -5205,7 +5229,7 @@
                       "condition": "[and(and(parameters('skipVmCreation'), parameters('enableMonitoring')), not(empty(parameters('dataCollectionRuleId'))))]",
                       "type": "Microsoft.Insights/dataCollectionRuleAssociations",
                       "apiVersion": "2022-06-01",
-                      "scope": "[format('Microsoft.Compute/virtualMachines/{0}', parameters('vmName'))]",
+                      "scope": "[resourceId('Microsoft.Compute/virtualMachines', parameters('vmName'))]",
                       "name": "configurationAccessEndpoint",
                       "properties": {
                         "dataCollectionRuleId": "[parameters('dataCollectionRuleId')]"
@@ -5351,7 +5375,6 @@
         }
       },
       "dependsOn": [
-        "[resourceId('Microsoft.Resources/deployments', 'deploy-dcr')]",
         "[resourceId('Microsoft.Resources/deployments', 'deploy-internal-load-balancer')]",
         "[resourceId('Microsoft.Resources/deployments', 'deploy-log-analytics')]",
         "[resourceId('Microsoft.Resources/deployments', 'deploy-vnet')]"
@@ -5398,7 +5421,7 @@
             "value": "[coalesce(tryGet(tryGet(tryGet(if(parameters('deployMonitoring'), reference(resourceId('Microsoft.Resources/deployments', 'deploy-log-analytics'), '2025-04-01'), null()), 'outputs'), 'workspaceId'), 'value'), '')]"
           },
           "dataCollectionRuleId": {
-            "value": "[coalesce(tryGet(tryGet(tryGet(if(parameters('deployMonitoring'), reference(resourceId('Microsoft.Resources/deployments', 'deploy-dcr'), '2025-04-01'), null()), 'outputs'), 'dcrId'), 'value'), '')]"
+            "value": ""
           },
           "forceUpdateTag": {
             "value": "[parameters('forceUpdateTagDb')]"
@@ -5416,8 +5439,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.39.26.7824",
-              "templateHash": "1399129892186052133"
+              "version": "0.44.1.10279",
+              "templateHash": "13607830097021625982"
             }
           },
           "parameters": {
@@ -5467,7 +5490,7 @@
             },
             "vmSize": {
               "type": "string",
-              "defaultValue": "Standard_B4ms",
+              "defaultValue": "Standard_B4as_v2",
               "metadata": {
                 "description": "VM size for database tier"
               }
@@ -5519,6 +5542,20 @@
               "defaultValue": false,
               "metadata": {
                 "description": "Skip VM creation and only update extensions (for re-deployment)"
+              }
+            },
+            "dbVmAz1PrivateIp": {
+              "type": "string",
+              "defaultValue": "10.0.3.4",
+              "metadata": {
+                "description": "Static private IP for DB VM in Zone 1 (must be in dbSubnet range)"
+              }
+            },
+            "dbVmAz2PrivateIp": {
+              "type": "string",
+              "defaultValue": "10.0.3.5",
+              "metadata": {
+                "description": "Static private IP for DB VM in Zone 2 (must be in dbSubnet range)"
               }
             }
           },
@@ -5583,6 +5620,9 @@
                   "loadBalancerBackendPoolId": {
                     "value": ""
                   },
+                  "privateIPAddress": {
+                    "value": "[parameters('dbVmAz1PrivateIp')]"
+                  },
                   "enableMonitoring": {
                     "value": "[parameters('enableMonitoring')]"
                   },
@@ -5611,8 +5651,8 @@
                   "metadata": {
                     "_generator": {
                       "name": "bicep",
-                      "version": "0.39.26.7824",
-                      "templateHash": "13423450180752322404"
+                      "version": "0.44.1.10279",
+                      "templateHash": "16393627070178450328"
                     }
                   },
                   "parameters": {
@@ -5631,7 +5671,7 @@
                     "vmSize": {
                       "type": "string",
                       "metadata": {
-                        "description": "VM size (e.g., Standard_B2s for web/app, Standard_B4ms for db)"
+                        "description": "VM size (e.g., Standard_B2als_v2 for web/app, Standard_B4as_v2 for db)"
                       }
                     },
                     "availabilityZone": {
@@ -5694,6 +5734,13 @@
                       "defaultValue": "",
                       "metadata": {
                         "description": "Resource ID of Load Balancer backend pool (optional, for web tier)"
+                      }
+                    },
+                    "privateIPAddress": {
+                      "type": "string",
+                      "defaultValue": "",
+                      "metadata": {
+                        "description": "Static private IP address (optional, uses Dynamic if empty)"
                       }
                     },
                     "enableMonitoring": {
@@ -5772,7 +5819,8 @@
                           {
                             "name": "ipconfig1",
                             "properties": {
-                              "privateIPAllocationMethod": "Dynamic",
+                              "privateIPAllocationMethod": "[if(not(empty(parameters('privateIPAddress'))), 'Static', 'Dynamic')]",
+                              "privateIPAddress": "[if(not(empty(parameters('privateIPAddress'))), parameters('privateIPAddress'), null())]",
                               "subnet": {
                                 "id": "[parameters('subnetId')]"
                               },
@@ -5932,7 +5980,7 @@
                       "condition": "[and(and(not(parameters('skipVmCreation')), parameters('enableMonitoring')), not(empty(parameters('dataCollectionRuleId'))))]",
                       "type": "Microsoft.Insights/dataCollectionRuleAssociations",
                       "apiVersion": "2022-06-01",
-                      "scope": "[format('Microsoft.Compute/virtualMachines/{0}', parameters('vmName'))]",
+                      "scope": "[resourceId('Microsoft.Compute/virtualMachines', parameters('vmName'))]",
                       "name": "configurationAccessEndpoint",
                       "properties": {
                         "dataCollectionRuleId": "[parameters('dataCollectionRuleId')]"
@@ -5946,7 +5994,7 @@
                       "condition": "[and(and(parameters('skipVmCreation'), parameters('enableMonitoring')), not(empty(parameters('dataCollectionRuleId'))))]",
                       "type": "Microsoft.Insights/dataCollectionRuleAssociations",
                       "apiVersion": "2022-06-01",
-                      "scope": "[format('Microsoft.Compute/virtualMachines/{0}', parameters('vmName'))]",
+                      "scope": "[resourceId('Microsoft.Compute/virtualMachines', parameters('vmName'))]",
                       "name": "configurationAccessEndpoint",
                       "properties": {
                         "dataCollectionRuleId": "[parameters('dataCollectionRuleId')]"
@@ -6089,6 +6137,9 @@
                   "loadBalancerBackendPoolId": {
                     "value": ""
                   },
+                  "privateIPAddress": {
+                    "value": "[parameters('dbVmAz2PrivateIp')]"
+                  },
                   "enableMonitoring": {
                     "value": "[parameters('enableMonitoring')]"
                   },
@@ -6117,8 +6168,8 @@
                   "metadata": {
                     "_generator": {
                       "name": "bicep",
-                      "version": "0.39.26.7824",
-                      "templateHash": "13423450180752322404"
+                      "version": "0.44.1.10279",
+                      "templateHash": "16393627070178450328"
                     }
                   },
                   "parameters": {
@@ -6137,7 +6188,7 @@
                     "vmSize": {
                       "type": "string",
                       "metadata": {
-                        "description": "VM size (e.g., Standard_B2s for web/app, Standard_B4ms for db)"
+                        "description": "VM size (e.g., Standard_B2als_v2 for web/app, Standard_B4as_v2 for db)"
                       }
                     },
                     "availabilityZone": {
@@ -6200,6 +6251,13 @@
                       "defaultValue": "",
                       "metadata": {
                         "description": "Resource ID of Load Balancer backend pool (optional, for web tier)"
+                      }
+                    },
+                    "privateIPAddress": {
+                      "type": "string",
+                      "defaultValue": "",
+                      "metadata": {
+                        "description": "Static private IP address (optional, uses Dynamic if empty)"
                       }
                     },
                     "enableMonitoring": {
@@ -6278,7 +6336,8 @@
                           {
                             "name": "ipconfig1",
                             "properties": {
-                              "privateIPAllocationMethod": "Dynamic",
+                              "privateIPAllocationMethod": "[if(not(empty(parameters('privateIPAddress'))), 'Static', 'Dynamic')]",
+                              "privateIPAddress": "[if(not(empty(parameters('privateIPAddress'))), parameters('privateIPAddress'), null())]",
                               "subnet": {
                                 "id": "[parameters('subnetId')]"
                               },
@@ -6438,7 +6497,7 @@
                       "condition": "[and(and(not(parameters('skipVmCreation')), parameters('enableMonitoring')), not(empty(parameters('dataCollectionRuleId'))))]",
                       "type": "Microsoft.Insights/dataCollectionRuleAssociations",
                       "apiVersion": "2022-06-01",
-                      "scope": "[format('Microsoft.Compute/virtualMachines/{0}', parameters('vmName'))]",
+                      "scope": "[resourceId('Microsoft.Compute/virtualMachines', parameters('vmName'))]",
                       "name": "configurationAccessEndpoint",
                       "properties": {
                         "dataCollectionRuleId": "[parameters('dataCollectionRuleId')]"
@@ -6452,7 +6511,7 @@
                       "condition": "[and(and(parameters('skipVmCreation'), parameters('enableMonitoring')), not(empty(parameters('dataCollectionRuleId'))))]",
                       "type": "Microsoft.Insights/dataCollectionRuleAssociations",
                       "apiVersion": "2022-06-01",
-                      "scope": "[format('Microsoft.Compute/virtualMachines/{0}', parameters('vmName'))]",
+                      "scope": "[resourceId('Microsoft.Compute/virtualMachines', parameters('vmName'))]",
                       "name": "configurationAccessEndpoint",
                       "properties": {
                         "dataCollectionRuleId": "[parameters('dataCollectionRuleId')]"
@@ -6599,13 +6658,12 @@
               "metadata": {
                 "description": "MongoDB connection string (after replica set initialization)"
               },
-              "value": "[format('mongodb://{0}:27017,{1}:27017/blogapp?replicaSet=blogapp-rs0', reference(resourceId('Microsoft.Resources/deployments', 'deploy-vm-db-az1'), '2025-04-01').outputs.privateIpAddress.value, reference(resourceId('Microsoft.Resources/deployments', 'deploy-vm-db-az2'), '2025-04-01').outputs.privateIpAddress.value)]"
+              "value": "[format('mongodb://{0}:27017,{1}:27017/blogapp?replicaSet=blogapp-rs0', parameters('dbVmAz1PrivateIp'), parameters('dbVmAz2PrivateIp'))]"
             }
           }
         }
       },
       "dependsOn": [
-        "[resourceId('Microsoft.Resources/deployments', 'deploy-dcr')]",
         "[resourceId('Microsoft.Resources/deployments', 'deploy-log-analytics')]",
         "[resourceId('Microsoft.Resources/deployments', 'deploy-vnet')]"
       ]
@@ -6649,8 +6707,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.39.26.7824",
-              "templateHash": "11302943507701995217"
+              "version": "0.44.1.10279",
+              "templateHash": "4289713059710831606"
             }
           },
           "parameters": {
@@ -6764,7 +6822,7 @@
               "condition": "[variables('isAdminObjectIdValid')]",
               "type": "Microsoft.Authorization/roleAssignments",
               "apiVersion": "2022-04-01",
-              "scope": "[format('Microsoft.KeyVault/vaults/{0}', variables('keyVaultName'))]",
+              "scope": "[resourceId('Microsoft.KeyVault/vaults', variables('keyVaultName'))]",
               "name": "[guid(resourceId('Microsoft.KeyVault/vaults', variables('keyVaultName')), parameters('adminObjectId'), variables('keyVaultAdminRoleId'))]",
               "properties": {
                 "roleDefinitionId": "[variables('keyVaultAdminRoleId')]",
@@ -6782,7 +6840,7 @@
               },
               "type": "Microsoft.Authorization/roleAssignments",
               "apiVersion": "2022-04-01",
-              "scope": "[format('Microsoft.KeyVault/vaults/{0}', variables('keyVaultName'))]",
+              "scope": "[resourceId('Microsoft.KeyVault/vaults', variables('keyVaultName'))]",
               "name": "[guid(resourceId('Microsoft.KeyVault/vaults', variables('keyVaultName')), variables('validVmPrincipalIds')[copyIndex()], variables('keyVaultSecretsUserRoleId'))]",
               "properties": {
                 "roleDefinitionId": "[variables('keyVaultSecretsUserRoleId')]",
@@ -6834,19 +6892,33 @@
       },
       "value": "[resourceGroup().name]"
     },
-    "loadBalancerPublicIp": {
+    "appGatewayPublicIp": {
       "type": "string",
       "metadata": {
-        "description": "Load Balancer public IP address"
+        "description": "Application Gateway public IP address"
       },
-      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'deploy-load-balancer'), '2025-04-01').outputs.publicIpAddress.value]"
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'deploy-application-gateway'), '2025-04-01').outputs.publicIpAddress.value]"
     },
-    "loadBalancerFqdn": {
+    "appGatewayFqdn": {
       "type": "string",
       "metadata": {
-        "description": "Load Balancer FQDN"
+        "description": "Application Gateway FQDN"
       },
-      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'deploy-load-balancer'), '2025-04-01').outputs.fqdn.value]"
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'deploy-application-gateway'), '2025-04-01').outputs.fqdn.value]"
+    },
+    "appGatewayHttpsUrl": {
+      "type": "string",
+      "metadata": {
+        "description": "Application Gateway HTTPS URL"
+      },
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'deploy-application-gateway'), '2025-04-01').outputs.httpsUrl.value]"
+    },
+    "sslEnabled": {
+      "type": "bool",
+      "metadata": {
+        "description": "SSL/TLS enabled status"
+      },
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'deploy-application-gateway'), '2025-04-01').outputs.sslEnabled.value]"
     },
     "internalLoadBalancerIp": {
       "type": "string",
@@ -6917,6 +6989,13 @@
         "description": "NAT Gateway Public IP (for outbound connectivity)"
       },
       "value": "[coalesce(tryGet(tryGet(tryGet(if(parameters('deployNatGateway'), reference(resourceId('Microsoft.Resources/deployments', 'deploy-nat-gateway'), '2025-04-01'), null()), 'outputs'), 'publicIpAddress'), 'value'), '')]"
+    },
+    "recommendedResourceGroupName": {
+      "type": "string",
+      "metadata": {
+        "description": "Recommended resource group name for multi-group workshops"
+      },
+      "value": "[if(empty(parameters('groupId')), format('rg-{0}-workshop', parameters('workloadName')), format('rg-{0}-{1}-workshop', parameters('workloadName'), parameters('groupId')))]"
     }
   }
 }

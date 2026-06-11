@@ -51,22 +51,22 @@ az account show --query "{subscription:name, subscriptionId:id, tenantId:tenantI
 az account set --subscription "<SUBSCRIPTION_ID_OR_NAME>"
 ```
 
-このワークショップでは B シリーズ VM を 6 台使います。
+このワークショップでは Basv2 シリーズ VM を 6 台使います。
 
 | VM サイズ | 台数 | 各 vCPU | 合計 |
 |---|---:|---:|---:|
-| Standard_B2s (Web) | 2 | 2 | 4 |
-| Standard_B2s (App) | 2 | 2 | 4 |
-| Standard_B4ms (DB) | 2 | 4 | 8 |
+| Standard_B2als_v2 (Web) | 2 | 2 | 4 |
+| Standard_B2als_v2 (App) | 2 | 2 | 4 |
+| Standard_B4as_v2 (DB) | 2 | 4 | 8 |
 | **合計** | **6** |  | **16 vCPU** |
 
 ```bash
 az vm list-usage --location japanwest \
-  --query "[?contains(name.value, 'standardBSFamily') || name.value=='cores'].{Name:name.localizedValue, Current:currentValue, Limit:limit}" \
+  --query "[?contains(name.value, 'standardBASv2Family') || name.value=='cores'].{Name:name.localizedValue, Current:currentValue, Limit:limit}" \
   -o table
 ```
 
-**期待結果:** B シリーズまたはリージョン全体で、少なくとも 16 vCPU 分の余裕があることを確認できます。
+**期待結果:** Basv2 シリーズまたはリージョン全体で、少なくとも 16 vCPU 分の余裕があることを確認できます。
 
 **チェックポイント:** クォータが不足している場合は、講師に相談してください。リージョン変更やクォータ増加申請が必要になることがあります。
 

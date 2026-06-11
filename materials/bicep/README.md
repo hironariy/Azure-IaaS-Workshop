@@ -10,9 +10,9 @@ These templates deploy a highly available, 3-tier blog application infrastructur
 
 | Tier | Components | VM Size | Availability |
 |------|-----------|---------|-------------|
-| **Web** | 2 × NGINX reverse proxy VMs | Standard_B2s | Zone 1 & 2 |
-| **App** | 2 × Node.js/Express VMs | Standard_B2s | Zone 1 & 2 |
-| **DB** | 2 × MongoDB VMs | Standard_B4ms | Zone 1 & 2 |
+| **Web** | 2 × NGINX reverse proxy VMs | Standard_B2als_v2 | Zone 1 & 2 |
+| **App** | 2 × Node.js/Express VMs | Standard_B2als_v2 | Zone 1 & 2 |
+| **DB** | 2 × MongoDB VMs | Standard_B4as_v2 | Zone 1 & 2 |
 
 ### Architecture Highlights
 
@@ -61,7 +61,7 @@ Click the button below to deploy the infrastructure directly to your Azure subsc
 - Active Azure subscription
 - Contributor role on the subscription or resource group
 - Sufficient quota for:
-  - 6 VMs (B-series)
+  - 6 VMs (Basv2-series)
   - 6 managed disks
   - 1 public IP address
   - 1 Application Gateway v2
@@ -257,20 +257,20 @@ echo "blogapp-$(openssl rand -hex 2)"  # e.g., blogapp-a3f2
 | `deployMonitoring` | `true` | Deploy Log Analytics & DCR |
 | `deployKeyVault` | `true` | Deploy Key Vault |
 | `deployStorage` | `true` | Deploy Storage Account |
-| `webVmSize` | `Standard_B2s` | Web tier VM size |
-| `appVmSize` | `Standard_B2s` | App tier VM size |
-| `dbVmSize` | `Standard_B4ms` | DB tier VM size |
+| `webVmSize` | `Standard_B2als_v2` | Web tier VM size |
+| `appVmSize` | `Standard_B2als_v2` | App tier VM size |
+| `dbVmSize` | `Standard_B4as_v2` | DB tier VM size |
 | `dbDataDiskSizeGB` | `128` | MongoDB data disk size |
 
 ## 💰 Cost Estimation
 
-### Production Configuration (~$58/day)
+### Production Configuration (~$29/day)
 
 | Resource | Quantity | Est. Cost/Day |
 |----------|----------|---------------|
-| Web VMs (B2s) | 2 | $2.40 |
-| App VMs (B2s) | 2 | $2.40 |
-| DB VMs (B4ms) | 2 | $9.60 |
+| Web VMs (B2als_v2) | 2 | $1.80 |
+| App VMs (B2als_v2) | 2 | $1.80 |
+| DB VMs (B4as_v2) | 2 | $7.20 |
 | MongoDB Data Disks (P10) | 2 × 128GB | $2.80 |
 | Application Gateway v2 | 1 | $7.30 |
 | Internal Load Balancer | 1 | $0.72 |
@@ -278,9 +278,9 @@ echo "blogapp-$(openssl rand -hex 2)"  # e.g., blogapp-a3f2
 | Public IP | 2 | $0.24 |
 | Log Analytics | 1 | ~$2.00 |
 | Key Vault | 1 | ~$0.05 |
-| **Total** | | **~$32/day** |
+| **Total** | | **~$29/day** |
 
-> **2-Day Workshop Estimate**: ~$65 per student
+> **2-Day Workshop Estimate**: ~$59 per student
 
 ### Development Configuration (~$15/day)
 

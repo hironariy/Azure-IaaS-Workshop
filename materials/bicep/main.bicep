@@ -19,7 +19,7 @@
 //     --parameters main.bicepparam
 //
 // Estimated Deployment Time: 15-30 minutes
-// Estimated Cost: ~$58 per student for 48-hour workshop (includes Application Gateway)
+// Estimated Cost: ~$59 per student for 48-hour workshop (includes Application Gateway)
 // =============================================================================
 
 // =============================================================================
@@ -80,13 +80,13 @@ param deployKeyVault bool = true
 param deployStorage bool = true
 
 @description('VM size for Web tier')
-param webVmSize string = 'Standard_B2s'
+param webVmSize string = 'Standard_B2als_v2'
 
 @description('VM size for App tier')
-param appVmSize string = 'Standard_B2s'
+param appVmSize string = 'Standard_B2als_v2'
 
 @description('VM size for DB tier')
-param dbVmSize string = 'Standard_B4ms'
+param dbVmSize string = 'Standard_B4as_v2'
 
 @description('MongoDB data disk size in GB')
 param dbDataDiskSizeGB int = 128

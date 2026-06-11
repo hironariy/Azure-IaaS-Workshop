@@ -13,12 +13,12 @@
 // Traffic Flow:
 //   Web Tier (NGINX) → App Tier (Express:3000) → DB Tier (MongoDB:27017)
 //
-// VM Sizing Rationale (B2s):
+// VM Sizing Rationale (B2als_v2):
 //   - 2 vCPU, 4 GB RAM
-//   - 60% CPU baseline with burst capability
+//   - Basv2 CPU credit model with burst capability
 //   - Node.js is single-threaded, 2 vCPU provides overhead for npm, OS
 //   - 4 GB RAM sufficient for Express + Mongoose with light load
-//   - Cost-effective: $0.042/hr
+//   - Cost-effective Basv2 option for workshop traffic
 // =============================================================================
 
 @description('Azure region for all resources')
@@ -42,7 +42,7 @@ param adminUsername string = 'azureuser'
 param sshPublicKey string
 
 @description('VM size for app tier')
-param vmSize string = 'Standard_B2s'
+param vmSize string = 'Standard_B2als_v2'
 
 @description('Enable Azure Monitor Agent')
 param enableMonitoring bool = true

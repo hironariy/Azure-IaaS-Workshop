@@ -65,11 +65,11 @@ FQDN=$(az network public-ip show \
 
 ```bash
 az vm list-usage --location japanwest \
-  --query "[?contains(name.value, 'standardBSFamily') || name.value=='cores'].{Name:name.localizedValue, Current:currentValue, Limit:limit}" \
+  --query "[?contains(name.value, 'standardBASv2Family') || name.value=='cores'].{Name:name.localizedValue, Current:currentValue, Limit:limit}" \
   -o table
 ```
 
-**判断:** このワークショップでは B シリーズで合計 16 vCPU が必要です。
+**判断:** このワークショップでは Basv2 シリーズで合計 16 vCPU が必要です。
 
 **対処:**
 
