@@ -714,8 +714,89 @@ title: Azure IaaS Workshop 受講者ポータル
       'ul,ol{padding-left:1.3rem;}',
       'li{margin:.2rem 0;}',
       'img{max-width:100%;height:auto;}',
-      'hr{border:0;border-top:1px solid #e3e8ef;margin:1.8rem 0;}'
+      'hr{border:0;border-top:1px solid #e3e8ef;margin:1.8rem 0;}',
+      /* コピーボタン: コードブロックを relative にしてボタンを右上に重ねる。 */
+      '.wp-code-wrap{position:relative;}',
+      '.wp-copy-btn{position:absolute;top:.5rem;right:.5rem;display:inline-flex;align-items:center;gap:.3rem;padding:.3rem .55rem;font-size:.78rem;line-height:1;color:#e6edf3;background:#21262d;border:1px solid #30363d;border-radius:6px;cursor:pointer;opacity:0;transition:opacity .15s,background .15s,border-color .15s;font-family:inherit;}',
+      '.wp-code-wrap:hover .wp-copy-btn,.wp-copy-btn:focus-visible{opacity:1;}',
+      '.wp-copy-btn:hover{background:#30363d;border-color:#8b949e;}',
+      '.wp-copy-btn.is-copied{color:#7ee787;border-color:#238636;}',
+      '.wp-copy-btn svg{width:14px;height:14px;fill:currentColor;}'
     ].join('');
+
+    /* iframe 内の各コードブロックにコピーボタンを注入し、クリックで本文をコピーする。
+       contentDocument 内で動かす必要があるため、文字列化して script として注入する。 */
+    function buildCopyInjector() {
+      function injector() {
+        var COPY_SVG = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z"></path><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"></path></svg>';
+        var COPY_LABEL = 'コピー';
+        var DONE_LABEL = 'コピーしました';
+        function setLabel(btn, html) {
+          btn.innerHTML = COPY_SVG + '<span>' + html + '</span>';
+        }
+        function copyText(text, btn) {
+          function done() {
+            btn.classList.add('is-copied');
+            setLabel(btn, DONE_LABEL);
+            setTimeout(function () {
+              btn.classList.remove('is-copied');
+              setLabel(btn, COPY_LABEL);
+            }, 1800);
+          }
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(done, function () {
+              fallbackCopy(text, done);
+            });
+          } else {
+            fallbackCopy(text, done);
+          }
+        }
+        function fallbackCopy(text, done) {
+          var ta = document.createElement('textarea');
+          ta.value = text;
+          ta.setAttribute('readonly', '');
+          ta.style.position = 'absolute';
+          ta.style.left = '-9999px';
+          document.body.appendChild(ta);
+          ta.select();
+          try {
+            document.execCommand('copy');
+            done();
+          } catch (e) {
+            /* コピー失敗時は何もしない */
+          }
+          document.body.removeChild(ta);
+        }
+        var blocks = document.querySelectorAll('div.highlight,.highlighter-rouge .highlight,pre.highlight');
+        var seen = [];
+        Array.prototype.forEach.call(blocks, function (block) {
+          var pre = block.tagName === 'PRE' ? block : block.querySelector('pre');
+          if (!pre || seen.indexOf(pre) !== -1) {
+            return;
+          }
+          seen.push(pre);
+          var wrap = block.closest('.highlighter-rouge') || block;
+          if (wrap.querySelector('.wp-copy-btn')) {
+            return;
+          }
+          wrap.classList.add('wp-code-wrap');
+          if (getComputedStyle(wrap).position === 'static') {
+            wrap.style.position = 'relative';
+          }
+          var btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'wp-copy-btn';
+          btn.setAttribute('aria-label', COPY_LABEL);
+          setLabel(btn, COPY_LABEL);
+          btn.addEventListener('click', function () {
+            var code = pre.querySelector('code');
+            copyText((code || pre).innerText.replace(/\n$/, ''), btn);
+          });
+          wrap.appendChild(btn);
+        });
+      }
+      return '(' + injector.toString() + ')();';
+    }
 
     if (frame) {
       frame.addEventListener('load', function () {
@@ -736,6 +817,10 @@ title: Azure IaaS Workshop 受講者ポータル
         style.id = 'embedded-workshop-style';
         style.textContent = EMBEDDED_STYLE;
         doc.head.appendChild(style);
+
+        var script = doc.createElement('script');
+        script.textContent = buildCopyInjector();
+        doc.body.appendChild(script);
       });
     }
   })();

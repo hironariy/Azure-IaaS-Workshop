@@ -197,6 +197,31 @@ palette. Mapping of the most relevant Rouge token classes:
 | Diff added/removed | `.gi` / `.gd` | `#7ee787` / `#ffa198` |
 | Error | `.err` | `#f85149`, background neutralized |
 
+### Code Block Copy Buttons
+
+On every iframe `load`, after the style is injected, the portal also injects a
+small `<script>` into the framed document that adds a **copy button** to each
+code block.
+
+- **Targeting**: it selects `div.highlight, .highlighter-rouge .highlight,
+  pre.highlight`, dedupes by the inner `<pre>`, and anchors the button on the
+  outer `.highlighter-rouge` wrapper (made `position: relative` via the
+  `.wp-code-wrap` class).
+- **Button**: a `<button class="wp-copy-btn">` (GitHub-style clipboard SVG +
+  "コピー" label) pinned to the top-right of the block. It is `opacity: 0` by
+  default and fades in on block hover or keyboard focus, so it does not clutter
+  the code.
+- **Copy**: clicking copies the `<pre>`'s text (trailing newline trimmed) via
+  `navigator.clipboard.writeText`, falling back to a hidden-`textarea` +
+  `document.execCommand('copy')` when the async Clipboard API is unavailable
+  (e.g. non-secure contexts). On success the button shows an `.is-copied` state
+  ("コピーしました", green) for ~1.8s, then reverts.
+- **Idempotency**: injection is guarded per `<pre>` and per wrapper so repeated
+  iframe loads never add duplicate buttons.
+- The injector function is serialised with `Function.prototype.toString()` and
+  run inside the framed document, because it must operate on the iframe's own
+  DOM and clipboard context.
+
 ## CSS Specificity Considerations (Critical)
 
 The injected styles share the framed document with **minima's own CSS**, so
@@ -310,3 +335,6 @@ match or exceed minima's selector depth. Do not rely on source order alone.
 - **Header/footer removal**: hid minima's `.site-header` / `.site-footer` on the
   portal page and removed the page `<h1>` so the portal opens straight into the
   lead paragraph and two-pane content.
+- **Code-block copy buttons**: inject a hover-revealed copy button into every
+  framed code block (Clipboard API with `execCommand` fallback, "コピーしました"
+  confirmation state).
