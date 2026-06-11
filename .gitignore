@@ -41,3 +41,4 @@ materials/bicep/dev.bicepparam
 materials/docs/_site/
 materials/docs/.jekyll-cache/
 .jekyll-metadata
+materials/docs/.sass-cache/
