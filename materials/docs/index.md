@@ -2,8 +2,6 @@
 title: Azure IaaS Workshop 受講者ポータル
 ---
 
-# Azure IaaS Workshop 受講者ポータル
-
 <p class="wp-lead">このポータルは、2 日版 Azure IaaS Workshop を進めるための受講者向け入口です。CLI とスクリプト作業は <strong>Azure Cloud Shell (Bash)</strong> を標準にし、ローカル PC にはブラウザ以外のツールを原則として要求しません。</p>
 
 <style>
@@ -35,8 +33,21 @@ title: Azure IaaS Workshop 受講者ポータル
     --wp-shadow-sm: 0 1px 2px rgba(16, 24, 40, .07);
   }
 
+  /* このポータルページ自体は minima のサイトヘッダー／フッターを表示しない
+     （受講者がコンテンツに集中できるよう、ナビゲーションのクロムを取り除く）。
+     iframe 内で読み込む教材ページ側の非表示は EMBEDDED_STYLE で別途行う。 */
+  .site-header,
+  .site-footer {
+    display: none !important;
+  }
+
   .page-content > .wrapper {
     max-width: 1320px;
+  }
+
+  /* ヘッダーが無くなった分、本文上部の余白を最小限に詰める。 */
+  .page-content {
+    padding-top: 1.2rem;
   }
 
   .wp-lead {

@@ -63,6 +63,13 @@ under list/code contexts.
 
 ## Layout
 
+The portal page hides minima's own site chrome so learners land directly on the
+portal: `.site-header` and `.site-footer` are set to `display: none` on this page,
+and the page `<h1>` (the "受講者ポータル" title) is omitted. `.page-content` keeps a
+small top padding so the lead paragraph is not flush against the viewport edge.
+(This is distinct from hiding the *framed* page's header/footer, which is done via
+the injected `EMBEDDED_STYLE`.)
+
 A CSS Grid two-pane layout (`.workshop-portal`):
 
 - **Left pane** (`.workshop-toc`): sticky, scrollable navigation. Width
@@ -300,3 +307,6 @@ match or exceed minima's selector depth. Do not rely on source order alone.
 - **GitHub Pages specificity fix**: raised the dark `<pre>` rule to beat
   minima's transparent wrapper rule; made the local preview faithful to the
   GitHub Pages stack (`github-pages` gem) to prevent recurrence.
+- **Header/footer removal**: hid minima's `.site-header` / `.site-footer` on the
+  portal page and removed the page `<h1>` so the portal opens straight into the
+  lead paragraph and two-pane content.
