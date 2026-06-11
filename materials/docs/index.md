@@ -2,6 +2,8 @@
 title: Azure IaaS Workshop 受講者ポータル
 ---
 
+# Azure IaaS Workshop 受講者ポータル
+
 <p class="wp-lead">このポータルは、2 日版 Azure IaaS Workshop を進めるための受講者向け入口です。CLI とスクリプト作業は <strong>Azure Cloud Shell (Bash)</strong> を標準にし、ローカル PC にはブラウザ以外のツールを原則として要求しません。</p>
 
 <style>
@@ -738,7 +740,3 @@ title: Azure IaaS Workshop 受講者ポータル
     }
   })();
 </script>
-
-## 現在の整備状況
-
-Day 0、Day 1、Day 2、トラブルシューティング、クイックリファレンスの主要導線を整備しています。クリーンアップ専用ページと英語版同期は後続フェーズで拡張します。
