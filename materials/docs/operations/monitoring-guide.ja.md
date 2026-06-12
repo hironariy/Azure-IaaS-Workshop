@@ -12,7 +12,7 @@ Day 1 でデプロイした Azure IaaS 環境を、Azure Monitor と Log Analyti
 |---|---|
 | 対象者 | Day 1 のデプロイ後に監視確認を行う受講者 |
 | 所要時間 | 30-45 分 |
-| 前提 | Day 1 の Bicep deployment と DCR 構成が完了していること |
+| 前提 | Day 1 の Azure リソースデプロイ、アプリデプロイ、DCR 構成が完了していること |
 | 完了条件 | Application Gateway backend health、VM Heartbeat、基本 KQL クエリを確認できること |
 
 ## 1. 監視の全体像
@@ -152,5 +152,6 @@ search " 500 " or " 502 " or " 503 "
 
 Day 2 の演習は [Day 2: 回復性チェックリスト](../learner/day-2-resiliency-checklist.ja.md) に進みます。
 
+前のページ: [Day 1: アプリデプロイ](../learner/day-1-app-deployment.ja.md)
 迷ったとき: [トラブルシューティングランブック](troubleshooting-runbook.ja.md) / [クイックリファレンス](../reference/quick-reference-card.ja.md)
 戻る: [受講者ポータル](../index.md)

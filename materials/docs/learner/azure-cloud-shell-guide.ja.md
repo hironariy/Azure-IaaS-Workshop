@@ -6,14 +6,14 @@ title: Azure Cloud Shell ミニガイド
 
 ## このページでやること
 
-Azure Cloud Shell を Bash モードで開き、Day 1 本編を進めるための基本操作だけを確認します。リポジトリ clone、SSH 鍵作成、SSL 証明書作成、Bicep パラメータ編集は [Day 1: Azure リソースデプロイとアプリ配置](day-1-deployment-checklist.ja.md) の第1章で実施します。
+Azure Cloud Shell を Bash モードで開き、Day 1 を進めるための基本操作だけを確認します。リポジトリ clone、SSH 鍵作成、SSL 証明書作成、Bicep パラメータ編集は [Day 1: Azure リソースデプロイ](day-1-deployment-checklist.ja.md) で実施します。
 
 | 項目 | 内容 |
 |---|---|
 | 対象者 | Cloud Shell の開き方や Bash への切り替えだけを確認したい受講者 |
 | 所要時間 | 3-5 分 |
 | 前提 | Azure Portal にサインインできること |
-| 完了条件 | Cloud Shell Bash のプロンプトを開き、Day 1 本編に戻れること |
+| 完了条件 | Cloud Shell Bash のプロンプトを開き、Day 1 の Azure リソースデプロイに戻れること |
 
 ## 1. Cloud Shell を Bash で開く
 
@@ -74,6 +74,6 @@ chmod 644 ~/.ssh/id_rsa.pub
 
 ## 次に進む
 
-[Day 1: Azure リソースデプロイとアプリ配置](day-1-deployment-checklist.ja.md) に戻ります。
+[Day 1: Azure リソースデプロイ](day-1-deployment-checklist.ja.md) に戻ります。
 
 戻る: [受講者ポータル](../index.md)

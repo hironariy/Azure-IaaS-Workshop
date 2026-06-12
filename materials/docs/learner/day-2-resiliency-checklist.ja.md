@@ -274,5 +274,5 @@ Test failover は本番側に影響しない分離ネットワークで行いま
 - コマンドとリソース名は [クイックリファレンス](../reference/quick-reference-card.ja.md) を参照します。
 - BCDR の背景説明は [災害復旧ガイド](../operations/disaster-recovery-guide.ja.md) を参照します。
 
-前のページ: [Day 1: Azure リソースデプロイとアプリ配置](day-1-deployment-checklist.ja.md)
+前のページ: [監視ガイド](../operations/monitoring-guide.ja.md)
 戻る: [受講者ポータル](../index.md)

@@ -208,7 +208,8 @@ search "ApplicationGateway"
 
 | 状況 | 戻るページ |
 |---|---|
-| Day 1 手順を確認したい | [Day 1: Azure リソースデプロイとアプリ配置](../learner/day-1-deployment-checklist.ja.md) |
+| Day 1 の Azure リソースデプロイを確認したい | [Day 1: Azure リソースデプロイ](../learner/day-1-deployment-checklist.ja.md) |
+| Day 1 のアプリデプロイを確認したい | [Day 1: アプリデプロイ](../learner/day-1-app-deployment.ja.md) |
 | Day 2 手順を確認したい | [Day 2: 回復性チェックリスト](../learner/day-2-resiliency-checklist.ja.md) |
 | 症状別に調べたい | [トラブルシューティングランブック](../operations/troubleshooting-runbook.ja.md) |
 | 監視を深掘りしたい | [監視ガイド](../operations/monitoring-guide.ja.md) |
