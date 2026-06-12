@@ -309,13 +309,8 @@ curl -k "https://$FQDN/api/posts"
 
 ブラウザでも `https://$FQDN` を開きます。
 
-> [!TODO] スクリーンショットを挿入
-> - Image path: `assets/screenshots/day1-app-home.png`
-> - Capture target: Blog application home page through Application Gateway URL
-> - Purpose: Application Gateway 経由でアプリが表示されることを確認する
-> - Suggested alt text: Blog application home page opened through the Application Gateway URL
-> - Insertion note: URL とアプリのホーム画面が分かる状態を撮影する
-> - Mask: 個人名、メールアドレス、投稿内容、リソース名に含まれる個人情報
+![サンプルアプリのトップ画面](../assets/screenshots/learners-portal/day1/SampleAppTop.png)
+サンプルアプリのトップ画面
 
 **期待結果:** `/` は `200` または HTML 応答になり、`/api/posts` は JSON 配列を返します。ブラウザでは自己署名証明書の警告を通過後、ブログアプリが表示されます。
 
@@ -325,13 +320,8 @@ curl -k "https://$FQDN/api/posts"
 
 Azure Portal で Application Gateway を開き、Backend health を確認します。
 
-> [!TODO] スクリーンショットを挿入
-> - Image path: `assets/screenshots/day1-appgw-backend-health.png`
-> - Capture target: Application Gateway backend health page
-> - Purpose: Web tier backend の正常性確認画面を示す
-> - Suggested alt text: Azure Application Gateway backend health page showing healthy backend servers
-> - Insertion note: backend の Healthy/Unhealthy 状態が分かるように撮影する
-> - Mask: サブスクリプション ID、リソース名に含まれる個人情報、IP アドレスが組織情報に紐づく場合は IP
+![Application Gateway のバックエンドヘルスの確認画面](../assets/screenshots/learners-portal/day1/AppGw.png)
+Application Gateway のバックエンドヘルスの確認画面
 
 **期待結果:** 少なくとも期待する Web tier backend が Healthy になります。
 
