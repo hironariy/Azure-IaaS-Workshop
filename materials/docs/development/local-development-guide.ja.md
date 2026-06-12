@@ -1,6 +1,6 @@
 # ローカル開発ガイド
 
-> **位置づけ:** このページは、アプリケーションをローカルで変更・検証したい開発者向けの任意資料です。通常のワークショップ受講者が Azure へデプロイする本線では、ローカル Node.js、Docker、Azure CLI、OpenSSL の準備は必須ではありません。受講者の標準手順は [受講者クイックスタート](../learner/learner-quickstart.ja.md) と [Day 1: デプロイチェックリスト](../learner/day-1-deployment-checklist.ja.md) を参照してください。
+> **位置づけ:** このページは、アプリケーションをローカルで変更・検証したい開発者向けの任意資料です。通常のワークショップ受講者が Azure へデプロイする本線では、ローカル Node.js、Docker、Azure CLI、OpenSSL の準備は必須ではありません。受講者の標準手順は [受講者クイックスタート](../learner/learner-quickstart.ja.md) と [Day 1: Azure リソースデプロイとアプリ配置](../learner/day-1-deployment-checklist.ja.md) を参照してください。
 
 このガイドでは、開発およびテスト用にローカルマシンでブログアプリケーションをセットアップして実行する方法を説明します。
 

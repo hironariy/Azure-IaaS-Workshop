@@ -175,17 +175,58 @@ az vm list --resource-group "$RESOURCE_GROUP" --show-details \
 - DB VM が停止していれば起動します。
 - Day 1 の post-deployment setup を再確認します。
 - パスワード不一致が疑われる場合は `main.local.bicepparam` と `post-deployment-setup.local.sh` の値を照合します。
+- `mongoDbAppPassword` に `@` を含めた場合、Bicep が作成する `MONGODB_URI` の user info 区切りとして解釈され、接続文字列が壊れます。この教材では password を作り直し、`main.local.bicepparam` と `post-deployment-setup.local.sh` を同じ値にそろえてから再実行します。
 
 ## 8. Cloud Shell が切断された
 
-**対処:**
+Cloud Shell を再接続すると、カレントディレクトリ、作業変数、`~/.ssh` 配下の SSH 鍵が期待どおりでないことがあります。Day 1 の Step 2 で `~/clouddrive/workshop-keys` に SSH 鍵を退避していれば、次の順に復旧します。
 
 ```bash
 cd ~/Azure-IaaS-Workshop
+
+LOCATION="japanwest"
+RESOURCE_GROUP="rg-blogapp-workshop"
+
 az account show --query "{subscription:name, subscriptionId:id, tenantId:tenantId}" -o table
 ```
 
+複数グループの場合は、`RESOURCE_GROUP` を講師から割り当てられた値に戻します。
+
+```bash
+RESOURCE_GROUP="rg-blogapp-A-workshop"
+```
+
+SSH 鍵を復旧します。
+
+```bash
+mkdir -p ~/.ssh
+cp ~/clouddrive/workshop-keys/id_rsa ~/clouddrive/workshop-keys/id_rsa.pub ~/.ssh/
+chmod 700 ~/.ssh
+chmod 600 ~/.ssh/id_rsa
+chmod 644 ~/.ssh/id_rsa.pub
+```
+
+Bastion extension も確認します。
+
+```bash
+az config set extension.use_dynamic_install=yes_without_prompt
+az extension add --name bastion --upgrade --yes
+az extension show --name bastion --query "{name:name,version:version}" -o table
+```
+
+FQDN を使う手順まで進んでいた場合は、再取得します。
+
+```bash
+FQDN=$(az network public-ip show \
+  --resource-group "$RESOURCE_GROUP" \
+  --name pip-agw-blogapp-prod \
+  --query dnsSettings.fqdn -o tsv)
+echo "https://$FQDN"
+```
+
 デプロイ中だった場合は、Portal で Resource group > Deployments を開きます。Cloud Shell の切断だけで Azure deployment が止まるとは限りません。
+
+**チェックポイント:** `az network bastion ssh` が `az network bastion: 'ssh' is not in the 'az network bastion' command group` のようなエラーになる場合は、Bastion extension の未導入または古い version が原因です。上記の extension 手順を再実行します。
 
 ## 9. Log Analytics にデータが出ない
 
@@ -215,7 +256,7 @@ Heartbeat
 ## 次に進む
 
 - コマンドやリソース名は [クイックリファレンス](../reference/quick-reference-card.ja.md) を参照します。
-- Day 1 の手順は [Day 1: デプロイチェックリスト](../learner/day-1-deployment-checklist.ja.md) に戻ります。
+- Day 1 の手順は [Day 1: Azure リソースデプロイとアプリ配置](../learner/day-1-deployment-checklist.ja.md) に戻ります。
 - Day 2 の手順は [Day 2: 回復性チェックリスト](../learner/day-2-resiliency-checklist.ja.md) に戻ります。
 
 戻る: [受講者ポータル](../index.md)

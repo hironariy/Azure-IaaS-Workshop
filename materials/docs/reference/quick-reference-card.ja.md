@@ -66,7 +66,7 @@ FQDN=$(az network public-ip show \
 | `entraFrontendClientId` | Frontend SPA app registration Client ID | Azure Portal > App registrations |
 | `sslCertificateData` | Base64 encoded PFX | `cat cert-base64.txt` |
 | `sslCertificatePassword` | PFX password | 既定 `Workshop2024!` |
-| `mongoDbAppPassword` | MongoDB app user password | 自分で決める強い値 |
+| `mongoDbAppPassword` | MongoDB app user password | Step 9 の post-deployment setup と同じ値。`@` は使わない |
 | `appGatewayDnsLabel` | Application Gateway FQDN の DNS label | 例: `blogapp-team1-0106` |
 
 ## よく使う Cloud Shell コマンド
@@ -128,6 +128,28 @@ curl -k "https://$FQDN/api/posts"
 ./scripts/configure-dcr.sh "$RESOURCE_GROUP"
 ```
 
+### Bastion extension
+
+```bash
+az config set extension.use_dynamic_install=yes_without_prompt
+az extension add --name bastion --upgrade --yes
+az extension show --name bastion --query "{name:name,version:version}" -o table
+```
+
+### Cloud Shell 復帰
+
+```bash
+cd ~/Azure-IaaS-Workshop
+LOCATION="japanwest"
+RESOURCE_GROUP="rg-blogapp-workshop"
+
+mkdir -p ~/.ssh
+cp ~/clouddrive/workshop-keys/id_rsa ~/clouddrive/workshop-keys/id_rsa.pub ~/.ssh/
+chmod 700 ~/.ssh
+chmod 600 ~/.ssh/id_rsa
+chmod 644 ~/.ssh/id_rsa.pub
+```
+
 ## よく開く Azure Portal 画面
 
 | 目的 | Portal で開く場所 |
@@ -186,7 +208,7 @@ search "ApplicationGateway"
 
 | 状況 | 戻るページ |
 |---|---|
-| Day 1 手順を確認したい | [Day 1: デプロイチェックリスト](../learner/day-1-deployment-checklist.ja.md) |
+| Day 1 手順を確認したい | [Day 1: Azure リソースデプロイとアプリ配置](../learner/day-1-deployment-checklist.ja.md) |
 | Day 2 手順を確認したい | [Day 2: 回復性チェックリスト](../learner/day-2-resiliency-checklist.ja.md) |
 | 症状別に調べたい | [トラブルシューティングランブック](../operations/troubleshooting-runbook.ja.md) |
 | 監視を深掘りしたい | [監視ガイド](../operations/monitoring-guide.ja.md) |

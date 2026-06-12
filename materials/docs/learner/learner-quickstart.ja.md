@@ -13,18 +13,17 @@ title: 受講者クイックスタート
 | 対象者 | AWS の経験があり、Azure IaaS、可用性、監視、BCDR を学ぶ受講者 |
 | 所要時間 | 5-10 分 |
 | 前提 | ブラウザで GitHub と Azure Portal にアクセスできること |
-| 完了条件 | Day 0、Cloud Shell、Day 1 のどのページから進めるかを説明できること |
+| 完了条件 | Day 0、Day 1、Day 2 のどのページから進めるかを説明できること |
 
 ## 学習の流れ
 
 | タイミング | 使うページ | 完了条件 |
 |---|---|---|
 | 事前または開始直後 | [Day 0: 事前準備](day-0-prerequisites.ja.md) | Azure Portal、Cloud Shell、Entra ID 権限、クォータ、GitHub リポジトリを確認できた |
-| Day 1 の最初 | [Azure Cloud Shell ガイド](azure-cloud-shell-guide.ja.md) | Cloud Shell Bash でリポジトリを clone し、ファイルを編集できる |
-| Day 1 本編 | [Day 1: デプロイチェックリスト](day-1-deployment-checklist.ja.md) | Bicep デプロイ、デプロイ後セットアップ、疎通確認、監視確認を進められる |
+| Day 1 本編 | [Day 1: Azure リソースデプロイとアプリ配置](day-1-deployment-checklist.ja.md) | Cloud Shell 準備、Bicep デプロイ、デプロイ後セットアップ、アプリ配置、疎通確認、監視確認を進められる |
 | Day 1 監視演習 | [監視ガイド](../operations/monitoring-guide.ja.md) | Log Analytics で基本クエリを実行できる |
 | Day 2 本編 | [Day 2: 回復性チェックリスト](day-2-resiliency-checklist.ja.md) | Backup、Restore、障害検証、ASR/test failover を安全に進められる |
-| 困ったとき | [トラブルシューティングランブック](../operations/troubleshooting-runbook.ja.md) / [クイックリファレンス](../reference/quick-reference-card.ja.md) | 症状別の確認と主要コマンドを確認できる |
+| 困ったとき | [トラブルシューティングランブック](../operations/troubleshooting-runbook.ja.md) / [クイックリファレンス](../reference/quick-reference-card.ja.md) / [Azure Cloud Shell ミニガイド](azure-cloud-shell-guide.ja.md) | 症状別の確認、主要コマンド、Cloud Shell の基本を確認できる |
 
 ## このワークショップで標準にする作業場所
 
@@ -61,6 +60,7 @@ title: 受講者クイックスタート
 
 - Day 0 で確認する内容を説明できる。
 - CLI 作業は Cloud Shell Bash で行うことを理解している。
+- Cloud Shell の起動、clone、SSH 鍵、SSL 証明書作成は Day 1 本編の最初にまとめて行うことを理解している。
 - ローカル開発ガイドは任意の開発者向け資料であり、Azure デプロイの本線ではないことを理解している。
 
 ## 次に進む

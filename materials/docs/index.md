@@ -450,9 +450,9 @@ title: Azure IaaS Workshop 受講者ポータル
     <div class="wp-progress">
       <div class="wp-progress__head">
         <span class="wp-progress__label">進捗</span>
-        <span class="wp-progress__count"><strong data-progress-count>0</strong> / <span data-progress-total>7</span> 完了</span>
+        <span class="wp-progress__count"><strong data-progress-count>0</strong> / <span data-progress-total>6</span> 完了</span>
       </div>
-      <div class="wp-progress__bar" role="progressbar" aria-label="ワークショップ進捗" aria-valuemin="0" aria-valuemax="7" aria-valuenow="0">
+      <div class="wp-progress__bar" role="progressbar" aria-label="ワークショップ進捗" aria-valuemin="0" aria-valuemax="6" aria-valuenow="0">
         <div class="wp-progress__fill" data-progress-fill></div>
       </div>
       <button type="button" class="wp-progress__reset" data-progress-reset>進捗をリセット</button>
@@ -475,24 +475,16 @@ title: Azure IaaS Workshop 受講者ポータル
         </span>
         <label class="wp-check"><input type="checkbox" data-progress-id="day0" aria-label="Day 0 事前準備完了"></label>
       </li>
-      <li class="wp-step" data-page="learner/azure-cloud-shell-guide.ja.html">
+      <li class="wp-step" data-page="learner/day-1-deployment-checklist.ja.html">
         <span class="wp-step__num" aria-hidden="true">3</span>
         <span class="wp-step__body">
-          <span class="wp-badge wp-badge--d1">Day 1 開始</span>
-          <a class="wp-step__link" href="learner/azure-cloud-shell-guide.ja.html" target="workshop-content-frame">Azure Cloud Shell ガイド</a>
-        </span>
-        <label class="wp-check"><input type="checkbox" data-progress-id="cloudshell" aria-label="Azure Cloud Shell ガイド完了"></label>
-      </li>
-      <li class="wp-step" data-page="learner/day-1-deployment-checklist.ja.html">
-        <span class="wp-step__num" aria-hidden="true">4</span>
-        <span class="wp-step__body">
           <span class="wp-badge wp-badge--d1">Day 1 本編</span>
-          <a class="wp-step__link" href="learner/day-1-deployment-checklist.ja.html" target="workshop-content-frame">Day 1: デプロイチェックリスト</a>
+          <a class="wp-step__link" href="learner/day-1-deployment-checklist.ja.html" target="workshop-content-frame">Day 1: Azure リソースデプロイとアプリ配置</a>
         </span>
-        <label class="wp-check"><input type="checkbox" data-progress-id="day1" aria-label="Day 1 デプロイチェックリスト完了"></label>
+        <label class="wp-check"><input type="checkbox" data-progress-id="day1" aria-label="Day 1 Azure リソースデプロイとアプリ配置完了"></label>
       </li>
       <li class="wp-step" data-page="operations/monitoring-guide.ja.html">
-        <span class="wp-step__num" aria-hidden="true">5</span>
+        <span class="wp-step__num" aria-hidden="true">4</span>
         <span class="wp-step__body">
           <span class="wp-badge wp-badge--d1">Day 1 監視</span>
           <a class="wp-step__link" href="operations/monitoring-guide.ja.html" target="workshop-content-frame">監視ガイド</a>
@@ -500,7 +492,7 @@ title: Azure IaaS Workshop 受講者ポータル
         <label class="wp-check"><input type="checkbox" data-progress-id="monitoring" aria-label="監視ガイド完了"></label>
       </li>
       <li class="wp-step" data-page="learner/day-2-resiliency-checklist.ja.html">
-        <span class="wp-step__num" aria-hidden="true">6</span>
+        <span class="wp-step__num" aria-hidden="true">5</span>
         <span class="wp-step__body">
           <span class="wp-badge wp-badge--d2">Day 2 本編</span>
           <a class="wp-step__link" href="learner/day-2-resiliency-checklist.ja.html" target="workshop-content-frame">Day 2: 回復性チェックリスト</a>
@@ -508,7 +500,7 @@ title: Azure IaaS Workshop 受講者ポータル
         <label class="wp-check"><input type="checkbox" data-progress-id="day2" aria-label="Day 2 回復性チェックリスト完了"></label>
       </li>
       <li class="wp-step" data-page="operations/disaster-recovery-guide.ja.html">
-        <span class="wp-step__num" aria-hidden="true">7</span>
+        <span class="wp-step__num" aria-hidden="true">6</span>
         <span class="wp-step__body">
           <span class="wp-badge wp-badge--d2">Day 2 補足</span>
           <a class="wp-step__link" href="operations/disaster-recovery-guide.ja.html" target="workshop-content-frame">災害復旧ガイド</a>
@@ -521,6 +513,13 @@ title: Azure IaaS Workshop 受講者ポータル
     <p class="wp-toc-note">順番に関係なく、必要なときに開く参照ページです。</p>
 
     <ul class="wp-refs">
+      <li class="wp-ref" data-page="learner/azure-cloud-shell-guide.ja.html">
+        <span class="wp-ref__body">
+          <span class="wp-ref__use">Cloud Shell の基本だけ確認</span>
+          <a class="wp-ref__link" href="learner/azure-cloud-shell-guide.ja.html" target="workshop-content-frame">Azure Cloud Shell ミニガイド</a>
+        </span>
+        <label class="wp-check"><input type="checkbox" data-progress-id="ref-cloudshell" aria-label="Azure Cloud Shell ミニガイド確認済み"></label>
+      </li>
       <li class="wp-ref" data-page="operations/troubleshooting-runbook.ja.html">
         <span class="wp-ref__body">
           <span class="wp-ref__use">症状別の切り分け</span>
