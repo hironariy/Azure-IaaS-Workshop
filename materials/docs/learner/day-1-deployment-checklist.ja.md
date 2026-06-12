@@ -22,14 +22,6 @@ Azure Cloud Shell Bash を使って、作業環境の準備、Bicep パラメー
 3. シェル選択で **Bash** を選びます。
 4. 初回起動時はストレージ作成を求められるため、講師の指定に従って作成します。
 
-> [!TODO] スクリーンショットを挿入
-> - Image path: `assets/screenshots/day1-cloud-shell-launch.png`
-> - Capture target: Azure Portal Cloud Shell launch screen
-> - Purpose: 受講者が Azure Portal から Cloud Shell を起動する位置を確認する
-> - Suggested alt text: Azure Portal showing the Cloud Shell launch button
-> - Insertion note: Portal 上部の Cloud Shell アイコンと起動後のペインが分かる状態を撮影する
-> - Mask: アカウント名、テナント ID、サブスクリプション ID
-
 Cloud Shell Bash で、Day 0 で作成した自分のコピー先リポジトリを clone します。すでに clone 済みの場合は `cd` だけ実行します。
 
 ```bash
@@ -39,14 +31,6 @@ if [ ! -d Azure-IaaS-Workshop ]; then
 fi
 cd ~/Azure-IaaS-Workshop
 ```
-
-> [!TODO] スクリーンショットを挿入
-> - Image path: `assets/screenshots/day1-git-clone-complete.png`
-> - Capture target: Cloud Shell after git clone and cd into the repository
-> - Purpose: clone が完了し、作業ディレクトリがリポジトリルートであることを確認する
-> - Suggested alt text: Azure Cloud Shell showing completed git clone of the workshop repository
-> - Insertion note: `git clone` の完了メッセージと `pwd` またはプロンプトのパスが見える状態を撮影する
-> - Mask: GitHub ユーザー名、組織名、アカウント名
 
 作業変数を設定します。Cloud Shell を再起動した場合も、この変数は再設定します。
 
@@ -121,13 +105,8 @@ cp main.bicepparam main.local.bicepparam
 code main.local.bicepparam
 ```
 
-> [!TODO] スクリーンショットを挿入
-> - Image path: `assets/screenshots/day1-bicep-param-edit.png`
-> - Capture target: main.local.bicepparam opened in Cloud Shell editor
-> - Purpose: Cloud Shell editor で Bicep パラメータを編集する画面を示す
-> - Suggested alt text: Cloud Shell editor showing main.local.bicepparam
-> - Insertion note: 実値はマスクし、パラメータ名が分かる状態を撮影する
-> - Mask: SSH public key、Object ID、Tenant ID、Client ID、証明書データ、パスワード、個人名
+![Cloud Shell の VS Code](../assets/screenshots/learners-portal/day1/vscode.png)
+Cloud Shell の VS Code
 
 少なくとも次を設定します。
 
@@ -179,14 +158,6 @@ az deployment group create \
   --parameters materials/bicep/main.local.bicepparam
 ```
 
-> [!TODO] スクリーンショットを挿入
-> - Image path: `assets/screenshots/day1-deployment-command.png`
-> - Capture target: Cloud Shell running az deployment group create
-> - Purpose: デプロイコマンド実行中の状態を示す
-> - Suggested alt text: Azure Cloud Shell running az deployment group create for the workshop
-> - Insertion note: 実行コマンドと Running 状態が分かるように撮影する
-> - Mask: サブスクリプション ID、テナント ID、個人名、リソース名に含まれる個人情報
-
 デプロイには 15-30 分かかることがあります。Application Gateway などは作成に時間がかかります。
 
 **期待結果:** コマンドの最終出力に `"provisioningState": "Succeeded"` が表示されます。
@@ -196,25 +167,12 @@ az deployment group create \
 ## 7. Portal でデプロイ進捗を確認する
 
 1. Azure Portal > Resource groups を開きます。
-2. `$RESOURCE_GROUP` を開きます。
-3. 左メニューの Deployments を開きます。
+2. 自身のリソースグループを開きます。
+3. 左メニューのデプロイを開きます。
 4. `main` または実行中の deployment を確認します。
 
-> [!TODO] スクリーンショットを挿入
-> - Image path: `assets/screenshots/day1-deployment-progress.png`
-> - Capture target: Resource group Deployments page showing running deployment
-> - Purpose: Cloud Shell が切断されても Portal で進捗確認できることを示す
-> - Suggested alt text: Azure Resource group deployments page showing deployment progress
-> - Insertion note: Deployment の状態が分かる状態を撮影する
-> - Mask: サブスクリプション ID、テナント ID、個人名、リソース名に含まれる個人情報
-
-> [!TODO] スクリーンショットを挿入
-> - Image path: `assets/screenshots/day1-deployment-succeeded.png`
-> - Capture target: Resource group Deployments page showing succeeded deployment
-> - Purpose: デプロイ成功状態の見方を示す
-> - Suggested alt text: Azure Resource group deployments page showing succeeded deployment
-> - Insertion note: `Succeeded` の状態が分かる状態を撮影する
-> - Mask: サブスクリプション ID、テナント ID、個人名、リソース名に含まれる個人情報
+![Azure Portal の該当のリソースグループのデプロイからも進捗を確認できる](../assets/screenshots/learners-portal/day1/deployment.png)
+Azure Portal の該当のリソースグループのデプロイからも進捗を確認できる
 
 ## 8. Azure CLI の Bastion extension を準備する
 
