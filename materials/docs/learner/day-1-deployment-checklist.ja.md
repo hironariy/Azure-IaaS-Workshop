@@ -249,7 +249,7 @@ Azure Portal でフロントエンド SPA のアプリ登録を開きます。
 
 Bicep は VM、ミドルウェア、環境変数、NGINX 設定、`config.json` までを準備します。一方で、Express API と React frontend のアプリケーションコードは、この Step で App tier / Web tier の VM に配置します。
 
-この手順では、`deployment-strategy.md` の Phase 2 / Phase 3 の内容を、Cloud Shell から実行しやすい形にまとめています。App tier を先に配置し、その後 Web tier を配置します。
+この手順では、`deployment-strategy.md` の Phase 2 / Phase 3 と同じ考え方で、各 VM に Bastion 経由で接続し、VM 内で確認、clone、build、起動、検証を行います。App tier を先に配置し、その後 Web tier を配置します。
 
 ### 12.1 配置対象と前提を確認する
 
@@ -271,179 +271,240 @@ REPOSITORY_URL="https://github.com/<YOUR_GITHUB_USER>/Azure-IaaS-Workshop.git"
 git remote -v
 ```
 
-VM 名を変数に入れます。
+VM 名を確認します。
 
 ```bash
 APP_VMS=("vm-app-az1-prod" "vm-app-az2-prod")
 WEB_VMS=("vm-web-az1-prod" "vm-web-az2-prod")
+printf '%s\n' "${APP_VMS[@]}" "${WEB_VMS[@]}"
 ```
 
 **チェックポイント:** `REPOSITORY_URL` は VM から `git clone` できる URL である必要があります。コピー先リポジトリを private にした場合は GitHub 認証が必要になり、ここで失敗します。ワークショップでは、組織ポリシーに反しない範囲で VM から認証なしで clone できる公開範囲を推奨します。
 
-### 12.2 Backend API を App VM に配置する
+### 12.2 App VM に Bastion 経由で接続する
+
+App tier の 2 台に順番に接続して作業します。まず `vm-app-az1-prod` に接続します。
+
+```bash
+az network bastion ssh \
+  --name bastion-blogapp-prod \
+  --resource-group "$RESOURCE_GROUP" \
+  --target-resource-id "$(az vm show -g "$RESOURCE_GROUP" -n vm-app-az1-prod --query id -o tsv)" \
+  --auth-type ssh-key \
+  --username azureuser \
+  --ssh-key ~/.ssh/id_rsa
+```
+
+以降の **12.3 から 12.7** は、接続先の App VM 内で実行します。`vm-app-az1-prod` で完了したら `exit` で Cloud Shell に戻り、同じ手順を `vm-app-az2-prod` でも繰り返します。
+
+```bash
+az network bastion ssh \
+  --name bastion-blogapp-prod \
+  --resource-group "$RESOURCE_GROUP" \
+  --target-resource-id "$(az vm show -g "$RESOURCE_GROUP" -n vm-app-az2-prod --query id -o tsv)" \
+  --auth-type ssh-key \
+  --username azureuser \
+  --ssh-key ~/.ssh/id_rsa
+```
+
+**チェックポイント:** プロンプトが App VM 上の `azureuser` になっていることを確認してから次へ進みます。
+
+### 12.3 App VM の Node.js、PM2、環境変数を確認する
+
+接続先の App VM で実行します。
+
+```bash
+node --version
+pm2 --version
+pm2 list
+ls -la /opt/blogapp/
+```
+
+Bicep が作成した環境変数ファイルを確認します。`MONGODB_URI` にはパスワードが含まれるため、画面共有やスクリーンショットでは表示しないでください。
+
+```bash
+grep -E '^(NODE_ENV|PORT|LOG_LEVEL|ENTRA_TENANT_ID|ENTRA_CLIENT_ID)=' /opt/blogapp/.env
+grep '^MONGODB_URI=' /opt/blogapp/.env | sed 's#://blogapp:[^@]*@#://blogapp:***@#'
+```
+
+**期待結果:** Node.js 20 系、PM2、`/opt/blogapp/.env` が確認できます。
+
+### 12.4 App VM の一時 health server を削除する
+
+Bicep は App tier の起動確認用に `blogapp-health` という一時的な PM2 process を作成します。実アプリを起動する前に削除します。
+
+```bash
+pm2 list
+pm2 delete blogapp-health 2>/dev/null || true
+pm2 save
+pm2 list
+```
+
+**チェックポイント:** `blogapp-health` が存在しない、または削除済みであることを確認します。
+
+### 12.5 Backend API のコードを配置する
 
 App tier では、2 台の App VM に backend code を配置し、`npm ci --include=dev`、`npm run build`、PM2 起動を行います。Bicep が作成した `/opt/blogapp/.env` はそのまま使います。
 
-Cloud Shell で backend 配置用スクリプトを作成します。
+接続先の App VM で実行します。`REPOSITORY_URL` は Day 0 で作成した自分のコピー先に置き換えます。
 
 ```bash
-cat > /tmp/deploy-backend.sh <<'BACKEND_SCRIPT'
-set -euo pipefail
-
-REPOSITORY_URL="__REPOSITORY_URL__"
-
-export DEBIAN_FRONTEND=noninteractive
-apt-get -o DPkg::Lock::Timeout=120 update
-apt-get -o DPkg::Lock::Timeout=120 -y install git
-
-chown -R azureuser:azureuser /opt/blogapp
-
-sudo -H -u azureuser bash <<'APP_SCRIPT'
-set -euo pipefail
-
-REPOSITORY_URL="__REPOSITORY_URL__"
-WORK_DIR="/tmp/blogapp-backend-$(date +%s)"
+REPOSITORY_URL="https://github.com/<YOUR_GITHUB_USER>/Azure-IaaS-Workshop.git"
 
 cd /opt/blogapp
-rm -rf "$WORK_DIR"
-git clone "$REPOSITORY_URL" "$WORK_DIR"
-cp -r "$WORK_DIR/materials/backend/." /opt/blogapp/
-rm -rf "$WORK_DIR"
+rm -rf temp
+git clone "$REPOSITORY_URL" temp
+cp -r temp/materials/backend/* ./
+rm -rf temp
+```
 
+**チェックポイント:** `package.json`、`src/`、`tsconfig.json` が `/opt/blogapp` に配置されます。
+
+### 12.6 Backend API を build して PM2 で起動する
+
+接続先の App VM で実行します。
+
+```bash
+cd /opt/blogapp
+
+# NODE_ENV=production が設定されているため、TypeScript build に必要な devDependencies も明示的に入れます。
 npm ci --include=dev
 npm run build
 
-# The backend loads dotenv from dist/.env after TypeScript build.
+# Backend は build 後に dist/.env を読みます。Bicep が作成した .env を build 成果物側にも置きます。
 cp /opt/blogapp/.env /opt/blogapp/dist/.env
 chmod 600 /opt/blogapp/dist/.env
 
-pm2 delete blogapp-health 2>/dev/null || true
 pm2 delete blogapp-api 2>/dev/null || true
 pm2 start dist/src/app.js --name blogapp-api
 pm2 save
 
 pm2 list
-
-API_OK=0
-for attempt in $(seq 1 12); do
-  if curl -fsS http://localhost:3000/health && curl -fsS http://localhost:3000/api/posts; then
-    API_OK=1
-    break
-  fi
-  echo "Waiting for backend API to start... attempt ${attempt}/12"
-  sleep 10
-done
-
-test "$API_OK" = "1"
-APP_SCRIPT
-BACKEND_SCRIPT
-
-sed -i "s|__REPOSITORY_URL__|$REPOSITORY_URL|g" /tmp/deploy-backend.sh
+pm2 logs blogapp-api --lines 20
 ```
 
-2 台の App VM に実行します。
+**期待結果:** `blogapp-api` が PM2 の `online` 状態になります。
+
+### 12.7 Backend API を App VM 内で検証する
+
+接続先の App VM で実行します。
 
 ```bash
-for VM in "${APP_VMS[@]}"; do
-  echo "Deploying backend to $VM ..."
-  az vm run-command invoke \
-    --resource-group "$RESOURCE_GROUP" \
-    --name "$VM" \
-    --command-id RunShellScript \
-    --scripts @/tmp/deploy-backend.sh \
-    --query "value[0].message" \
-    -o tsv
-done
+curl http://localhost:3000/health
+curl http://localhost:3000/api/posts
+curl http://10.0.2.10:3000/health
 ```
 
-**期待結果:** 各 App VM の出力で、`blogapp-api` が PM2 の `online` 状態になり、`curl http://localhost:3000/health` と `curl http://localhost:3000/api/posts` が成功します。
+**期待結果:** health endpoint が `healthy` を返し、`/api/posts` が JSON 配列を返します。投稿がまだない場合は `[]` が正常です。
 
-**チェックポイント:** `blogapp-health` は Bicep が作成した一時的な health server です。実アプリを起動する前に削除して問題ありません。
+`vm-app-az1-prod` の作業が終わったら `exit` で Cloud Shell に戻り、`vm-app-az2-prod` に接続して **12.3 から 12.7** を繰り返します。
 
-### 12.3 Frontend を Web VM に配置する
+### 12.8 Web VM に Bastion 経由で接続する
 
-Web tier では、2 台の Web VM 上で frontend を build し、生成された `dist` を `/var/www/html` に配置します。Bicep が作成した `/var/www/html/config.json` には Entra ID と API の runtime 設定が入っているため、削除せずに退避してから戻します。
-
-Cloud Shell で frontend 配置用スクリプトを作成します。
+Web tier の 2 台に順番に接続して作業します。まず `vm-web-az1-prod` に接続します。
 
 ```bash
-cat > /tmp/deploy-frontend.sh <<'FRONTEND_SCRIPT'
-set -euo pipefail
+az network bastion ssh \
+  --name bastion-blogapp-prod \
+  --resource-group "$RESOURCE_GROUP" \
+  --target-resource-id "$(az vm show -g "$RESOURCE_GROUP" -n vm-web-az1-prod --query id -o tsv)" \
+  --auth-type ssh-key \
+  --username azureuser \
+  --ssh-key ~/.ssh/id_rsa
+```
 
-REPOSITORY_URL="__REPOSITORY_URL__"
-WORK_DIR="/tmp/blogapp-frontend-$(date +%s)"
+以降の **12.9 から 12.12** は、接続先の Web VM 内で実行します。`vm-web-az1-prod` で完了したら `exit` で Cloud Shell に戻り、同じ手順を `vm-web-az2-prod` でも繰り返します。
 
-export DEBIAN_FRONTEND=noninteractive
-apt-get -o DPkg::Lock::Timeout=120 update
-apt-get -o DPkg::Lock::Timeout=120 -y install git curl ca-certificates
+```bash
+az network bastion ssh \
+  --name bastion-blogapp-prod \
+  --resource-group "$RESOURCE_GROUP" \
+  --target-resource-id "$(az vm show -g "$RESOURCE_GROUP" -n vm-web-az2-prod --query id -o tsv)" \
+  --auth-type ssh-key \
+  --username azureuser \
+  --ssh-key ~/.ssh/id_rsa
+```
 
+### 12.9 Web VM の NGINX と runtime config を確認する
+
+接続先の Web VM で実行します。
+
+```bash
+sudo systemctl status nginx --no-pager
+nginx -v
+curl http://localhost/health
+cat /var/www/html/config.json
+grep "proxy_pass" /etc/nginx/sites-available/default
+```
+
+**期待結果:** NGINX が起動しており、`/var/www/html/config.json` に Entra ID と API の runtime 設定が入っています。
+
+**チェックポイント:** `config.json` は frontend が起動時に読む設定ファイルです。静的ファイル配置時に消さないようにします。
+
+### 12.10 Frontend を build する
+
+接続先の Web VM で実行します。`REPOSITORY_URL` は Day 0 で作成した自分のコピー先に置き換えます。
+
+```bash
+REPOSITORY_URL="https://github.com/<YOUR_GITHUB_USER>/Azure-IaaS-Workshop.git"
+
+cd /tmp
+rm -rf temp
+git clone "$REPOSITORY_URL" temp
+
+# Web tier VM には NGINX はありますが、Node.js はない場合があります。
 if ! command -v node >/dev/null 2>&1; then
-  curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-  apt-get -o DPkg::Lock::Timeout=120 -y install nodejs
+  curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+  sudo apt-get install -y nodejs
 fi
 
-if [ ! -f /var/www/html/config.json ]; then
-  echo "/var/www/html/config.json が見つかりません。Bicep の Web tier CustomScript が完了しているか確認してください。"
-  exit 1
-fi
-
-rm -rf "$WORK_DIR"
-git clone "$REPOSITORY_URL" "$WORK_DIR"
-
-cd "$WORK_DIR/materials/frontend"
+cd temp/materials/frontend
 npm ci
 npm run build
-
-cp /var/www/html/config.json /tmp/config.json.bak
-rm -rf /var/www/html/*
-cp -r dist/* /var/www/html/
-cp /tmp/config.json.bak /var/www/html/config.json
-chown -R www-data:www-data /var/www/html
-
-nginx -t
-systemctl reload nginx
-
-curl -fsS http://localhost/health
-curl -fsS http://localhost/ | head -5
-
-API_PROXY_OK=0
-for attempt in $(seq 1 12); do
-  if curl -fsS http://localhost/api/posts; then
-    API_PROXY_OK=1
-    break
-  fi
-  echo "Waiting for Web tier API proxy to reach App tier... attempt ${attempt}/12"
-  sleep 10
-done
-
-test "$API_PROXY_OK" = "1"
-
-rm -rf "$WORK_DIR"
-FRONTEND_SCRIPT
-
-sed -i "s|__REPOSITORY_URL__|$REPOSITORY_URL|g" /tmp/deploy-frontend.sh
 ```
 
-2 台の Web VM に実行します。
+**期待結果:** `dist/` が作成されます。
+
+### 12.11 Frontend の静的ファイルを NGINX に配置する
+
+接続先の Web VM で実行します。既存の `config.json` を退避してから、Vite の build 成果物を `/var/www/html` に配置します。
 
 ```bash
-for VM in "${WEB_VMS[@]}"; do
-  echo "Deploying frontend to $VM ..."
-  az vm run-command invoke \
-    --resource-group "$RESOURCE_GROUP" \
-    --name "$VM" \
-    --command-id RunShellScript \
-    --scripts @/tmp/deploy-frontend.sh \
-    --query "value[0].message" \
-    -o tsv
-done
+sudo cp /var/www/html/config.json /tmp/config.json.bak
+sudo rm -rf /var/www/html/*
+sudo cp -r dist/* /var/www/html/
+sudo cp /tmp/config.json.bak /var/www/html/config.json
+sudo chown -R www-data:www-data /var/www/html/
+
+cd /tmp
+rm -rf temp
 ```
 
-**期待結果:** 各 Web VM の出力で、`nginx -t` が successful になり、`curl http://localhost/` の先頭に `<!doctype html>` または HTML が表示されます。`curl http://localhost/api/posts` は Web VM から Internal Load Balancer 経由で App tier に到達する確認です。
+**チェックポイント:** `/var/www/html/index.html` と `/var/www/html/config.json` の両方が存在することを確認します。
 
-**チェックポイント:** `/var/www/html/config.json` を消すと、フロントエンドが Entra ID と API の接続先を取得できません。上記スクリプトは `config.json` を退避してから戻します。
+```bash
+ls -l /var/www/html/index.html /var/www/html/config.json
+```
 
-### 12.4 Application Gateway 経由で確認する
+### 12.12 Web VM 内で NGINX と API proxy を検証する
+
+接続先の Web VM で実行します。
+
+```bash
+sudo nginx -t
+sudo systemctl reload nginx
+
+curl http://localhost/health
+curl -s http://localhost/ | head -5
+curl http://localhost/api/posts
+curl -s http://localhost/login | head -5
+```
+
+**期待結果:** `/` と `/login` は HTML を返し、`/api/posts` は JSON 配列を返します。
+
+`vm-web-az1-prod` の作業が終わったら `exit` で Cloud Shell に戻り、`vm-web-az2-prod` に接続して **12.9 から 12.12** を繰り返します。
+
+### 12.13 Application Gateway 経由で確認する
 
 App tier と Web tier の配置後、Cloud Shell から外部 URL を確認します。
 
@@ -454,13 +515,13 @@ curl -k "https://$FQDN/api/posts"
 
 **期待結果:** `/` は `200` または HTML 応答になり、`/api/posts` は JSON 配列を返します。投稿がまだない場合は `[]` が正常です。
 
-### 12.5 よくある失敗
+### 12.14 よくある失敗
 
 | 症状 | 主な原因 | 確認すること |
 |---|---|---|
 | `git clone` が失敗する | `REPOSITORY_URL` がテンプレート元、private repository、または誤った URL になっている | Day 0 で作成した自分のコピーを指定しているか、VM から認証なしで clone できるか |
-| `/` が `403 Forbidden` になる | Web VM に frontend の `index.html` が配置されていない | Step 12.3 が 2 台の Web VM で成功したか |
-| `/api/posts` が `502` または `504` になる | App tier の `blogapp-api` が起動していない、または MongoDB に接続できない | Step 12.2 の PM2 出力、Step 8 の MongoDB password 一致 |
+| `/` が `403 Forbidden` になる | Web VM に frontend の `index.html` が配置されていない | Step 12.11 が 2 台の Web VM で成功したか |
+| `/api/posts` が `502` または `504` になる | App tier の `blogapp-api` が起動していない、または MongoDB に接続できない | Step 12.6、Step 12.7、Step 8 の MongoDB password 一致 |
 | `npm ci` が失敗する | package lock と依存関係の取得に失敗している | VM から GitHub/npm へ outbound 接続できるか、再実行しても同じか |
 | `config.json` が見つからない | Web tier の Bicep CustomScript が未完了または失敗している | Azure Portal の VM extensions と Step 7 の deployment status |
 
