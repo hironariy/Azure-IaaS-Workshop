@@ -95,7 +95,7 @@ code main.local.bicepparam
 | パラメータ | 入力する値 | 取得方法 |
 |---|---|---|
 | `sshPublicKey` | Cloud Shell で作成した公開鍵 | `cat ~/.ssh/id_rsa.pub` |
-| `adminObjectId` | 自分の Entra object ID | `az ad signed-in-user show --query id -o tsv` |
+| `adminObjectId` | 自分の Entra object ID | Day 0 で控えた値 |
 | `entraTenantId` | Tenant ID | Day 0 で控えた値 |
 | `entraClientId` | Backend API Client ID | Day 0 で控えた値 |
 | `entraFrontendClientId` | Frontend SPA Client ID | Day 0 で控えた値 |
