@@ -49,19 +49,17 @@ az network application-gateway show-backend-health \
 
 Azure Portal で Log Analytics workspace を開き、Logs で次を実行します。
 
+![Azure Portal Top画面から Azure Monitor の画面への行き方](../assets/screenshots/learners-portal/day1/Top-to-monitor.png)
+Azure Portal Top画面から Azure Monitor の画面への行き方
+
 ```kusto
 Heartbeat
 | summarize LastSeen=max(TimeGenerated) by Computer
 | order by LastSeen desc
 ```
 
-> [!TODO] スクリーンショットを挿入
-> - Image path: `assets/screenshots/day1-log-analytics-query.png`
-> - Capture target: Log Analytics query editor with Heartbeat query results
-> - Purpose: VM の Heartbeat を KQL で確認する画面を示す
-> - Suggested alt text: Azure Log Analytics query editor showing Heartbeat query results
-> - Insertion note: クエリ本文と結果表が分かる状態を撮影する
-> - Mask: サブスクリプション ID、ワークスペース名、VM 名に含まれる個人情報
+![Heartbeat に対するクエリの実行](../assets/screenshots/learners-portal/day1/MonitorHeartBeat.png)
+Heartbeat に対するクエリの実行
 
 **期待結果:** Web / App / DB VM の `Computer` と `LastSeen` が表示されます。
 
@@ -86,6 +84,8 @@ Perf
 | order by TimeGenerated asc
 | render timechart
 ```
+
+![CPU のチャートの表示](../assets/screenshots/learners-portal/day1/MonitorCpu.png)
 
 **期待結果:** CPU とメモリ使用率が、それぞれ VM ごとの折れ線グラフとして表示されます。
 
