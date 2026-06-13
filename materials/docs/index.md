@@ -774,7 +774,7 @@ title: Azure IaaS Workshop 受講者ポータル
           }
           document.body.removeChild(ta);
         }
-        var blocks = document.querySelectorAll('div.highlight,.highlighter-rouge .highlight,pre.highlight');
+        var blocks = document.querySelectorAll('div.highlight,.highlighter-rouge .highlight,pre.highlight,pre');
         var seen = [];
         Array.prototype.forEach.call(blocks, function (block) {
           var pre = block.tagName === 'PRE' ? block : block.querySelector('pre');
