@@ -71,21 +71,25 @@ Heartbeat
 
 ```kusto
 Perf
+| where TimeGenerated > ago(1h)
 | where ObjectName == "Processor" and CounterName == "% Processor Time"
-| summarize AvgCpu=avg(CounterValue) by Computer, bin(TimeGenerated, 5m)
-| order by TimeGenerated desc
+| summarize AvgCpuPercent=avg(CounterValue) by bin(TimeGenerated, 5m), Computer
+| order by TimeGenerated asc
+| render timechart
 ```
 
 ```kusto
 Perf
-| where ObjectName == "Memory" and CounterName in ("% Used Memory", "Available MBytes Memory")
-| summarize AvgValue=avg(CounterValue) by Computer, CounterName, bin(TimeGenerated, 5m)
-| order by TimeGenerated desc
+| where TimeGenerated > ago(1h)
+| where ObjectName == "Memory" and CounterName == "% Used Memory"
+| summarize AvgMemoryUsedPercent=avg(CounterValue) by bin(TimeGenerated, 5m), Computer
+| order by TimeGenerated asc
+| render timechart
 ```
 
-**期待結果:** VM ごとの CPU またはメモリ傾向を確認できます。
+**期待結果:** CPU とメモリ使用率が、それぞれ VM ごとの折れ線グラフとして表示されます。
 
-**チェックポイント:** テーブルや counter 名は DCR 設定に依存します。結果がない場合は `Perf | take 20` で実データを確認してください。
+**チェックポイント:** テーブルや counter 名は DCR 設定に依存します。結果がない場合は `Perf | take 20` で実データを確認してください。グラフが表示されない場合は、Logs の表示モードで **Chart** が選ばれているかも確認します。
 
 ## 5. Syslog のエラーを確認する
 
