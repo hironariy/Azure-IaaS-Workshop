@@ -1,48 +1,814 @@
 ---
-title: "Azure IaaS Workshop Learner Portal"
+title: Azure IaaS Workshop Learner Portal
 ---
 
 # Azure IaaS Workshop Learner Portal
 
-This is the English learner entry point for the 2-day Azure IaaS Workshop. Use this page on GitHub Pages at `/en/`, or read it directly on GitHub when Pages is not enabled for your copied repository.
+<p class="wp-lead">This portal is the learner entry point for the 2-day Azure IaaS Workshop. CLI and script work is standardized on <strong>Azure Cloud Shell (Bash)</strong>, so the standard learner path requires only a browser plus access to Azure Portal and GitHub.</p>
 
-CLI and script work is standardized on **Azure Cloud Shell (Bash)**. For the normal workshop path, learners only need a browser and access to Azure Portal and GitHub.
+<style>
+  :root {
+    --wp-brand: #0078d4;
+    --wp-brand-dark: #005a9e;
+    --wp-brand-darker: #004578;
+    --wp-accent: #3ba0e6;
+    --wp-page: #f4f7fb;
+    --wp-surface: #ffffff;
+    --wp-border: #e3e8ef;
+    --wp-border-strong: #cdd5e0;
+    --wp-text: #1b2430;
+    --wp-muted: #5b6675;
+    --wp-done: #107c10;
+    --wp-done-soft: #e8f4e8;
+    --wp-pre: #64748b;
+    --wp-d0: #8661c5;
+    --wp-d1: #0078d4;
+    --wp-d2: #0e8f8a;
+    --wp-radius: 14px;
+    --wp-radius-sm: 9px;
+    --wp-shadow: 0 1px 2px rgba(16, 24, 40, .06), 0 4px 12px rgba(16, 24, 40, .06);
+    --wp-shadow-sm: 0 1px 2px rgba(16, 24, 40, .07);
+  }
 
-## How To Use This Portal
+  .site-header,
+  .site-footer {
+    display: none !important;
+  }
 
-Open the pages from top to bottom. Each page includes expected results and checkpoints so you can tell whether you are ready to move on.
+  .page-content > .wrapper {
+    max-width: 1320px;
+  }
 
-## Workshop Flow
+  .page-content {
+    padding-top: 1.2rem;
+  }
 
-- [ ] **1. Learner quickstart**: [Confirm the reading order and workshop overview](learner/learner-quickstart.md)
-- [ ] **2. Day 0: Prerequisites**: [Check Azure Portal, Cloud Shell, Entra ID, quota, and GitHub repository readiness](learner/day-0-prerequisites.md)
-- [ ] **3. Day 1: Azure resource deployment**: [Prepare Cloud Shell, deploy Bicep, run post-deployment setup, configure DCR, and collect the FQDN](learner/day-1-deployment-checklist.md)
-- [ ] **4. Day 1: Application deployment**: [Place backend and frontend code on the App/Web VMs and validate traffic](learner/day-1-app-deployment.md)
-- [ ] **5. Monitoring guide**: [Use Azure Monitor and Log Analytics to inspect the environment](operations/monitoring-guide.md)
-- [ ] **6. Day 2: Resiliency checklist**: [Practice Backup, restore checks, HA validation, and ASR/test failover concepts](learner/day-2-resiliency-checklist.md)
-- [ ] **7. Disaster recovery guide**: [Review BCDR concepts, safety rules, and expected outcomes](operations/disaster-recovery-guide.md)
+  .wp-lead {
+    margin: 1.1rem 0 0;
+    padding: .9rem 1.1rem;
+    border: 1px solid var(--wp-border);
+    border-left: 4px solid var(--wp-brand);
+    border-radius: var(--wp-radius-sm);
+    background: linear-gradient(180deg, #f3f9ff, var(--wp-surface));
+    color: var(--wp-muted);
+    font-size: 1.02rem;
+    line-height: 1.75;
+  }
 
-## Reference TOC
+  .workshop-portal {
+    display: grid;
+    grid-template-columns: minmax(23rem, 34%) minmax(0, 1fr);
+    gap: 1.25rem;
+    align-items: start;
+    margin-top: 1.5rem;
+  }
 
-| Goal | Page | Use When |
-|---|---|---|
-| Confirm Cloud Shell basics | [Azure Cloud Shell mini guide](learner/azure-cloud-shell-guide.md) | You need to open Bash, check the subscription, or use the Cloud Shell editor |
-| Troubleshoot by symptom | [Troubleshooting runbook](operations/troubleshooting-runbook.md) | Deployment, Bastion SSH, application traffic, monitoring, or resiliency checks fail |
-| Look up commands and names | [Quick reference](reference/quick-reference-card.md) | You need resource names, common commands, KQL, or port numbers quickly |
-| Understand identity and access | [Identity / Access](identity-and-access-guide.md) | You want the background for Entra ID, Azure RBAC, and Managed Identity |
-| Go deeper on Bicep | [Bicep techniques](bicep-techniques-guide.md) | You want to understand the template structure and design choices |
-| Run local development | [Local development guide](local-development-guide.md) | You are maintaining or extending the app; this is not required for normal learners |
+  .workshop-toc {
+    position: sticky;
+    top: 1rem;
+    max-height: 86vh;
+    overflow: auto;
+    padding: 1.1rem 1.1rem 1.25rem;
+    border: 1px solid var(--wp-border);
+    border-radius: var(--wp-radius);
+    background: var(--wp-page);
+    box-shadow: var(--wp-shadow);
+  }
 
-## Standard Work Locations
+  .workshop-toc::-webkit-scrollbar {
+    width: 10px;
+  }
 
-| Work | Standard Location | Notes |
-|---|---|---|
-| Azure CLI commands | Azure Cloud Shell Bash | Already authenticated to Azure and includes Git, OpenSSL, and SSH |
-| File editing | Cloud Shell editor (`code`) | Avoids local OS and editor differences |
-| Entra ID app registrations | Azure Portal | Keeps the authentication configuration visible and teachable |
-| Deployment progress | Resource group > Deployments in Azure Portal | Lets you inspect progress even if Cloud Shell disconnects |
-| Application code placement | Azure Bastion SSH | You connect to App/Web VMs and run clone, build, start, and deploy steps manually |
+  .workshop-toc::-webkit-scrollbar-thumb {
+    border: 2px solid var(--wp-page);
+    border-radius: 8px;
+    background: var(--wp-border-strong);
+  }
 
-## Start Here
+  .wp-toc-title {
+    display: flex;
+    align-items: center;
+    gap: .55rem;
+    margin: .2rem 0 .35rem;
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--wp-text);
+  }
 
-Begin with the [learner quickstart](learner/learner-quickstart.md), then move through the Day 0, Day 1, and Day 2 pages in order.
+  .wp-toc-title .wp-dot {
+    width: .55rem;
+    height: .55rem;
+    border-radius: 50%;
+    background: var(--wp-brand);
+    box-shadow: 0 0 0 3px rgba(0, 120, 212, .15);
+  }
+
+  .wp-toc-sub .wp-dot {
+    background: var(--wp-muted);
+    box-shadow: 0 0 0 3px rgba(91, 102, 117, .15);
+  }
+
+  .wp-toc-note {
+    margin: 0 0 .9rem;
+    font-size: .83rem;
+    line-height: 1.6;
+    color: var(--wp-muted);
+  }
+
+  .wp-toc-sub {
+    margin-top: 1.5rem;
+  }
+
+  .wp-progress {
+    margin-bottom: 1rem;
+    padding: .7rem .85rem .8rem;
+    border: 1px solid var(--wp-border);
+    border-radius: var(--wp-radius-sm);
+    background: var(--wp-surface);
+    box-shadow: var(--wp-shadow-sm);
+  }
+
+  .wp-progress__head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: .5rem;
+  }
+
+  .wp-progress__label {
+    font-size: .9rem;
+    font-weight: 700;
+    color: var(--wp-text);
+  }
+
+  .wp-progress__count {
+    font-size: .85rem;
+    color: var(--wp-muted);
+  }
+
+  .wp-progress__count strong {
+    font-size: 1rem;
+    color: var(--wp-brand-dark);
+  }
+
+  .wp-progress__bar {
+    height: .5rem;
+    margin: .55rem 0 .55rem;
+    border-radius: 999px;
+    background: #e6ebf2;
+    overflow: hidden;
+  }
+
+  .wp-progress__fill {
+    width: 0;
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, var(--wp-brand), var(--wp-accent));
+    transition: width .35s ease;
+  }
+
+  .wp-progress__reset {
+    appearance: none;
+    padding: .25rem .6rem;
+    border: 1px solid var(--wp-border-strong);
+    border-radius: 7px;
+    background: var(--wp-surface);
+    color: var(--wp-muted);
+    font-size: .78rem;
+    cursor: pointer;
+    transition: color .15s, border-color .15s;
+  }
+
+  .wp-progress__reset:hover {
+    color: var(--wp-brand-dark);
+    border-color: var(--wp-brand);
+  }
+
+  .wp-progress__reset:focus-visible {
+    outline: 3px solid var(--wp-accent);
+    outline-offset: 2px;
+  }
+
+  .wp-steps,
+  .wp-refs {
+    display: flex;
+    flex-direction: column;
+    gap: .5rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .wp-step {
+    position: relative;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: .7rem;
+    padding: .6rem .75rem;
+    border: 1px solid var(--wp-border);
+    border-radius: var(--wp-radius-sm);
+    background: var(--wp-surface);
+    box-shadow: var(--wp-shadow-sm);
+    transition: border-color .15s, box-shadow .15s, transform .15s;
+  }
+
+  .wp-step:hover {
+    border-color: var(--wp-accent);
+    box-shadow: var(--wp-shadow);
+    transform: translateY(-1px);
+  }
+
+  .wp-step__num {
+    display: grid;
+    place-content: center;
+    width: 1.9rem;
+    height: 1.9rem;
+    border-radius: 50%;
+    background: linear-gradient(145deg, var(--wp-brand), var(--wp-brand-darker));
+    color: #fff;
+    font-size: .95rem;
+    font-weight: 700;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .18);
+  }
+
+  .wp-step__body,
+  .wp-ref__body {
+    display: flex;
+    flex-direction: column;
+    gap: .25rem;
+    min-width: 0;
+  }
+
+  .wp-step__link,
+  .wp-ref__link {
+    font-weight: 600;
+    line-height: 1.35;
+    color: var(--wp-brand-dark);
+    text-decoration: none;
+  }
+
+  .wp-step__link:hover,
+  .wp-ref__link:hover {
+    color: var(--wp-brand);
+    text-decoration: underline;
+  }
+
+  .wp-step__link:focus-visible,
+  .wp-ref__link:focus-visible {
+    outline: 3px solid var(--wp-accent);
+    outline-offset: 3px;
+    border-radius: 3px;
+  }
+
+  .wp-badge {
+    align-self: flex-start;
+    padding: .12rem .5rem;
+    border-radius: 999px;
+    background: var(--wp-pre);
+    color: #fff;
+    font-size: .68rem;
+    font-weight: 700;
+    letter-spacing: .02em;
+  }
+
+  .wp-badge--pre { background: var(--wp-pre); }
+  .wp-badge--d0 { background: var(--wp-d0); }
+  .wp-badge--d1 { background: var(--wp-d1); }
+  .wp-badge--d2 { background: var(--wp-d2); }
+
+  .wp-step.is-active,
+  .wp-ref.is-active {
+    border-color: var(--wp-brand);
+    box-shadow: 0 0 0 1px var(--wp-brand), var(--wp-shadow);
+    background: linear-gradient(0deg, var(--wp-surface), #f1f8ff);
+  }
+
+  .wp-step.is-active::before,
+  .wp-ref.is-active::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 14%;
+    bottom: 14%;
+    width: 3px;
+    border-radius: 0 3px 3px 0;
+    background: var(--wp-brand);
+  }
+
+  .wp-step.is-done {
+    border-color: #c4e3c4;
+    background: var(--wp-done-soft);
+  }
+
+  .wp-step.is-done .wp-step__num {
+    background: linear-gradient(145deg, #1aa31a, var(--wp-done));
+  }
+
+  .wp-step.is-done .wp-step__link {
+    color: #4a6b4a;
+  }
+
+  .wp-check {
+    display: inline-flex;
+  }
+
+  .workshop-toc input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    display: grid;
+    place-content: center;
+    width: 1.4rem;
+    height: 1.4rem;
+    margin: 0;
+    border: 2px solid var(--wp-border-strong);
+    border-radius: 6px;
+    background: var(--wp-surface);
+    cursor: pointer;
+    transition: background .15s, border-color .15s;
+  }
+
+  .workshop-toc input[type="checkbox"]::after {
+    content: "";
+    width: .42rem;
+    height: .78rem;
+    margin-top: -.12rem;
+    border: solid #fff;
+    border-width: 0 .18rem .18rem 0;
+    transform: rotate(45deg) scale(0);
+    transform-origin: center;
+    transition: transform .15s ease;
+  }
+
+  .workshop-toc input[type="checkbox"]:hover {
+    border-color: var(--wp-brand);
+  }
+
+  .workshop-toc input[type="checkbox"]:checked {
+    border-color: var(--wp-done);
+    background: var(--wp-done);
+  }
+
+  .workshop-toc input[type="checkbox"]:checked::after {
+    transform: rotate(45deg) scale(1);
+  }
+
+  .workshop-toc input[type="checkbox"]:focus-visible {
+    outline: 3px solid var(--wp-accent);
+    outline-offset: 2px;
+  }
+
+  .wp-ref {
+    position: relative;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: .7rem;
+    padding: .55rem .75rem;
+    border: 1px solid var(--wp-border);
+    border-left: 3px solid var(--wp-border-strong);
+    border-radius: var(--wp-radius-sm);
+    background: var(--wp-surface);
+    box-shadow: var(--wp-shadow-sm);
+    transition: border-color .15s, box-shadow .15s;
+  }
+
+  .wp-ref:hover {
+    border-left-color: var(--wp-brand);
+    box-shadow: var(--wp-shadow);
+  }
+
+  .wp-ref__use {
+    font-size: .72rem;
+    font-weight: 600;
+    letter-spacing: .02em;
+    color: var(--wp-muted);
+  }
+
+  .workshop-content {
+    min-height: 86vh;
+    overflow: hidden;
+    border: 1px solid var(--wp-border);
+    border-radius: var(--wp-radius);
+    background: var(--wp-surface);
+    box-shadow: var(--wp-shadow);
+  }
+
+  .workshop-content iframe {
+    display: block;
+    width: 100%;
+    height: 86vh;
+    border: 0;
+  }
+
+  @media (max-width: 900px) {
+    .workshop-portal {
+      grid-template-columns: 1fr;
+    }
+
+    .workshop-toc {
+      position: static;
+      max-height: none;
+    }
+
+    .workshop-content iframe {
+      height: 72vh;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .workshop-portal *,
+    .workshop-toc * {
+      transition: none !important;
+      animation: none !important;
+    }
+  }
+</style>
+
+<div class="workshop-portal">
+  <nav class="workshop-toc" aria-label="Workshop materials TOC">
+    <h2 class="wp-toc-title"><span class="wp-dot" aria-hidden="true"></span>Workshop Flow TOC</h2>
+    <p class="wp-toc-note">Work through these pages from top to bottom. Checkboxes are saved in this browser and stay checked after reload.</p>
+
+    <div class="wp-progress">
+      <div class="wp-progress__head">
+        <span class="wp-progress__label">Progress</span>
+        <span class="wp-progress__count"><strong data-progress-count>0</strong> / <span data-progress-total>7</span> complete</span>
+      </div>
+      <div class="wp-progress__bar" role="progressbar" aria-label="Workshop progress" aria-valuemin="0" aria-valuemax="7" aria-valuenow="0">
+        <div class="wp-progress__fill" data-progress-fill></div>
+      </div>
+      <button type="button" class="wp-progress__reset" data-progress-reset>Reset progress</button>
+    </div>
+
+    <ol class="wp-steps">
+      <li class="wp-step" data-page="learner/learner-quickstart.html">
+        <span class="wp-step__num" aria-hidden="true">1</span>
+        <span class="wp-step__body">
+          <span class="wp-badge wp-badge--pre">Pre-check</span>
+          <a class="wp-step__link" href="learner/learner-quickstart.html" target="workshop-content-frame">Learner quickstart</a>
+        </span>
+        <label class="wp-check"><input type="checkbox" data-progress-id="quickstart" aria-label="Learner quickstart complete"></label>
+      </li>
+      <li class="wp-step" data-page="learner/day-0-prerequisites.html">
+        <span class="wp-step__num" aria-hidden="true">2</span>
+        <span class="wp-step__body">
+          <span class="wp-badge wp-badge--d0">Day 0</span>
+          <a class="wp-step__link" href="learner/day-0-prerequisites.html" target="workshop-content-frame">Day 0: Prerequisites</a>
+        </span>
+        <label class="wp-check"><input type="checkbox" data-progress-id="day0" aria-label="Day 0 prerequisites complete"></label>
+      </li>
+      <li class="wp-step" data-page="learner/day-1-deployment-checklist.html">
+        <span class="wp-step__num" aria-hidden="true">3</span>
+        <span class="wp-step__body">
+          <span class="wp-badge wp-badge--d1">Day 1 Resources</span>
+          <a class="wp-step__link" href="learner/day-1-deployment-checklist.html" target="workshop-content-frame">Day 1: Azure resource deployment</a>
+        </span>
+        <label class="wp-check"><input type="checkbox" data-progress-id="day1-resources" aria-label="Day 1 Azure resource deployment complete"></label>
+      </li>
+      <li class="wp-step" data-page="learner/day-1-app-deployment.html">
+        <span class="wp-step__num" aria-hidden="true">4</span>
+        <span class="wp-step__body">
+          <span class="wp-badge wp-badge--d1">Day 1 App</span>
+          <a class="wp-step__link" href="learner/day-1-app-deployment.html" target="workshop-content-frame">Day 1: Application deployment</a>
+        </span>
+        <label class="wp-check"><input type="checkbox" data-progress-id="day1-app" aria-label="Day 1 application deployment complete"></label>
+      </li>
+      <li class="wp-step" data-page="operations/monitoring-guide.html">
+        <span class="wp-step__num" aria-hidden="true">5</span>
+        <span class="wp-step__body">
+          <span class="wp-badge wp-badge--d1">Day 1 Monitoring</span>
+          <a class="wp-step__link" href="operations/monitoring-guide.html" target="workshop-content-frame">Monitoring guide</a>
+        </span>
+        <label class="wp-check"><input type="checkbox" data-progress-id="monitoring" aria-label="Monitoring guide complete"></label>
+      </li>
+      <li class="wp-step" data-page="learner/day-2-resiliency-checklist.html">
+        <span class="wp-step__num" aria-hidden="true">6</span>
+        <span class="wp-step__body">
+          <span class="wp-badge wp-badge--d2">Day 2 Main</span>
+          <a class="wp-step__link" href="learner/day-2-resiliency-checklist.html" target="workshop-content-frame">Day 2: Resiliency checklist</a>
+        </span>
+        <label class="wp-check"><input type="checkbox" data-progress-id="day2" aria-label="Day 2 resiliency checklist complete"></label>
+      </li>
+      <li class="wp-step" data-page="operations/disaster-recovery-guide.html">
+        <span class="wp-step__num" aria-hidden="true">7</span>
+        <span class="wp-step__body">
+          <span class="wp-badge wp-badge--d2">Day 2 Supplement</span>
+          <a class="wp-step__link" href="operations/disaster-recovery-guide.html" target="workshop-content-frame">Disaster recovery guide</a>
+        </span>
+        <label class="wp-check"><input type="checkbox" data-progress-id="dr" aria-label="Disaster recovery guide complete"></label>
+      </li>
+    </ol>
+
+    <h2 class="wp-toc-title wp-toc-sub"><span class="wp-dot" aria-hidden="true"></span>Reference TOC</h2>
+    <p class="wp-toc-note">Open these pages when needed. They are reference pages and do not need to be read in order.</p>
+
+    <ul class="wp-refs">
+      <li class="wp-ref" data-page="learner/azure-cloud-shell-guide.html">
+        <span class="wp-ref__body">
+          <span class="wp-ref__use">Cloud Shell basics</span>
+          <a class="wp-ref__link" href="learner/azure-cloud-shell-guide.html" target="workshop-content-frame">Azure Cloud Shell mini guide</a>
+        </span>
+        <label class="wp-check"><input type="checkbox" data-progress-id="ref-cloudshell" aria-label="Azure Cloud Shell mini guide checked"></label>
+      </li>
+      <li class="wp-ref" data-page="operations/troubleshooting-runbook.html">
+        <span class="wp-ref__body">
+          <span class="wp-ref__use">Symptom-based troubleshooting</span>
+          <a class="wp-ref__link" href="operations/troubleshooting-runbook.html" target="workshop-content-frame">Troubleshooting runbook</a>
+        </span>
+        <label class="wp-check"><input type="checkbox" data-progress-id="ref-trouble" aria-label="Troubleshooting runbook checked"></label>
+      </li>
+      <li class="wp-ref" data-page="reference/quick-reference-card.html">
+        <span class="wp-ref__body">
+          <span class="wp-ref__use">Commands and values</span>
+          <a class="wp-ref__link" href="reference/quick-reference-card.html" target="workshop-content-frame">Quick reference</a>
+        </span>
+        <label class="wp-check"><input type="checkbox" data-progress-id="ref-quickref" aria-label="Quick reference checked"></label>
+      </li>
+      <li class="wp-ref" data-page="identity-and-access-guide.html">
+        <span class="wp-ref__body">
+          <span class="wp-ref__use">Identity and access background</span>
+          <a class="wp-ref__link" href="identity-and-access-guide.html" target="workshop-content-frame">Identity / Access</a>
+        </span>
+        <label class="wp-check"><input type="checkbox" data-progress-id="ref-identity" aria-label="Identity and access guide checked"></label>
+      </li>
+      <li class="wp-ref" data-page="bicep-techniques-guide.html">
+        <span class="wp-ref__body">
+          <span class="wp-ref__use">Bicep deep dive</span>
+          <a class="wp-ref__link" href="bicep-techniques-guide.html" target="workshop-content-frame">Bicep techniques</a>
+        </span>
+        <label class="wp-check"><input type="checkbox" data-progress-id="ref-bicep" aria-label="Bicep techniques guide checked"></label>
+      </li>
+      <li class="wp-ref" data-page="local-development-guide.html">
+        <span class="wp-ref__body">
+          <span class="wp-ref__use">Local development</span>
+          <a class="wp-ref__link" href="local-development-guide.html" target="workshop-content-frame">Local development guide</a>
+        </span>
+        <label class="wp-check"><input type="checkbox" data-progress-id="ref-localdev" aria-label="Local development guide checked"></label>
+      </li>
+    </ul>
+  </nav>
+
+  <section class="workshop-content" aria-label="Selected workshop material">
+    <iframe
+      name="workshop-content-frame"
+      src="learner/learner-quickstart.html"
+      title="Selected workshop material"></iframe>
+  </section>
+</div>
+
+<script>
+  (function () {
+    'use strict';
+
+    var STORAGE_KEY = 'aiw-en-portal-progress-v1';
+    var portal = document.querySelector('.workshop-portal');
+    if (!portal) {
+      return;
+    }
+
+    var frame = portal.querySelector('iframe[name="workshop-content-frame"]');
+    var checkboxes = Array.prototype.slice.call(portal.querySelectorAll('input[type="checkbox"][data-progress-id]'));
+    var stepItems = Array.prototype.slice.call(portal.querySelectorAll('.wp-step'));
+    var navItems = Array.prototype.slice.call(portal.querySelectorAll('[data-page]'));
+    var countEl = portal.querySelector('[data-progress-count]');
+    var totalEl = portal.querySelector('[data-progress-total]');
+    var fillEl = portal.querySelector('[data-progress-fill]');
+    var barEl = portal.querySelector('[role="progressbar"]');
+    var resetBtn = portal.querySelector('[data-progress-reset]');
+
+    function readState() {
+      try {
+        return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
+      } catch (err) {
+        return {};
+      }
+    }
+
+    function writeState(state) {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      } catch (err) {
+        /* storage unavailable: progress is session-only */
+      }
+    }
+
+    function updateProgress() {
+      var done = 0;
+      stepItems.forEach(function (li) {
+        var box = li.querySelector('input[type="checkbox"]');
+        var isDone = !!(box && box.checked);
+        li.classList.toggle('is-done', isDone);
+        if (isDone) {
+          done += 1;
+        }
+      });
+
+      var total = stepItems.length;
+      var pct = total ? Math.round((done / total) * 100) : 0;
+      if (countEl) { countEl.textContent = String(done); }
+      if (totalEl) { totalEl.textContent = String(total); }
+      if (fillEl) { fillEl.style.width = pct + '%'; }
+      if (barEl) {
+        barEl.setAttribute('aria-valuemax', String(total));
+        barEl.setAttribute('aria-valuenow', String(done));
+      }
+    }
+
+    var state = readState();
+    checkboxes.forEach(function (box) {
+      var id = box.getAttribute('data-progress-id');
+      if (state[id]) {
+        box.checked = true;
+      }
+      box.addEventListener('change', function () {
+        var next = readState();
+        if (box.checked) {
+          next[id] = true;
+        } else {
+          delete next[id];
+        }
+        writeState(next);
+        updateProgress();
+      });
+    });
+    updateProgress();
+
+    if (resetBtn) {
+      resetBtn.addEventListener('click', function () {
+        writeState({});
+        checkboxes.forEach(function (box) { box.checked = false; });
+        updateProgress();
+      });
+    }
+
+    function setActive(pagePath) {
+      if (!pagePath) {
+        return;
+      }
+      navItems.forEach(function (li) {
+        var target = li.getAttribute('data-page');
+        li.classList.toggle('is-active', !!target && pagePath.indexOf(target) !== -1);
+      });
+    }
+
+    if (frame) {
+      setActive(frame.getAttribute('src'));
+    }
+
+    navItems.forEach(function (li) {
+      var link = li.querySelector('a');
+      if (!link) {
+        return;
+      }
+      link.addEventListener('click', function () {
+        setActive(link.getAttribute('href'));
+      });
+    });
+
+    var EMBEDDED_STYLE = [
+      '.site-header,.site-footer{display:none !important;}',
+      '.page-content{padding:1.4rem 0 2rem;}',
+      '.page-content>.wrapper{max-width:900px;}',
+      'body{color:#1b2430;line-height:1.75;}',
+      'h1{font-size:1.9rem;line-height:1.25;}',
+      'h2{margin-top:2.1rem;padding-bottom:.35rem;border-bottom:2px solid #e3e8ef;}',
+      'h3{margin-top:1.5rem;}',
+      'a{color:#0067c0;}',
+      'table{border-collapse:collapse;width:100%;margin:1rem 0;font-size:.95rem;}',
+      'th,td{border:1px solid #e3e8ef;padding:.55rem .7rem;text-align:left;vertical-align:top;}',
+      'thead th{background:#eef3f9;color:#1b2430;}',
+      'tbody tr:nth-child(even){background:#f7f9fc;}',
+      'div.highlight,.highlight,.highlighter-rouge .highlight{background:transparent;}',
+      '.highlighter-rouge .highlight pre,.highlight pre,pre.highlight,pre{background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:8px;padding:.9rem 1.05rem;overflow:auto;line-height:1.6;}',
+      '.highlighter-rouge .highlight pre code,pre code,pre.highlight code{background:transparent;color:inherit;border:0;padding:0;font-size:.92em;}',
+      'code,code.highlighter-rouge{background:#eff1f3;color:#0b3a66;border:1px solid #d7dde3;padding:.1rem .35rem;border-radius:5px;font-size:.92em;}',
+      '.highlight .c,.highlight .cm,.highlight .c1,.highlight .cs,.highlight .cd,.highlight .cp{color:#8b949e;font-style:italic;}',
+      '.highlight .k,.highlight .kc,.highlight .kd,.highlight .kn,.highlight .kp,.highlight .kr,.highlight .kt,.highlight .kv{color:#ff7b72;}',
+      '.highlight .o,.highlight .ow{color:#ff7b72;}',
+      '.highlight .s,.highlight .s1,.highlight .s2,.highlight .sb,.highlight .sc,.highlight .sd,.highlight .sh,.highlight .sx,.highlight .sr,.highlight .ss,.highlight .dl{color:#a5d6ff;}',
+      '.highlight .se{color:#79c0ff;}',
+      '.highlight .si{color:#ffa657;}',
+      '.highlight .m,.highlight .mi,.highlight .mf,.highlight .mh,.highlight .mo,.highlight .il{color:#79c0ff;}',
+      '.highlight .nt{color:#7ee787;}',
+      '.highlight .nv,.highlight .vc,.highlight .vg,.highlight .vi{color:#ffa657;}',
+      '.highlight .nb,.highlight .bp{color:#79c0ff;}',
+      '.highlight .nf,.highlight .fm{color:#d2a8ff;}',
+      '.highlight .na,.highlight .nl,.highlight .nx{color:#79c0ff;}',
+      '.highlight .nc,.highlight .nn,.highlight .no{color:#ffa657;}',
+      '.highlight .gp{color:#8b949e;}',
+      '.highlight .gi{color:#7ee787;}',
+      '.highlight .gd{color:#ffa198;}',
+      '.highlight .err{color:#f85149;background:transparent;}',
+      'blockquote{margin:1rem 0;padding:.6rem 1rem;border-left:4px solid #0078d4;background:#f1f7fd;color:#33414f;border-radius:0 8px 8px 0;}',
+      'ul,ol{padding-left:1.3rem;}',
+      'li{margin:.2rem 0;}',
+      'img{max-width:100%;height:auto;}',
+      'hr{border:0;border-top:1px solid #e3e8ef;margin:1.8rem 0;}',
+      '.wp-code-wrap{position:relative;}',
+      '.wp-copy-btn{position:absolute;top:.5rem;right:.5rem;display:inline-flex;align-items:center;gap:.3rem;padding:.3rem .55rem;font-size:.78rem;line-height:1;color:#e6edf3;background:#21262d;border:1px solid #30363d;border-radius:6px;cursor:pointer;opacity:0;transition:opacity .15s,background .15s,border-color .15s;font-family:inherit;}',
+      '.wp-code-wrap:hover .wp-copy-btn,.wp-copy-btn:focus-visible{opacity:1;}',
+      '.wp-copy-btn:hover{background:#30363d;border-color:#8b949e;}',
+      '.wp-copy-btn.is-copied{color:#7ee787;border-color:#238636;}',
+      '.wp-copy-btn svg{width:14px;height:14px;fill:currentColor;}'
+    ].join('');
+
+    function buildCopyInjector() {
+      function injector() {
+        var COPY_SVG = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z"></path><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"></path></svg>';
+        var COPY_LABEL = 'Copy';
+        var DONE_LABEL = 'Copied';
+        function setLabel(btn, html) {
+          btn.innerHTML = COPY_SVG + '<span>' + html + '</span>';
+        }
+        function copyText(text, btn) {
+          function done() {
+            btn.classList.add('is-copied');
+            setLabel(btn, DONE_LABEL);
+            setTimeout(function () {
+              btn.classList.remove('is-copied');
+              setLabel(btn, COPY_LABEL);
+            }, 1800);
+          }
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(done, function () {
+              fallbackCopy(text, done);
+            });
+          } else {
+            fallbackCopy(text, done);
+          }
+        }
+        function fallbackCopy(text, done) {
+          var ta = document.createElement('textarea');
+          ta.value = text;
+          ta.setAttribute('readonly', '');
+          ta.style.position = 'absolute';
+          ta.style.left = '-9999px';
+          document.body.appendChild(ta);
+          ta.select();
+          try {
+            document.execCommand('copy');
+            done();
+          } catch (e) {
+            /* copy failed */
+          }
+          document.body.removeChild(ta);
+        }
+        var blocks = document.querySelectorAll('div.highlight,.highlighter-rouge .highlight,pre.highlight,pre');
+        var seen = [];
+        Array.prototype.forEach.call(blocks, function (block) {
+          var pre = block.tagName === 'PRE' ? block : block.querySelector('pre');
+          if (!pre || seen.indexOf(pre) !== -1) {
+            return;
+          }
+          seen.push(pre);
+          var wrap = block.closest('.highlighter-rouge') || block;
+          if (wrap.querySelector('.wp-copy-btn')) {
+            return;
+          }
+          wrap.classList.add('wp-code-wrap');
+          if (getComputedStyle(wrap).position === 'static') {
+            wrap.style.position = 'relative';
+          }
+          var btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'wp-copy-btn';
+          btn.setAttribute('aria-label', COPY_LABEL);
+          setLabel(btn, COPY_LABEL);
+          btn.addEventListener('click', function () {
+            var code = pre.querySelector('code');
+            copyText((code || pre).innerText.replace(/\n$/, ''), btn);
+          });
+          wrap.appendChild(btn);
+        });
+      }
+      return '(' + injector.toString() + ')();';
+    }
+
+    if (frame) {
+      frame.addEventListener('load', function () {
+        try {
+          var loaded = frame.contentWindow.location.pathname;
+          if (loaded) {
+            setActive(loaded);
+          }
+        } catch (err) {
+          /* cross-origin: keep click-based active state */
+        }
+
+        var doc = frame.contentDocument;
+        if (!doc || doc.getElementById('embedded-workshop-style')) {
+          return;
+        }
+        var style = doc.createElement('style');
+        style.id = 'embedded-workshop-style';
+        style.textContent = EMBEDDED_STYLE;
+        doc.head.appendChild(style);
+
+        var script = doc.createElement('script');
+        script.textContent = buildCopyInjector();
+        doc.body.appendChild(script);
+      });
+    }
+  })();
+</script>

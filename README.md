@@ -10,11 +10,11 @@ This repository contains a 2-day hands-on workshop for learning resilient Azure 
 
 | Audience | Entry Point | Purpose |
 |---|---|---|
-| Learners | [Learner portal](https://hironariy.github.io/Azure-IaaS-Workshop/en/) or [Markdown portal](materials/docs/en/index.md) | Follow the Day 0, Day 1, and Day 2 workshop flow |
+| Learners | [Learner portal](https://hironariy.github.io/Azure-IaaS-Workshop/en/) or [Markdown portal](materials/docs/en/learner-portal.md) | Follow the Day 0, Day 1, and Day 2 workshop flow |
 | Instructors / TAs | [WorkshopPlan.md](WorkshopPlan.md) | Review the agenda, success criteria, and support points |
 | Content and app developers | [Local development guide](materials/docs/en/local-development-guide.md) and [design/](design/) | Maintain or extend the application, Bicep, and workshop materials |
 
-In a copied repository with GitHub Pages enabled, the public URL is usually `https://<OWNER>.github.io/<REPOSITORY>/`. If Pages is not configured, learners can still use the [Markdown portal](materials/docs/en/index.md) directly on GitHub.
+In a copied repository with GitHub Pages enabled, the public URL is usually `https://<OWNER>.github.io/<REPOSITORY>/`. If Pages is not configured, learners can still use the [Markdown portal](materials/docs/en/learner-portal.md) directly on GitHub.
 
 ## Learner Quick Links
 
