@@ -15,6 +15,15 @@ title: "Day 0: 事前準備"
 | 前提 | Azure サブスクリプション、GitHub アカウント、ブラウザ |
 | 完了条件 | Day 1 の Cloud Shell デプロイに必要な値と権限が揃っていること |
 
+## ワークショップで構築するアーキテクチャ
+
+Day 1 では、Azure IaaS 上に 3 層構成のブログアプリケーション環境を構築します。インターネットからの HTTPS 通信は Application Gateway で受け、Web tier の NGINX VM、App tier の Express API VM、DB tier の MongoDB レプリカセットへ順に接続します。
+
+![Azure IaaS Workshop のアーキテクチャ図](../assets/images/learners-portal/architecture.png)
+*Azure IaaS Workshop で構築する 3 層アーキテクチャ*
+
+各 tier の VM は Availability Zone に分散し、Web tier と App tier の前段には Load Balancer を配置します。管理用の SSH 接続は Azure Bastion 経由で行い、アウトバウンド通信は NAT Gateway、監視データは Azure Monitor / Log Analytics に集約します。Day 0 では、この構成を作るために必要なサブスクリプション、権限、クォータ、アプリ登録情報を準備します。
+
 ## 1. Azure Portal にサインインする
 
 1. [Azure Portal](https://portal.azure.com) を開きます。
