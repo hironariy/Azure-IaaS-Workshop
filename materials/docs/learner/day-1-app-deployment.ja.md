@@ -310,7 +310,7 @@ curl -k "https://$FQDN/api/posts"
 ブラウザでも `https://$FQDN` を開きます。
 
 ![サンプルアプリのトップ画面](../assets/screenshots/learners-portal/day1/SampleAppTop.png)
-サンプルアプリのトップ画面
+*サンプルアプリのトップ画面*
 
 **期待結果:** `/` は `200` または HTML 応答になり、`/api/posts` は JSON 配列を返します。ブラウザでは自己署名証明書の警告を通過後、ブログアプリが表示されます。
 
@@ -321,7 +321,7 @@ curl -k "https://$FQDN/api/posts"
 Azure Portal で Application Gateway を開き、Backend health を確認します。
 
 ![Application Gateway のバックエンドヘルスの確認画面](../assets/screenshots/learners-portal/day1/AppGw.png)
-Application Gateway のバックエンドヘルスの確認画面
+*Application Gateway のバックエンドヘルスの確認画面*
 
 **期待結果:** 少なくとも期待する Web tier backend が Healthy になります。
 

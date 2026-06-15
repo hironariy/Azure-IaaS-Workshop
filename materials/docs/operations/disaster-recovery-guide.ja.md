@@ -73,14 +73,6 @@ ASR は VM を別リージョンへレプリケートし、災害時の failover
 4. 初回レプリケーション完了後、分離ネットワークへ test failover する。
 5. 検証後、cleanup test failover を実行する。
 
-> [!TODO] スクリーンショットを挿入
-> - Image path: `assets/screenshots/day2-asr-replication-health.png`
-> - Capture target: Site Recovery replicated items page showing replication health
-> - Purpose: ASR の replication health を確認する画面を示す
-> - Suggested alt text: Azure Site Recovery replicated items page showing replication health
-> - Insertion note: Replication health、status、対象 VM が分かる状態を撮影する
-> - Mask: サブスクリプション ID、リソース名に含まれる個人情報、アカウント名、組織名
-
 **期待結果:** レプリケーションの状態と、test failover を始められる条件を説明できます。
 
 ## 6. Test failover と本番 failover の違い
@@ -92,14 +84,6 @@ ASR は VM を別リージョンへレプリケートし、災害時の failover
 | Unplanned failover | 障害時に切り替える | 影響あり。データ損失や復旧順序に注意 |
 
 ワークショップでは、原則として test failover を扱います。Planned / unplanned failover は設計理解として扱います。
-
-> [!TODO] スクリーンショットを挿入
-> - Image path: `assets/screenshots/day2-asr-test-failover.png`
-> - Capture target: Azure Site Recovery test failover confirmation or job page
-> - Purpose: Test failover の実行と cleanup の入口を示す
-> - Suggested alt text: Azure Site Recovery test failover job page
-> - Insertion note: Test failover の job 状態と cleanup 操作が分かる状態を撮影する
-> - Mask: サブスクリプション ID、リソース名に含まれる個人情報、アカウント名、組織名
 
 ## 7. DB 層の注意点
 

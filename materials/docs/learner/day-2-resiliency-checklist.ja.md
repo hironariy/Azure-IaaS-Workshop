@@ -59,8 +59,8 @@ az vm list --resource-group "$RESOURCE_GROUP" -o table
 
 Day 1 の Bicep では Recovery Services vault、Azure Backup、ASR は作成していません。Day 2 では Azure Portal で vault を作成します。
 
-1. Azure Portal で **Recovery Services vaults** を検索します。
-2. **Create** をクリックします。
+1. Azure Portal で **Recovery Services vaults** (日本語の場合は **リRecovery Services コンテナー**)を検索します。
+2. **Create** (日本語の場合は**作成**)をクリックします。
 3. Subscription と Resource group は Day 1 と同じものを選びます。
 4. Vault name は例として `rsv-blogapp-workshop` のようにします。
 5. Region は Day 1 の `LOCATION` と同じリージョンを選びます。
@@ -79,13 +79,14 @@ Day 1 の Bicep では Recovery Services vault、Azure Backup、ASR は作成し
 5. 対象 VM を選択します。時間が限られる場合は、講師が指定する代表 VM だけを対象にします。
 6. Enable backup を実行します。
 
-> [!TODO] スクリーンショットを挿入
-> - Image path: `assets/screenshots/day2-backup-item.png`
-> - Capture target: Recovery Services vault backup item page
-> - Purpose: バックアップ対象 VM と backup item の状態確認画面を示す
-> - Suggested alt text: Azure Recovery Services vault showing a protected VM backup item
-> - Insertion note: Protected item の状態が分かる状態を撮影する
-> - Mask: サブスクリプション ID、リソース名に含まれる個人情報、アカウント名、組織名
+![Recovery Service コンテナー トップ画面](../assets/screenshots/learners-portal/day2/backup-top.png)
+*Recovery Service コンテナー トップ画面*
+
+![Azure Backup 設定画面 1](../assets/screenshots/learners-portal/day2/backup-1.png)
+*Azure Backup 設定画面 1*
+
+![Azure Backup 設定画面 2](../assets/screenshots/learners-portal/day2/backup-1.png)
+*Azure Backup 設定画面 2*
 
 **期待結果:** 対象 VM が backup item として表示されます。
 
@@ -94,9 +95,15 @@ Day 1 の Bicep では Recovery Services vault、Azure Backup、ASR は作成し
 ## 4. オンデマンドバックアップを取得する
 
 1. Recovery Services vault > Backup items を開きます。
-2. 対象 VM を選択します。
+2. 対象 VM を選択し、右クリックします。
 3. **Backup now** を実行します。
 4. Backup jobs で進捗を確認します。
+
+![オンデマンドバックアップ取得 1](../assets/screenshots/learners-portal/day2/ondemand-backup-1.png)
+*オンデマンドバックアップ取得 1*
+
+![オンデマンドバックアップ取得 2](../assets/screenshots/learners-portal/day2/ondemand-backup-2.png)
+*オンデマンドバックアップ取得 2*
 
 **期待結果:** Backup job が `Completed` になります。
 
@@ -107,14 +114,6 @@ Day 1 の Bicep では Recovery Services vault、Azure Backup、ASR は作成し
 1. 対象 backup item を開きます。
 2. **Restore VM** または **Restore points** を開きます。
 3. 最新の復元ポイントが表示されることを確認します。
-
-> [!TODO] スクリーンショットを挿入
-> - Image path: `assets/screenshots/day2-restore-point.png`
-> - Capture target: VM restore point or restore operation page in Recovery Services vault
-> - Purpose: 復元ポイントの存在と復元操作の入口を示す
-> - Suggested alt text: Azure Recovery Services vault showing restore points for a protected VM
-> - Insertion note: 復元ポイントの日時と操作ボタンが分かる状態を撮影する
-> - Mask: サブスクリプション ID、リソース名に含まれる個人情報、アカウント名、組織名
 
 **期待結果:** 復元ポイントが 1 つ以上表示されます。
 
@@ -222,14 +221,6 @@ ASR は時間がかかるため、講師デモまたは代表 VM での演習に
 7. 代表 VM または講師指定の VM を選択します。
 8. Enable replication を実行します。
 
-> [!TODO] スクリーンショットを挿入
-> - Image path: `assets/screenshots/day2-asr-replication-health.png`
-> - Capture target: Site Recovery replicated items page showing replication health
-> - Purpose: ASR の replication health の確認場所を示す
-> - Suggested alt text: Azure Site Recovery replicated items page showing replication health
-> - Insertion note: Replication health と status が分かる状態を撮影する
-> - Mask: サブスクリプション ID、リソース名に含まれる個人情報、アカウント名、組織名
-
 **期待結果:** Replicated item が作成され、initial replication が開始または完了します。
 
 **チェックポイント:** 初回レプリケーションが完了しない場合、test failover は講師デモまたは設計ウォークスルーに切り替えます。
@@ -244,14 +235,6 @@ Test failover は本番側に影響しない分離ネットワークで行いま
 4. Test failover を開始します。
 5. 起動したテスト VM とネットワークを確認します。
 6. 検証後、**Cleanup test failover** を実行します。
-
-> [!TODO] スクリーンショットを挿入
-> - Image path: `assets/screenshots/day2-asr-test-failover.png`
-> - Capture target: Azure Site Recovery test failover confirmation or job page
-> - Purpose: Test failover の実行確認画面とジョブ状態を示す
-> - Suggested alt text: Azure Site Recovery test failover job page
-> - Insertion note: Test failover の状態と cleanup 操作の入口が分かる状態を撮影する
-> - Mask: サブスクリプション ID、リソース名に含まれる個人情報、アカウント名、組織名
 
 **期待結果:** Test failover の流れと、本番影響を避けるための分離ネットワークの意味を説明できます。
 
