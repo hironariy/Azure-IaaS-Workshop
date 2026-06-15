@@ -106,7 +106,7 @@ code main.local.bicepparam
 ```
 
 ![Cloud Shell の VS Code](../assets/screenshots/learners-portal/day1/vscode.png)
-Cloud Shell の VS Code
+*Cloud Shell の VS Code*
 
 少なくとも次を設定します。
 
@@ -172,7 +172,7 @@ az deployment group create \
 4. `main` または実行中の deployment を確認します。
 
 ![Azure Portal の該当のリソースグループのデプロイからも進捗を確認できる](../assets/screenshots/learners-portal/day1/deployment.png)
-Azure Portal の該当のリソースグループのデプロイからも進捗を確認できる
+*Azure Portal の該当のリソースグループのデプロイからも進捗を確認できる*
 
 ## 8. Azure CLI の Bastion extension を準備する
 
