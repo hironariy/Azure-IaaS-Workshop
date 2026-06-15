@@ -11,11 +11,11 @@ English version: [README.md](./README.md)
 
 | 利用者 | 入口 | 目的 |
 |---|---|---|
-| 受講者 | [受講者ポータル](https://hironariy.github.io/Azure-IaaS-Workshop/) または [Markdown 版ポータル](materials/docs/index.md) | Day 0、Day 1、Day 2 の教材を順番に進める |
+| 受講者 | [受講者ポータル](https://hironariy.github.io/Azure-IaaS-Workshop/) または [Markdown 版ポータル](materials/docs/learner-portal.ja.md) | Day 0、Day 1、Day 2 の教材を順番に進める |
 | 講師 / TA | [WorkshopPlan.md](WorkshopPlan.md) | タイムテーブル、成功条件、支援ポイントを確認する |
 | 教材・アプリ開発者 | [ローカル開発ガイド](materials/docs/development/local-development-guide.ja.md) と [design/](design/) | アプリケーション、Bicep、教材を保守・拡張する |
 
-GitHub Pages を有効化したコピーリポジトリでは、公開 URL は通常 `https://<OWNER>.github.io/<REPOSITORY>/` になります。Pages が未設定の場合も、`materials/docs/*.ja.md` を GitHub 上でそのまま読めます。
+GitHub Pages を有効化したコピーリポジトリでは、公開 URL は通常 `https://<OWNER>.github.io/<REPOSITORY>/` になります。Pages が未設定の場合も、[Markdown 版ポータル](materials/docs/learner-portal.ja.md) から受講者向け教材を GitHub 上でそのまま読めます。
 
 ## 受講者向けクイックリンク
 
