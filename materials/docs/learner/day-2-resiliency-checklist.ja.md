@@ -115,8 +115,12 @@ Day 1 の Bicep では Recovery Services vault、Azure Backup、ASR は作成し
 2. **Restore VM** または **Restore points** を開きます。
 3. 最新の復元ポイントが表示されることを確認します。
 
-![VM リストア](../assets/screenshots/learners-portal/day2/restore.png)
-*VM リストア*
+![VM リストア 1](../assets/screenshots/learners-portal/day2/restore.png)
+*VM リストア 1*
+
+
+![VM リストア 2](../assets/screenshots/learners-portal/day2/restore-2.png)
+*VM リストア 2*
 
 **期待結果:** 復元ポイントが 1 つ以上表示されます。
 
