@@ -115,6 +115,9 @@ Day 1 の Bicep では Recovery Services vault、Azure Backup、ASR は作成し
 2. **Restore VM** または **Restore points** を開きます。
 3. 最新の復元ポイントが表示されることを確認します。
 
+![VM リストア](../assets/screenshots/learners-portal/day2/restore.png)
+*VM リストア*
+
 **期待結果:** 復元ポイントが 1 つ以上表示されます。
 
 **チェックポイント:** 本番相当環境では、復元は既存 VM へ上書きせず、新しい VM または別リソースグループへ復元して検証します。
