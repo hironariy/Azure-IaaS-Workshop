@@ -4,7 +4,8 @@ title: Azure IaaS Workshop 受講者ポータル
 
 # Azure IaaS Workshop 受講者ポータル
 
-<p class="wp-lead">このポータルは、2 日版 Azure IaaS Workshop を進めるための受講者向け入口です。CLI とスクリプト作業は <strong>Azure Cloud Shell (Bash)</strong> を標準にし、ローカル PC にはブラウザ以外のツールを原則として要求しません。</p>
+<p class="wp-lead">このポータルは、2 日版 Azure IaaS Workshop を進めるための受講者向け入口です。CLI とスクリプト作業は <strong>Azure Cloud Shell (Bash)</strong> を標準にし、ローカル PC にはブラウザ以外のツールを原則として要求しません。<br/>もととなっているリポジトリは<a href='https://github.com/hironariy/Azure-IaaS-Workshop'>こちら</a>です</p>
+
 
 <style>
   /* =====================================================================
