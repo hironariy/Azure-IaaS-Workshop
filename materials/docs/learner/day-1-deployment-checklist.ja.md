@@ -119,8 +119,8 @@ code main.local.bicepparam
 | `entraFrontendClientId` | Frontend SPA Client ID | Day 0 で控えた値 |
 | `sslCertificateData` | `cert-base64.txt` の内容 | `cat ../../cert-base64.txt` |
 | `sslCertificatePassword` | PFX パスワード | 既定値 `Workshop2024!` |
-| `mongoDbAppPassword` | MongoDB アプリユーザーのパスワード | 自分で決める強い値。Step 9 の `<YOUR_MONGODB_APP_PASSWORD>` と完全一致させる。必ず下記の IMPORTANT の内容も読むこと。 |
-| `appGatewayDnsLabel` | 一意な DNS ラベル | 例: `blogapp-team1-0106`。アルファベットの大文字や@などの特殊記号は利用しないこと。基本的には小文字、数字、ハイフンを利用する。 |
+| `mongoDbAppPassword` | MongoDB アプリユーザーのパスワード | 自分で決める強い値。Step 9 の `<YOUR_MONGODB_APP_PASSWORD>` と完全一致させる。<u>**必ず下記の IMPORTANT の内容も読むこと。**</u> |
+| `appGatewayDnsLabel` | 一意な DNS ラベル | 例: `blogapp-team1-0106`。<u>**アルファベットの大文字や@などの特殊記号は利用しないこと。**</u>基本的には小文字、数字、ハイフンを利用する。 |
 
 > [!IMPORTANT]
 > `mongoDbAppPassword` は、Step 9 の `post-deployment-setup.local.sh` に設定する `<YOUR_MONGODB_APP_PASSWORD>` と **1 文字も違わず一致**させます。不一致の場合、Bicep が作成する App VM の `MONGODB_URI` と MongoDB 上のユーザー password がずれ、Backend API が DB に接続できません。
