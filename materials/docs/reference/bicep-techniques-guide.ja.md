@@ -594,7 +594,7 @@ App tier 用の Internal Load Balancer を作ります。
 
 一般的な Azure 設定:
 
-- Ubuntu 22.04 LTS の Gen2 イメージを使います。
+- Ubuntu 24.04 LTS の Gen2 イメージを使います。
 - SSH key 認証を使い、password login を無効化します。
 - system-assigned Managed Identity を有効化します。
 - Availability Zone を指定します。

@@ -12,7 +12,7 @@ This document defines the technical architecture requirements for the Azure IaaS
 - **Tiers**: Web (NGINX) → Internal LB → App (Express/TypeScript) → DB (MongoDB)
 - **Traffic Flow**: Internet → Application Gateway (HTTPS:443) → Web VMs (HTTP:80) → Internal LB (10.0.2.10) → App VMs → DB VMs
 - **SSL/TLS**: Application Gateway terminates HTTPS with self-signed certificate; backend traffic is HTTP within VNet
-- **OS**: Ubuntu 22.04 LTS
+- **OS**: Ubuntu 24.04 LTS
 - **HA Strategy**: Availability Zones within primary region
 - **DR Strategy**: Azure Site Recovery to secondary region
 - **Authentication**: OAuth2.0 with Microsoft Entra ID

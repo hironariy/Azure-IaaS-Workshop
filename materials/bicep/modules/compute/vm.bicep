@@ -92,13 +92,11 @@ var defaultTags = {
 }
 var allTags = union(defaultTags, tags)
 
-// Ubuntu 22.04 LTS image reference
-// Note: 22.04 LTS (Jammy) is used instead of 24.04 (Noble) for broader regional availability
-// 24.04 LTS may not be available in all Azure regions yet
+// Ubuntu 24.04 LTS image reference
 var imageReference = {
   publisher: 'Canonical'
-  offer: '0001-com-ubuntu-server-jammy'
-  sku: '22_04-lts-gen2'
+  offer: 'ubuntu-24_04-lts'
+  sku: 'server'
   version: 'latest'
 }
 

@@ -7,7 +7,7 @@
 //
 // Architecture:
 //   - 2 VMs: vm-db-az1 (Primary, Zone 1), vm-db-az2 (Secondary, Zone 2)
-//   - MongoDB 7.0 replica set (blogapp-rs0)
+//   - MongoDB 8.0 replica set (blogapp-rs0)
 //   - Premium SSD data disks for database files
 //   - Automatic failover within the replica set
 //
@@ -98,11 +98,11 @@ var dataDisks = [
   }
 ]
 
-// MongoDB 7.0 installation script (base64 encoded)
+// MongoDB 8.0 installation script (base64 encoded)
 // This script:
 //   1. Updates apt packages
 //   2. Mounts data disk to /data/mongodb
-//   3. Installs MongoDB 7.0
+//   3. Installs MongoDB 8.0
 //   4. Configures for replica set
 //   5. Enables and starts mongod service
 // Note: Replica set initialization is a separate manual step
@@ -364,25 +364,25 @@ fi # End of ALREADY_MOUNTED check
 # Done after mongodb installation
 
 # ==========================================================
-# Install MongoDB 7.0
+# Install MongoDB 8.0
 # ==========================================================
 # Import MongoDB public GPG key
 apt-get -o DPkg::Lock::Timeout=120 -y install gnupg curl
 
 # Use --batch flag for non-interactive GPG operation (no TTY available in CustomScript)
 # Check if keyring already exists to make script idempotent (re-runnable)
-if [ ! -f /usr/share/keyrings/mongodb-server-7.0.gpg ]; then
+if [ ! -f /usr/share/keyrings/mongodb-server-8.0.gpg ]; then
   echo "Downloading MongoDB GPG key..."
-  curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc | \
-    gpg --batch -o /usr/share/keyrings/mongodb-server-7.0.gpg --dearmor
+  curl -fsSL https://www.mongodb.org/static/pgp/server-8.0.asc | \
+    gpg --batch -o /usr/share/keyrings/mongodb-server-8.0.gpg --dearmor
 else
   echo "MongoDB GPG key already exists, skipping download"
 fi
 
 # Add MongoDB repository if not already present
-if [ ! -f /etc/apt/sources.list.d/mongodb-org-7.0.list ]; then
-  echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse" | \
-    tee /etc/apt/sources.list.d/mongodb-org-7.0.list
+if [ ! -f /etc/apt/sources.list.d/mongodb-org-8.0.list ]; then
+  echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg ] https://repo.mongodb.org/apt/ubuntu noble/mongodb-org/8.0 multiverse" | \
+    tee /etc/apt/sources.list.d/mongodb-org-8.0.list
 fi
 
 # Create MongoDB data and log directories on data disk BEFORE installing MongoDB
@@ -406,7 +406,7 @@ chown -R mongodb:mongodb /data/mongodb
 # Configure MongoDB
 # Note: MongoDB 7.0+ no longer uses storage.journal.enabled (journaling is always on)
 cat > /etc/mongod.conf << 'EOF'
-# MongoDB 7.0 configuration file
+# MongoDB 8.0 configuration file
 # Reference: https://www.mongodb.com/docs/manual/reference/configuration-options/
 
 # Where and how to store data

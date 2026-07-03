@@ -61,7 +61,7 @@ The sample is a multi-user blog platform secured with Microsoft Entra ID.
 |---|---|
 | Frontend | React 18, TypeScript, TailwindCSS, Vite |
 | Backend | Node.js 24, Express.js, TypeScript |
-| Database | MongoDB 7.0 replica set |
+| Database | MongoDB 8.0 replica set |
 | Authentication | Microsoft Entra ID + MSAL.js |
 
 Main features:

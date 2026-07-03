@@ -62,7 +62,7 @@ GitHub Pages を有効化したコピーリポジトリでは、公開 URL は�
 |---|---|
 | フロントエンド | React 18、TypeScript、TailwindCSS、Vite |
 | バックエンド | Node.js 24、Express.js、TypeScript |
-| データベース | MongoDB 7.0 レプリカセット |
+| データベース | MongoDB 8.0 レプリカセット |
 | 認証 | Microsoft Entra ID + MSAL.js |
 
 主な機能:
