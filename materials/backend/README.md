@@ -13,8 +13,10 @@ Multi-user blog API built with Express.js and TypeScript.
 ### 1. Install Dependencies
 
 ```bash
-npm install
+npm ci --include=dev
 ```
+
+Use `npm ci` so the checked-in `package-lock.json` is used exactly. The `--include=dev` flag keeps TypeScript build tooling available even when `NODE_ENV=production` is set on a VM.
 
 ### 2. Configure Environment
 
@@ -58,6 +60,17 @@ The API will be available at `http://localhost:3000`.
 | `npm run lint:fix` | Fix ESLint errors |
 | `npm run format` | Format code with Prettier |
 | `npm test` | Run tests |
+
+## Dependency Security
+
+Check dependency advisories before publishing workshop updates:
+
+```bash
+npm audit --audit-level=low
+npm audit --omit=dev --audit-level=low
+```
+
+After building for production, run `npm prune --omit=dev` before starting the API so runtime `node_modules` contains only production dependencies. If vulnerabilities appear, update `package.json` and `package-lock.json` in the repository. Do not run `npm audit fix --force` directly on a learner VM, because it can introduce unreviewed major-version changes.
 
 ## API Endpoints
 

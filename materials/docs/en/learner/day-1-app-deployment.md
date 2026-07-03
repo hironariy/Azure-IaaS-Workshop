@@ -148,11 +148,16 @@ cd /opt/blogapp
 
 # NODE_ENV=production is set, so install devDependencies needed for TypeScript build explicitly.
 npm ci --include=dev
+npm audit --audit-level=low
 npm run build
 
 # The backend reads dist/.env after build.
 cp /opt/blogapp/.env /opt/blogapp/dist/.env
 chmod 600 /opt/blogapp/dist/.env
+
+# After the build, remove devDependencies so runtime node_modules contains production dependencies only.
+npm prune --omit=dev
+npm audit --omit=dev --audit-level=low
 
 pm2 delete blogapp-api 2>/dev/null || true
 pm2 start dist/src/app.js --name blogapp-api
@@ -161,6 +166,8 @@ pm2 save
 pm2 list
 pm2 logs blogapp-api --lines 20
 ```
+
+**Note:** If `npm ci` or `npm audit` reports vulnerabilities, do not run `npm audit fix --force` on the VM. Fix dependencies in the repository's `package.json` and `package-lock.json`, clone the corrected version, and rerun the same steps.
 
 **Expected Result:** `blogapp-api` is `online` in PM2. Press `Ctrl+C` if logs keep streaming.
 
@@ -232,8 +239,11 @@ fi
 
 cd temp/materials/frontend
 npm ci
+npm audit --audit-level=low
 npm run build
 ```
+
+**Note:** If `npm ci` or `npm audit` reports vulnerabilities, do not run `npm audit fix --force` on the Web VM. Fix dependencies in the repository, clone the corrected version, and rerun the same steps.
 
 **Expected Result:** `dist/` is created.
 

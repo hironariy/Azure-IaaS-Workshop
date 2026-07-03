@@ -163,11 +163,16 @@ cd /opt/blogapp
 
 # NODE_ENV=production が設定されているため、TypeScript build に必要な devDependencies も明示的に入れます。
 npm ci --include=dev
+npm audit --audit-level=low
 npm run build
 
 # Backend は build 後に dist/.env を読みます。Bicep が作成した .env を build 成果物側にも置きます。
 cp /opt/blogapp/.env /opt/blogapp/dist/.env
 chmod 600 /opt/blogapp/dist/.env
+
+# build 後は実行時に不要な devDependencies を削除し、runtime 依存関係だけを残します。
+npm prune --omit=dev
+npm audit --omit=dev --audit-level=low
 
 pm2 delete blogapp-api 2>/dev/null || true
 pm2 start dist/src/app.js --name blogapp-api
@@ -176,6 +181,8 @@ pm2 save
 pm2 list
 pm2 logs blogapp-api --lines 20
 ```
+
+**注意:** `npm ci` または `npm audit` で脆弱性が表示された場合でも、VM 上で `npm audit fix --force` を実行しないでください。依存関係の修正は repository 側の `package.json` と `package-lock.json` で行い、修正版を clone し直して同じ手順を再実行します。
 
 **期待結果:** `blogapp-api` が PM2 の `online` 状態になります。ログ表示が続く場合は `Ctrl+C` でプロンプトに戻ります。
 
@@ -254,8 +261,11 @@ fi
 
 cd temp/materials/frontend
 npm ci
+npm audit --audit-level=low
 npm run build
 ```
+
+**注意:** `npm ci` または `npm audit` で脆弱性が表示された場合でも、Web VM 上で `npm audit fix --force` を実行しないでください。依存関係の修正は repository 側で行い、修正版を clone し直します。
 
 **期待結果:** `dist/` が作成されます。
 

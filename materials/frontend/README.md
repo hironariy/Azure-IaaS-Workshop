@@ -12,8 +12,10 @@ React-based multi-user blog application with Microsoft Entra ID authentication.
 ### 1. Install Dependencies
 
 ```bash
-npm install
+npm ci
 ```
+
+Use `npm ci` so the checked-in `package-lock.json` is used exactly. This keeps workshop VMs and local development on the same dependency graph.
 
 ### 2. Configure Environment
 
@@ -48,6 +50,17 @@ The application will be available at `http://localhost:5173`.
 | `npm run lint:fix` | Fix ESLint errors |
 | `npm run format` | Format code with Prettier |
 | `npm test` | Run Vitest tests |
+
+## Dependency Security
+
+Check dependency advisories before publishing workshop updates:
+
+```bash
+npm audit --audit-level=low
+npm audit --omit=dev --audit-level=low
+```
+
+If vulnerabilities appear, update `package.json` and `package-lock.json` in the repository. Do not run `npm audit fix --force` directly on a learner VM, because it can introduce unreviewed major-version changes.
 
 ## Project Structure
 
