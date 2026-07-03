@@ -4,7 +4,7 @@ React-based multi-user blog application with Microsoft Entra ID authentication.
 
 ## Prerequisites
 
-- Node.js 20.x LTS
+- Node.js 24.x LTS
 - Microsoft Entra ID app registration
 
 ## Quick Start

@@ -58,7 +58,7 @@
 
 | ツール | バージョン | 目的 | インストール |
 |------|---------|---------|--------------|
-| **Node.js** | 20.x LTS | JavaScriptランタイム | [ダウンロード](https://nodejs.org/) |
+| **Node.js** | 24.x LTS | JavaScriptランタイム | [ダウンロード](https://nodejs.org/) |
 | **npm** | 10.x以上 | パッケージマネージャー | Node.jsに含まれる |
 | **Git** | 2.x以上 | バージョン管理 | [ダウンロード](https://git-scm.com/) |
 | **Docker Desktop** | 最新版 | ローカルMongoDB | [ダウンロード](https://www.docker.com/products/docker-desktop/) |
@@ -69,7 +69,7 @@
 ```bash
 # Node.jsの確認
 node --version
-# 期待値: v20.x.x
+# 期待値: v24.x.x
 
 # npmの確認
 npm --version

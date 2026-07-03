@@ -17,7 +17,7 @@ This document defines the backend API requirements for the Azure IaaS Workshop b
 ## Technology Stack
 
 ### Core Technologies
-- **Runtime**: Node.js 20.x LTS
+- **Runtime**: Node.js 24.x LTS
 - **Framework**: Express.js 4.18+
 - **Language**: TypeScript 5+ (strict mode)
 - **Database ODM**: Mongoose 8.x
@@ -3619,7 +3619,7 @@ describe('GET /api/posts', () => {
   },
   "devDependencies": {
     "@types/express": "^4.17.21",
-    "@types/node": "^20.10.0",
+    "@types/node": "^24.10.1",
     "@types/jsonwebtoken": "^9.0.5",
     "@types/cors": "^2.8.17",
     "@types/compression": "^1.7.5",
@@ -3997,7 +3997,7 @@ on:
   workflow_dispatch:
 
 env:
-  NODE_VERSION: '20.x'
+  NODE_VERSION: '24.x'
 
 jobs:
   test:
@@ -4486,16 +4486,16 @@ const mongoPassword = await getSecret('mongodb-api-password');
      --ssh-key ~/.ssh/id_rsa
    ```
 
-2. **Install Node.js 20.x**
+2. **Install Node.js 24.x**
    ```bash
    # Install NodeSource repository
-   curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+  curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
    
    # Install Node.js
    sudo apt-get install -y nodejs
    
    # Verify installation
-   node --version  # Should be v20.x
+  node --version  # Should be v24.x
    npm --version
    ```
 
@@ -4688,7 +4688,7 @@ df -h /opt/blogapp
 ```
 
 **Solutions**:
-- Install correct Node.js version (20.x LTS)
+- Install correct Node.js version (24.x LTS)
 - Clear npm cache: `npm cache clean --force`
 - Delete node_modules and package-lock.json, reinstall
 

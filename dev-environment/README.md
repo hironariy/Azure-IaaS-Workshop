@@ -4,7 +4,7 @@ Complete guide to run the Azure IaaS Workshop Blog Application locally.
 
 ## Prerequisites
 
-- **Node.js** 20.x LTS
+- **Node.js** 24.x LTS
 - **Docker Desktop** for Mac (includes Docker Compose)
 - **Microsoft Entra ID** app registrations (2 required - see below)
 

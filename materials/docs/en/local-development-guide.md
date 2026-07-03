@@ -56,7 +56,7 @@ Install these tools on your computer:
 
 | Tool | Version | Purpose | Installation |
 |------|---------|---------|--------------|
-| **Node.js** | 20.x LTS | JavaScript runtime | [Download](https://nodejs.org/) |
+| **Node.js** | 24.x LTS | JavaScript runtime | [Download](https://nodejs.org/) |
 | **npm** | 10.x+ | Package manager | Included with Node.js |
 | **Git** | 2.x+ | Version control | [Download](https://git-scm.com/) |
 | **Docker Desktop** | Latest | Local MongoDB | [Download](https://www.docker.com/products/docker-desktop/) |
@@ -67,7 +67,7 @@ Install these tools on your computer:
 ```bash
 # Check Node.js
 node --version
-# Expected: v20.x.x
+# Expected: v24.x.x
 
 # Check npm
 npm --version

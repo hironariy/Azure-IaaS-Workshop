@@ -50,7 +50,7 @@ apt-get -o DPkg::Lock::Timeout=120 -y upgrade
 # Install prerequisites
 apt-get -o DPkg::Lock::Timeout=120 -y install ca-certificates curl gnupg
 
-# Add NodeSource repository for Node.js 20 LTS
+# Add NodeSource repository for Node.js 24 LTS
 mkdir -p /etc/apt/keyrings
 
 # Use --batch flag for non-interactive GPG operation (no TTY available in CustomScript)
@@ -62,12 +62,17 @@ else
   echo "NodeSource GPG key already exists, skipping download"
 fi
 
-# Add repository if not already present
-if [ ! -f /etc/apt/sources.list.d/nodesource.list ]; then
-  echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" | tee /etc/apt/sources.list.d/nodesource.list
+# Add or update repository. Re-running the CustomScript on an existing VM must
+# replace older NodeSource major-version entries.
+NODE_SOURCE_LIST=/etc/apt/sources.list.d/nodesource.list
+NODE_SOURCE_REPO="deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_24.x nodistro main"
+if [ ! -f "$NODE_SOURCE_LIST" ] || ! grep -q "node_24.x" "$NODE_SOURCE_LIST"; then
+  echo "$NODE_SOURCE_REPO" | tee "$NODE_SOURCE_LIST"
+else
+  echo "NodeSource Node.js 24 repository already configured"
 fi
 
-# Install Node.js 20 LTS
+# Install Node.js 24 LTS
 apt-get -o DPkg::Lock::Timeout=120 update
 apt-get -o DPkg::Lock::Timeout=120 -y install nodejs
 

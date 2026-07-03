@@ -121,7 +121,7 @@ grep -E '^(NODE_ENV|PORT|LOG_LEVEL|ENTRA_TENANT_ID|ENTRA_CLIENT_ID)=' /opt/bloga
 grep '^MONGODB_URI=' /opt/blogapp/.env | sed 's#://blogapp:[^@]*@#://blogapp:***@#'
 ```
 
-**期待結果:** Node.js 20 系、PM2、`/opt/blogapp/.env` が確認できます。
+**期待結果:** Node.js 24 系、PM2、`/opt/blogapp/.env` が確認できます。
 
 ## 4. App VM の一時 health server を削除する
 
@@ -255,7 +255,7 @@ git clone "$REPOSITORY_URL" temp
 
 # Web tier VM には NGINX はありますが、Node.js はない場合があります。
 if ! command -v node >/dev/null 2>&1; then
-  curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+  curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
   sudo apt-get install -y nodejs
 fi
 

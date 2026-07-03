@@ -71,7 +71,7 @@ This document defines the technical architecture requirements for the Azure IaaS
 - OS: Ubuntu 24.04 LTS
 - Availability: Spread across AZ 1 and AZ 2
 - Managed Disk: Standard SSD (OS: 30 GB)
-- Software: Node.js 20 LTS, Express (TypeScript), PM2 (process manager)
+- Software: Node.js 24 LTS, Express (TypeScript), PM2 (process manager)
 - **Rationale**: Basv2-series is cost-effective for Node.js apps with low concurrent users (10-20 during workshop)
 - **Environment Configuration**: Bicep CustomScript injects production environment variables
   - `NODE_ENV=production`

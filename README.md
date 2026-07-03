@@ -60,7 +60,7 @@ The sample is a multi-user blog platform secured with Microsoft Entra ID.
 | Layer | Technology |
 |---|---|
 | Frontend | React 18, TypeScript, TailwindCSS, Vite |
-| Backend | Node.js 20, Express.js, TypeScript |
+| Backend | Node.js 24, Express.js, TypeScript |
 | Database | MongoDB 7.0 replica set |
 | Authentication | Microsoft Entra ID + MSAL.js |
 

@@ -4,7 +4,7 @@ Multi-user blog API built with Express.js and TypeScript.
 
 ## Prerequisites
 
-- Node.js 20.x LTS
+- Node.js 24.x LTS
 - MongoDB 7.0 (via Docker Compose - see `/materials/db/`)
 - Microsoft Entra ID app registration
 
