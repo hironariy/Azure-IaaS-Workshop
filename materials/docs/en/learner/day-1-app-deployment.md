@@ -232,10 +232,14 @@ cd /tmp
 rm -rf temp
 git clone "$REPOSITORY_URL" temp
 
-if ! command -v node >/dev/null 2>&1; then
+# Ensure Node.js 24 is installed. Re-run NodeSource setup even if an older Node.js exists.
+if ! node --version 2>/dev/null | grep -q '^v24\.'; then
   curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
   sudo apt-get install -y nodejs
 fi
+
+node --version
+npm --version
 
 cd temp/materials/frontend
 npm ci

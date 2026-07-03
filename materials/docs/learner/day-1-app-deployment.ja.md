@@ -253,11 +253,14 @@ cd /tmp
 rm -rf temp
 git clone "$REPOSITORY_URL" temp
 
-# Web tier VM には NGINX はありますが、Node.js はない場合があります。
-if ! command -v node >/dev/null 2>&1; then
+# Node.js 24 を確認します。古い Node.js が入っている場合も NodeSource 24 を再設定します。
+if ! node --version 2>/dev/null | grep -q '^v24\.'; then
   curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
   sudo apt-get install -y nodejs
 fi
+
+node --version
+npm --version
 
 cd temp/materials/frontend
 npm ci
