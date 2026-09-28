@@ -123,30 +123,22 @@ param deployStorage = true
 // =============================================================================
 // Optional Parameters - VM Sizing
 // =============================================================================
-// NOTE: VM SKU availability varies by region. If deployment fails with 
-// "VM size not available", check available sizes with:
-//   az vm list-skus --location <your-region> --size Standard_B --output table
-//
-// Defaults use Basv2-series VMs. If unavailable, choose a Basv2 SKU with
-// the same or greater memory for the tier.
-// Common alternatives:
-//   Standard_B2als_v2 → Standard_B2as_v2
-//   Standard_B4as_v2  → Standard_B8als_v2 (same memory, higher vCPU)
+// Dsv6 VMs expose managed disks through NVMe; the DB setup script identifies
+// the data disk by Azure LUN rather than an unstable /dev/nvme* device name.
+// SKU availability varies by region and Availability Zone. Check both sizes:
+//   az vm list-skus --location japanwest --size Standard_D2s_v6 --zone -o table
+//   az vm list-skus --location japanwest --size Standard_D4s_v6 --zone -o table
+// Listed SKUs do not guarantee available capacity at deployment time.
 // =============================================================================
 
-// Web tier: NGINX reverse proxy (2 vCPU, 4 GB RAM)
-// Alternative if unavailable: Standard_B2as_v2
-param webVmSize = 'Standard_B2als_v2'
+// Web tier: NGINX reverse proxy (2 vCPU, 8 GiB RAM)
+param webVmSize = 'Standard_D2s_v6'
 
-// App tier: Express/Node.js API (2 vCPU, 4 GB RAM)
-// Alternative if unavailable: Standard_B2as_v2
-param appVmSize = 'Standard_B2als_v2'
+// App tier: Express/Node.js API (2 vCPU, 8 GiB RAM)
+param appVmSize = 'Standard_D2s_v6'
 
-// DB tier: MongoDB (4 vCPU, 16 GB RAM) - needs Premium SSD support
-// Alternative if unavailable: Standard_B8als_v2
-// IMPORTANT: Verify Premium SSD support with:
-//   az vm list-skus --location <region> --size <sku> --query "[].capabilities[?name=='PremiumIO']"
-param dbVmSize = 'Standard_B4as_v2'
+// DB tier: MongoDB (4 vCPU, 16 GiB RAM), Premium SSD data disk
+param dbVmSize = 'Standard_D4s_v6'
 
 // MongoDB data disk size
 param dbDataDiskSizeGB = 128

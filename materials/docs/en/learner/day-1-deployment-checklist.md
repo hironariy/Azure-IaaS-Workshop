@@ -93,6 +93,8 @@ code main.local.bicepparam
 ![Cloud Shell VS Code editor](../../assets/screenshots/learners-portal/day1/vscode.png)
 *Cloud Shell VS Code editor*
 
+If reusing an existing `main.local.bicepparam`, do not overwrite it. Check that `webVmSize` and `appVmSize` are `Standard_D2s_v6` and `dbVmSize` is `Standard_D4s_v6`; a copy of an older template still has Basv2 sizes.
+
 Set at least these values.
 
 | Parameter | Value | How To Get It |
@@ -238,7 +240,8 @@ Open the Frontend SPA app registration in Azure Portal.
 
 | Symptom | Check |
 |---|---|
-| VM SKU is unavailable | `az vm list-skus --location japanwest --size Standard_B -o table` |
+| VM SKU is unavailable | Check both `Standard_D2s_v6` and `Standard_D4s_v6` with `az vm list-skus --location japanwest --size <SKU> --zone -o table` |
+| DB CustomScript fails to identify its disk | Check LUN 0 and the `/dev/disk/azure/data/by-lun/0` symlink; rerun the DB extension on the existing VM with `skipVmCreationDb=true` and a new `forceUpdateTagDb` after fixing the script |
 | DNS label is already used | Choose a unique `appGatewayDnsLabel` |
 | Deployment fails | Resource group > Deployments > failed operation details |
 | MongoDB connection fails later | `mongoDbAppPassword` matches post-deployment setup and does not contain `@` |

@@ -15,12 +15,9 @@
 //   App Tier (Express) → DB Tier (MongoDB:27017)
 //   DB VM ↔ DB VM (replica set sync:27017)
 //
-// VM Sizing Rationale (B4as_v2):
-//   - 4 vCPU, 16 GB RAM
-//   - Basv2 CPU credit model with burst capability
-//   - 16 GB RAM optimal for MongoDB working set
-//   - Supports Premium SSD (required for DB performance)
-//   - Cost-effective Basv2 option for workshop database traffic
+// VM Sizing Rationale (D4s_v6):
+//   - 4 vCPU, 16 GiB RAM
+//   - General-purpose performance and Premium SSD support for MongoDB
 //
 // 2-Node Replica Set Considerations:
 //   - Educational value: Demonstrates replication without complexity
@@ -49,7 +46,7 @@ param adminUsername string = 'azureuser'
 param sshPublicKey string
 
 @description('VM size for database tier')
-param vmSize string = 'Standard_B4as_v2'
+param vmSize string = 'Standard_D4s_v6'
 
 @description('Data disk size in GB for MongoDB data')
 param dataDiskSizeGB int = 128
@@ -106,7 +103,7 @@ var dataDisks = [
 //   4. Configures for replica set
 //   5. Enables and starts mongod service
 // Note: Replica set initialization is a separate manual step
-var mongoInstallScript = '''
+var mongoInstallScript = replace('''
 #!/bin/bash
 set -e
 
@@ -159,100 +156,57 @@ apt-get -o DPkg::Lock::Timeout=120 -y upgrade
 # ==========================================================
 # Mount Data Disk
 # ==========================================================
-# Azure disk device names are NOT guaranteed (/dev/sdc may not always be the data disk)
-# The resource/temp disk is often /dev/sdc and is already mounted to /mnt
-# We need to find our Premium SSD data disk by:
-#   1. Looking for disks of the expected size
-#   2. Checking if already mounted at our target location (idempotent)
-# Our data disk is 128GB Premium SSD attached at LUN 0
+# Azure's LUN 0 links identify the managed data disk on NVMe (v6) and SCSI
+# without relying on device names or accidentally selecting the OS/temp disk.
+# https://learn.microsoft.com/azure/virtual-machines/linux/azure-virtual-machine-utilities
 # ==========================================================
 
 MOUNT_POINT="/data/mongodb"
-DATA_DISK=""
-EXPECTED_SIZE_GB=128  # Must match dataDiskSizeGB parameter in Bicep
+EXPECTED_SIZE_GB=__DATA_DISK_SIZE_GB__
 ALREADY_MOUNTED=false
 
-echo "=== Identifying data disk ==="
-echo "Looking for ${EXPECTED_SIZE_GB}GB disk..."
-
-# First, check if something is already mounted at our mount point
-if mountpoint -q "$MOUNT_POINT"; then
-  echo "$MOUNT_POINT is already mounted!"
-  # Find which device is mounted there
-  DATA_DISK=$(findmnt -n -o SOURCE "$MOUNT_POINT" | sed 's/[0-9]*$//' | head -1)
-  if [ -n "$DATA_DISK" ] && [ -b "$DATA_DISK" ]; then
-    echo "Data disk $DATA_DISK is already mounted at $MOUNT_POINT - SUCCESS (idempotent)"
-    ALREADY_MOUNTED=true
-  fi
-fi
-
-# If not already mounted, find the data disk by size
-if [ "$ALREADY_MOUNTED" = "false" ]; then
-  # List all disks for debugging
-  lsblk -d -o NAME,SIZE,TYPE,MOUNTPOINT
-  
-  # Find the data disk by size
-  for disk in /dev/sd?; do
-    if [ -b "$disk" ]; then
-      DISK_NAME=$(basename "$disk")
-      # Get size in bytes
-      DISK_SIZE_BYTES=$(blockdev --getsize64 "$disk" 2>/dev/null || echo "0")
-      DISK_SIZE_GB=$((DISK_SIZE_BYTES / 1024 / 1024 / 1024))
-      
-      echo "Checking $disk: ${DISK_SIZE_GB}GB"
-      
-      # Check if this is approximately our expected size (within 10GB tolerance)
-      if [ $DISK_SIZE_GB -ge $((EXPECTED_SIZE_GB - 10)) ] && [ $DISK_SIZE_GB -le $((EXPECTED_SIZE_GB + 10)) ]; then
-        # Check where this disk (or its partitions) is mounted
-        DISK_MOUNT=$(lsblk -n -o MOUNTPOINT "$disk" 2>/dev/null | grep -v "^$" | head -1)
-        PART_MOUNT=$(lsblk -n -o MOUNTPOINT "${disk}"* 2>/dev/null | grep -v "^$" | head -1)
-        
-        # If mounted at our target, we're good
-        if [ "$DISK_MOUNT" = "$MOUNT_POINT" ] || [ "$PART_MOUNT" = "$MOUNT_POINT" ]; then
-          DATA_DISK="$disk"
-          ALREADY_MOUNTED=true
-          echo "Found data disk $DATA_DISK already mounted at $MOUNT_POINT"
-          break
-        # If not mounted anywhere useful, use it
-        elif [ -z "$DISK_MOUNT" ] && [ -z "$PART_MOUNT" ]; then
-          DATA_DISK="$disk"
-          echo "Found unmounted data disk: $DATA_DISK (${DISK_SIZE_GB}GB)"
-          break
-        # If mounted at /mnt, it's the temp disk - skip
-        elif [ "$PART_MOUNT" = "/mnt" ] || [ "$DISK_MOUNT" = "/mnt" ]; then
-          echo "Disk $disk is the temp disk (mounted at /mnt), skipping"
-        else
-          echo "Disk $disk is mounted elsewhere ($DISK_MOUNT $PART_MOUNT), skipping"
-        fi
-      fi
-    fi
-  done
-fi
-
-# Fallback: If still not found, try to find any unpartitioned/unused large disk
-if [ -z "$DATA_DISK" ]; then
-  echo "Data disk not found by size, trying to find unused disk..."
-  for disk in /dev/sdd /dev/sde /dev/sdf; do
-    if [ -b "$disk" ]; then
-      MOUNTED=$(lsblk -n -o MOUNTPOINT "$disk" 2>/dev/null | grep -v "^$" | head -1)
-      DISK_SIZE_GB=$(($(blockdev --getsize64 "$disk" 2>/dev/null || echo "0") / 1024 / 1024 / 1024))
-      if [ -z "$MOUNTED" ] && [ $DISK_SIZE_GB -gt 50 ]; then
-        DATA_DISK="$disk"
-        echo "Found unused disk: $DATA_DISK (${DISK_SIZE_GB}GB)"
-        break
-      fi
-    fi
-  done
-fi
-
-if [ -z "$DATA_DISK" ]; then
-  echo "ERROR: Could not identify the data disk"
-  echo "=== All block devices ==="
-  lsblk
+echo "=== Identifying managed data disk at LUN 0 ==="
+if [ -b /dev/disk/azure/data/by-lun/0 ]; then
+  DATA_DISK=$(readlink -f /dev/disk/azure/data/by-lun/0)
+elif [ -b /dev/disk/azure/scsi1/lun0 ]; then
+  DATA_DISK=$(readlink -f /dev/disk/azure/scsi1/lun0)
+else
+  echo "ERROR: No managed data disk at LUN 0; check disk attachment and azure-vm-utils" >&2
+  lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINTS
   exit 1
 fi
 
-echo "Using data disk: $DATA_DISK (already_mounted=$ALREADY_MOUNTED)"
+if [ "$(lsblk -dn -o TYPE "$DATA_DISK")" != "disk" ]; then
+  echo "ERROR: LUN 0 does not point to a whole disk: $DATA_DISK" >&2
+  exit 1
+fi
+
+DISK_SIZE_GB=$(($(blockdev --getsize64 "$DATA_DISK") / 1024 / 1024 / 1024))
+if [ "$DISK_SIZE_GB" -ne "$EXPECTED_SIZE_GB" ]; then
+  echo "ERROR: LUN 0 is ${DISK_SIZE_GB} GiB, expected ${EXPECTED_SIZE_GB} GiB" >&2
+  exit 1
+fi
+echo "Using data disk: $DATA_DISK (${DISK_SIZE_GB} GiB)"
+
+if mountpoint -q "$MOUNT_POINT"; then
+  MOUNT_SOURCE=$(findmnt -n -o SOURCE --mountpoint "$MOUNT_POINT")
+  if [ "$(readlink -f "$MOUNT_SOURCE")" != "$DATA_DISK" ]; then
+    echo "ERROR: $MOUNT_POINT is mounted from $MOUNT_SOURCE instead of LUN 0" >&2
+    exit 1
+  fi
+  ALREADY_MOUNTED=true
+else
+  DISK_MOUNTS=$(lsblk -nr -o MOUNTPOINTS "$DATA_DISK")
+  if [ -n "$DISK_MOUNTS" ]; then
+    echo "ERROR: LUN 0 or its partitions are mounted elsewhere; refusing to format" >&2
+    lsblk -f "$DATA_DISK"
+    exit 1
+  fi
+  if [ -d "$MOUNT_POINT" ] && [ -n "$(find "$MOUNT_POINT" -mindepth 1 -maxdepth 1 -print -quit)" ]; then
+    echo "ERROR: $MOUNT_POINT already contains files but is not mounted" >&2
+    exit 1
+  fi
+fi
 
 # ==========================================================
 # Format and Mount (skip if already mounted at target)
@@ -260,17 +214,28 @@ echo "Using data disk: $DATA_DISK (already_mounted=$ALREADY_MOUNTED)"
 if [ "$ALREADY_MOUNTED" = "true" ]; then
   echo "Disk is already mounted at $MOUNT_POINT, skipping format and mount steps"
 else
-  # Create filesystem if not exists
-  if ! blkid "$DATA_DISK" | grep -q "TYPE="; then
+  if lsblk -nr -o TYPE "$DATA_DISK" | grep -q '^part$'; then
+    echo "ERROR: LUN 0 has partitions; refusing to format the whole disk" >&2
+    exit 1
+  fi
+
+  if ! blkid -s TYPE "$DATA_DISK" > /dev/null 2>&1; then
+    DISK_SIGNATURES=$(wipefs -n "$DATA_DISK")
+    if [ -n "$DISK_SIGNATURES" ]; then
+      echo "ERROR: LUN 0 has existing signatures; refusing to format" >&2
+      exit 1
+    fi
     echo "Creating ext4 filesystem on $DATA_DISK"
     mkfs.ext4 -F "$DATA_DISK"
+  elif [ "$(blkid -s TYPE -o value "$DATA_DISK")" != "ext4" ]; then
+    echo "ERROR: LUN 0 already has a non-ext4 filesystem; refusing to mount as ext4" >&2
+    exit 1
   fi
 
   # Create mount point
   mkdir -p "$MOUNT_POINT"
 
-  # Get UUID for persistent mount (device names like /dev/sdc are NOT stable across reboots in Azure)
-  # Azure may reassign device letters after reboot, causing mount failures
+  # Mount by UUID because NVMe and SCSI device names can change across boots.
   DISK_UUID=$(blkid -s UUID -o value "$DATA_DISK")
   if [ -z "$DISK_UUID" ]; then
     echo "ERROR: Could not get UUID for $DATA_DISK"
@@ -278,9 +243,12 @@ else
   fi
   echo "Disk UUID: $DISK_UUID"
 
-  # Add to fstab using UUID for persistent mount (but don't trigger systemd mount yet)
-  # CRITICAL: Use UUID instead of device name to survive reboots
-  if ! grep -q "$DISK_UUID" /etc/fstab; then
+  FSTAB_SOURCE=$(awk -v target="$MOUNT_POINT" '$1 !~ /^#/ && $2 == target { print $1 }' /etc/fstab)
+  if [ -n "$FSTAB_SOURCE" ] && [ "$FSTAB_SOURCE" != "UUID=$DISK_UUID" ]; then
+    echo "ERROR: $MOUNT_POINT has a different disk in /etc/fstab: $FSTAB_SOURCE" >&2
+    exit 1
+  fi
+  if [ -z "$FSTAB_SOURCE" ]; then
     echo "UUID=$DISK_UUID $MOUNT_POINT ext4 defaults,nofail 0 2" >> /etc/fstab
     # Reload systemd to recognize new fstab entry
     systemctl daemon-reload
@@ -309,11 +277,9 @@ else
         echo "Disk (UUID=$DISK_UUID) is already mounted at $MOUNTED_AT"
         if [ "$MOUNTED_AT" = "$MOUNT_POINT" ]; then
           return 0
-        else
-          echo "WARNING: Disk mounted at unexpected location, unmounting..."
-          umount "UUID=$DISK_UUID" 2>/dev/null || true
-          sleep 2
         fi
+        echo "ERROR: LUN 0 is already mounted at $MOUNTED_AT; refusing to unmount it" >&2
+        return 1
       fi
       
       # Try to mount using UUID
@@ -351,7 +317,12 @@ fi
 
 # Verify mount succeeded
 if mountpoint -q "$MOUNT_POINT"; then
-  echo "Verified: $MOUNT_POINT is mounted successfully"
+  MOUNT_SOURCE=$(findmnt -n -o SOURCE --mountpoint "$MOUNT_POINT")
+  if [ "$(readlink -f "$MOUNT_SOURCE")" != "$DATA_DISK" ]; then
+    echo "ERROR: $MOUNT_POINT is mounted from $MOUNT_SOURCE instead of LUN 0" >&2
+    exit 1
+  fi
+  echo "Verified: LUN 0 is mounted at $MOUNT_POINT"
   df -h "$MOUNT_POINT"
 else
   echo "ERROR: $MOUNT_POINT is not mounted after all attempts"
@@ -491,7 +462,7 @@ exit 1
 #
 # Check replica set status:
 # mongosh --eval "rs.status()"
-'''
+''', '__DATA_DISK_SIZE_GB__', string(dataDiskSizeGB))
 
 // =============================================================================
 // Database Tier VMs

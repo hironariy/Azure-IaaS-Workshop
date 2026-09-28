@@ -77,7 +77,7 @@ param deployStorage = true
 // Smaller Basv2 VM Sizes for Development
 // =============================================================================
 
-// Use low-memory Basv2-series VMs while keeping the same VM family as production.
+// Development-only Basv2 sizes; the production workshop uses Dsv6 instead.
 param webVmSize = 'Standard_B2ats_v2'  // 2 vCPU, 1 GB RAM
 param appVmSize = 'Standard_B2ats_v2'  // 2 vCPU, 1 GB RAM
 param dbVmSize = 'Standard_B2als_v2'   // 2 vCPU, 4 GB RAM (needs some memory for MongoDB)

@@ -604,7 +604,7 @@ App tier 用の Internal Load Balancer を作ります。
 
 今回のワークショップの特徴的な設定:
 
-- Basv2 系 VM サイズを既定にし、学習用途としてコストを抑えています。
+- 本番のパラメータでは Dsv6 系 VM を使用します。`dev.bicepparam` は別の小規模な開発用構成です。Dsv6 ではデータディスクが NVMe として見えるため、DB の初期化では Azure の LUN 0 パスから永続ディスクを特定します。
 - Trusted Launch、Secure Boot、vTPM を有効化し、IaaS VM の現代的なセキュリティ既定値を見せています。
 - Azure Monitor Agent を VM 拡張として入れますが、DCR の本体は post-deployment script で作ります。
 - `skipVmCreation` により、既存 VM の拡張だけ更新できるようにしています。

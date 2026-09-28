@@ -42,7 +42,7 @@ FQDN=$(az network public-ip show \
 |---|---|
 | 失敗した deployment operation | Azure Portal > Resource group > Deployments > failed deployment |
 | CLI のエラー詳細 | `az deployment operation group list --resource-group "$RESOURCE_GROUP" --name main -o table` |
-| VM SKU availability | `az vm list-skus --location japanwest --size Standard_B -o table` |
+| VM SKU availability | `az vm list-skus --location japanwest --size Standard_D2s_v6 --zone -o table` と `az vm list-skus --location japanwest --size Standard_D4s_v6 --zone -o table` |
 | DNS label 重複 | `appGatewayDnsLabel` を別の一意な値に変更 |
 | パラメータ未設定 | `materials/bicep/main.local.bicepparam` の空文字を確認 |
 
@@ -65,11 +65,11 @@ FQDN=$(az network public-ip show \
 
 ```bash
 az vm list-usage --location japanwest \
-  --query "[?contains(name.value, 'standardBASv2Family') || name.value=='cores'].{Name:name.localizedValue, Current:currentValue, Limit:limit}" \
+  --query "[?contains(name.value, 'DSv6') || name.value=='cores'].{Name:name.localizedValue, Current:currentValue, Limit:limit}" \
   -o table
 ```
 
-**判断:** このワークショップでは Basv2 シリーズで合計 16 vCPU が必要です。
+**判断:** このワークショップでは Dsv6 シリーズで合計 16 vCPU が必要です。ファミリーとリージョン全体の両方の残量（Limit - Current）を確認します。クォータが足りても実際のゾーン内キャパシティが不足する場合があります。詳細は Day 0 のクォータ確認を参照してください。
 
 **対処:**
 

@@ -35,23 +35,23 @@ This document defines the MongoDB database architecture and schema requirements 
 
 **Primary Node (db-vm-az1)**:
 - **Role**: Primary (accepts writes and reads)
-- **VM**: Standard_B4as_v2 (4 vCPU, 16 GB RAM)
+- **VM**: Standard_D4s_v6 (4 vCPU, 16 GiB RAM)
 - **Availability Zone**: Zone 1
 - **Private IP**: 10.0.3.4
 - **MongoDB Port**: 27017 (standard default port)
 - **Priority**: 2 (higher priority to prefer as primary)
 - **Votes**: 1
-- **Rationale**: B4as_v2 burstable VM with Basv2 CPU credit model, sufficient for workshop MongoDB workload; supports Premium SSD for database performance
+- **Rationale**: Dsv6 general-purpose VM with Premium SSD support; MongoDB data is stored on the LUN 0 managed disk, identified by its Azure NVMe device link
 
 **Secondary Node (db-vm-az2)**:
 - **Role**: Secondary (reads only, synchronous replication)
-- **VM**: Standard_B4as_v2 (4 vCPU, 16 GB RAM)
+- **VM**: Standard_D4s_v6 (4 vCPU, 16 GiB RAM)
 - **Availability Zone**: Zone 2
 - **Private IP**: 10.0.3.5
 - **MongoDB Port**: 27017 (standard default port)
 - **Priority**: 1 (lower priority)
 - **Votes**: 1
-- **Rationale**: Consistent with primary node; B4as_v2 adequate for replication and failover in workshop context with light data volumes
+- **Rationale**: Same Dsv6 size and managed-disk configuration as the primary node for workshop replication
 
 #### Replica Set Initialization
 

@@ -108,6 +108,8 @@ code main.local.bicepparam
 ![Cloud Shell の VS Code](../assets/screenshots/learners-portal/day1/vscode.png)
 *Cloud Shell の VS Code*
 
+以前作成した `main.local.bicepparam` を再利用する場合は上書きせず、`webVmSize` と `appVmSize` が `Standard_D2s_v6`、`dbVmSize` が `Standard_D4s_v6` であることを確認します。旧版をコピーしたファイルは Basv2 のままです。
+
 少なくとも次を設定します。
 
 | パラメータ | 入力する値 | 取得方法 |
@@ -265,7 +267,8 @@ Azure Portal でフロントエンド SPA のアプリ登録を開きます。
 
 | 症状 | 確認すること | 参照先 |
 |---|---|---|
-| VM SKU が利用できない | `az vm list-skus --location japanwest --size Standard_B -o table` | `main.local.bicepparam` の VM size |
+| VM SKU が利用できない | `az vm list-skus --location japanwest --size Standard_D2s_v6 --zone -o table` と `az vm list-skus --location japanwest --size Standard_D4s_v6 --zone -o table` | `main.local.bicepparam` の VM size とゾーンのキャパシティ |
+| DB VM の CustomScript が失敗する | VM 拡張のログで `LUN 0` と `/dev/disk/azure/data/by-lun/0` を確認 | 既存 VM は削除せず、修正後に `skipVmCreationDb=true` と新しい `forceUpdateTagDb` で拡張を再実行（[再デプロイ手順](../reference/bicep-techniques-guide.ja.md#53-forceupdatetag-で-custom-script-を再実行する)） |
 | DNS label が重複する | `appGatewayDnsLabel` がリージョン内で一意か | Step 4 |
 | Deployment が失敗する | Portal の Deployments の失敗リソースと error details | Step 7 |
 | MongoDB 接続に失敗する | `mongoDbAppPassword` と post-deployment script の値、`@` を含まない password か | Step 4、Step 9 |

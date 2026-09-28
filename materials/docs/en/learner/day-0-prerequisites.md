@@ -66,24 +66,30 @@ Switch subscriptions if needed.
 az account set --subscription "<SUBSCRIPTION_ID_OR_NAME>"
 ```
 
-This workshop uses 6 Basv2-series VMs.
+This workshop uses 6 Dsv6-series VMs.
 
 | VM Size | Count | vCPU Each | Total |
 |---|---:|---:|---:|
-| Standard_B2als_v2 (Web) | 2 | 2 | 4 |
-| Standard_B2als_v2 (App) | 2 | 2 | 4 |
-| Standard_B4as_v2 (DB) | 2 | 4 | 8 |
+| Standard_D2s_v6 (Web) | 2 | 2 | 4 |
+| Standard_D2s_v6 (App) | 2 | 2 | 4 |
+| Standard_D4s_v6 (DB) | 2 | 4 | 8 |
 | **Total** | **6** |  | **16 vCPU** |
 
 ```bash
-az vm list-usage --location japanwest \
-  --query "[?contains(name.value, 'standardBASv2Family') || name.value=='cores'].{Name:name.localizedValue, Current:currentValue, Limit:limit}" \
+az extension add --name quota
+SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+COMPUTE_SCOPE="/subscriptions/$SUBSCRIPTION_ID/providers/Microsoft.Compute/locations/japanwest"
+az quota list --scope "$COMPUTE_SCOPE" \
+  --query "[?contains(name, 'DSv6') || name=='cores'].{Quota:name, Limit:properties.limit.value}" \
+  -o table
+az quota usage list --scope "$COMPUTE_SCOPE" \
+  --query "[?contains(name, 'DSv6') || name=='cores'].{Quota:name, Current:properties.usages.value}" \
   -o table
 ```
 
-**Expected Result:** The Basv2 family or regional core limit has at least 16 available vCPUs.
+**Expected Result:** Both `Standard DSv6 Family vCPUs` and `Total Regional vCPUs` have at least **16 vCPUs** available (`Limit - Current`). If either row is missing, run `az quota list --scope "$COMPUTE_SCOPE" -o table` and `az quota usage list --scope "$COMPUTE_SCOPE" -o table` to discover the actual quota names.
 
-**Checkpoint:** If quota is insufficient, ask the instructor. You may need a different region or a quota increase.
+**Checkpoint:** Quota does not guarantee VM capacity in a zone. Check SKU restrictions in zones 1 and 2 with `az vm list-skus --location japanwest --size Standard_D2s_v6 --zone -o table` and `az vm list-skus --location japanwest --size Standard_D4s_v6 --zone -o table`. If quota or capacity is insufficient, ask the instructor about a different SKU/region or a quota increase.
 
 ## 4. Check Resource Providers
 

@@ -19,7 +19,7 @@
 //     --parameters main.bicepparam
 //
 // Estimated Deployment Time: 15-30 minutes
-// Estimated Cost: ~$59 per student for 48-hour workshop (includes Application Gateway)
+// Estimate Japan West Dsv6 costs with the Azure Pricing Calculator before deployment.
 // =============================================================================
 
 // =============================================================================
@@ -80,13 +80,13 @@ param deployKeyVault bool = true
 param deployStorage bool = true
 
 @description('VM size for Web tier')
-param webVmSize string = 'Standard_B2als_v2'
+param webVmSize string = 'Standard_D2s_v6'
 
 @description('VM size for App tier')
-param appVmSize string = 'Standard_B2als_v2'
+param appVmSize string = 'Standard_D2s_v6'
 
 @description('VM size for DB tier')
-param dbVmSize string = 'Standard_B4as_v2'
+param dbVmSize string = 'Standard_D4s_v6'
 
 @description('MongoDB data disk size in GB')
 param dbDataDiskSizeGB int = 128

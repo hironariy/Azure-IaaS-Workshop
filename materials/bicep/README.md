@@ -10,9 +10,9 @@ These templates deploy a highly available, 3-tier blog application infrastructur
 
 | Tier | Components | VM Size | Availability |
 |------|-----------|---------|-------------|
-| **Web** | 2 × NGINX reverse proxy VMs | Standard_B2als_v2 | Zone 1 & 2 |
-| **App** | 2 × Node.js/Express VMs | Standard_B2als_v2 | Zone 1 & 2 |
-| **DB** | 2 × MongoDB VMs | Standard_B4as_v2 | Zone 1 & 2 |
+| **Web** | 2 × NGINX reverse proxy VMs | Standard_D2s_v6 | Zone 1 & 2 |
+| **App** | 2 × Node.js/Express VMs | Standard_D2s_v6 | Zone 1 & 2 |
+| **DB** | 2 × MongoDB VMs | Standard_D4s_v6 | Zone 1 & 2 |
 
 ### Architecture Highlights
 
@@ -61,7 +61,7 @@ Click the button below to deploy the infrastructure directly to your Azure subsc
 - Active Azure subscription
 - Contributor role on the subscription or resource group
 - Sufficient quota for:
-  - 6 VMs (Basv2-series)
+  - 6 VMs (16 Dsv6-family and total regional vCPUs)
   - 6 managed disks
   - 1 public IP address
   - 1 Application Gateway v2
@@ -257,34 +257,20 @@ echo "blogapp-$(openssl rand -hex 2)"  # e.g., blogapp-a3f2
 | `deployMonitoring` | `true` | Deploy Log Analytics & DCR |
 | `deployKeyVault` | `true` | Deploy Key Vault |
 | `deployStorage` | `true` | Deploy Storage Account |
-| `webVmSize` | `Standard_B2als_v2` | Web tier VM size |
-| `appVmSize` | `Standard_B2als_v2` | App tier VM size |
-| `dbVmSize` | `Standard_B4as_v2` | DB tier VM size |
+| `webVmSize` | `Standard_D2s_v6` | Web tier VM size |
+| `appVmSize` | `Standard_D2s_v6` | App tier VM size |
+| `dbVmSize` | `Standard_D4s_v6` | DB tier VM size |
 | `dbDataDiskSizeGB` | `128` | MongoDB data disk size |
 
 ## 💰 Cost Estimation
 
-### Production Configuration (~$29/day)
+### Production Configuration
 
-| Resource | Quantity | Est. Cost/Day |
-|----------|----------|---------------|
-| Web VMs (B2als_v2) | 2 | $1.80 |
-| App VMs (B2als_v2) | 2 | $1.80 |
-| DB VMs (B4as_v2) | 2 | $7.20 |
-| MongoDB Data Disks (P10) | 2 × 128GB | $2.80 |
-| Application Gateway v2 | 1 | $7.30 |
-| Internal Load Balancer | 1 | $0.72 |
-| Azure Bastion | 1 | $4.40 |
-| Public IP | 2 | $0.24 |
-| Log Analytics | 1 | ~$2.00 |
-| Key Vault | 1 | ~$0.05 |
-| **Total** | | **~$29/day** |
+Estimate the cost of four `Standard_D2s_v6` and two `Standard_D4s_v6` VMs in Japan West, plus disks, Application Gateway, Bastion, monitoring, and networking, with the [Azure Pricing Calculator](https://azure.microsoft.com/pricing/calculator/) before running the workshop. The previous Basv2-based daily estimate does not apply to Dsv6. Check both regional and Dsv6-family vCPU quotas using the [Day 0 prerequisites](../docs/learner/day-0-prerequisites.ja.md); quota does not guarantee capacity in each zone.
 
-> **2-Day Workshop Estimate**: ~$59 per student
+### Development Configuration
 
-### Development Configuration (~$15/day)
-
-Use `dev.bicepparam` to disable Bastion, Key Vault, and Storage for lower cost during development.
+Use `dev.bicepparam` to disable Bastion, Key Vault, and Storage for development; it specifies a separate, smaller VM configuration from the production Dsv6 parameters.
 
 ## 🔍 Post-Deployment Steps
 

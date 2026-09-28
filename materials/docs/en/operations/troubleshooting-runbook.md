@@ -42,7 +42,7 @@ For multiple groups, replace `RESOURCE_GROUP` with the instructor-assigned value
 |---|---|
 | Failed operation | Azure Portal > Resource group > Deployments > failed deployment |
 | CLI operation details | `az deployment operation group list --resource-group "$RESOURCE_GROUP" --name main -o table` |
-| VM SKU availability | `az vm list-skus --location japanwest --size Standard_B -o table` |
+| VM SKU availability | `az vm list-skus --location japanwest --size Standard_D2s_v6 --zone -o table` and `az vm list-skus --location japanwest --size Standard_D4s_v6 --zone -o table` |
 | DNS label conflict | Change `appGatewayDnsLabel` to a unique value |
 | Missing parameters | Check empty strings in `materials/bicep/main.local.bicepparam` |
 
@@ -57,11 +57,11 @@ Common actions:
 
 ```bash
 az vm list-usage --location japanwest \
-  --query "[?contains(name.value, 'standardBASv2Family') || name.value=='cores'].{Name:name.localizedValue, Current:currentValue, Limit:limit}" \
+  --query "[?contains(name.value, 'DSv6') || name.value=='cores'].{Name:name.localizedValue, Current:currentValue, Limit:limit}" \
   -o table
 ```
 
-This workshop needs 16 Basv2-family vCPUs. Share the quota name and current value with the instructor.
+This workshop needs 16 Dsv6-family vCPUs. Check both family and regional quota headroom (`Limit - Current`); quota does not guarantee zonal capacity. See the Day 0 quota check for details, and share the quota name and current value with the instructor.
 
 ## 3. Entra ID App Registration Cannot Be Created
 

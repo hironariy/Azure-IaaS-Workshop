@@ -66,24 +66,30 @@ az account show --query "{subscription:name, subscriptionId:id, tenantId:tenantI
 az account set --subscription "<SUBSCRIPTION_ID_OR_NAME>"
 ```
 
-このワークショップでは Basv2 シリーズ VM を 6 台使います。
+このワークショップでは Dsv6 シリーズ VM を 6 台使います。
 
 | VM サイズ | 台数 | 各 vCPU | 合計 |
 |---|---:|---:|---:|
-| Standard_B2als_v2 (Web) | 2 | 2 | 4 |
-| Standard_B2als_v2 (App) | 2 | 2 | 4 |
-| Standard_B4as_v2 (DB) | 2 | 4 | 8 |
+| Standard_D2s_v6 (Web) | 2 | 2 | 4 |
+| Standard_D2s_v6 (App) | 2 | 2 | 4 |
+| Standard_D4s_v6 (DB) | 2 | 4 | 8 |
 | **合計** | **6** |  | **16 vCPU** |
 
 ```bash
-az vm list-usage --location japanwest \
-  --query "[?contains(name.value, 'standardBASv2Family') || name.value=='cores'].{Name:name.localizedValue, Current:currentValue, Limit:limit}" \
+az extension add --name quota
+SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+COMPUTE_SCOPE="/subscriptions/$SUBSCRIPTION_ID/providers/Microsoft.Compute/locations/japanwest"
+az quota list --scope "$COMPUTE_SCOPE" \
+  --query "[?contains(name, 'DSv6') || name=='cores'].{Quota:name, Limit:properties.limit.value}" \
+  -o table
+az quota usage list --scope "$COMPUTE_SCOPE" \
+  --query "[?contains(name, 'DSv6') || name=='cores'].{Quota:name, Current:properties.usages.value}" \
   -o table
 ```
 
-**期待結果:** Basv2 シリーズまたはリージョン全体で、少なくとも 16 vCPU 分の余裕があることを確認できます。
+**期待結果:** `Standard DSv6 Family vCPUs` と `Total Regional vCPUs` の両方で、`Limit - Current` が **16 vCPU 以上**です。行が表示されない場合は `az quota list --scope "$COMPUTE_SCOPE" -o table` と `az quota usage list --scope "$COMPUTE_SCOPE" -o table` で実際の quota 名を確認してください。
 
-**チェックポイント:** クォータが不足している場合は、講師に相談してください。リージョン変更やクォータ増加申請が必要になることがあります。
+**チェックポイント:** クォータが足りても、指定ゾーンでの VM キャパシティは保証されません。`az vm list-skus --location japanwest --size Standard_D2s_v6 --zone -o table` と `az vm list-skus --location japanwest --size Standard_D4s_v6 --zone -o table` でゾーン 1・2 の SKU 制限を確認してください。実際の容量不足やクォータ不足の場合は講師に相談し、別の SKU / リージョンやクォータ増加を検討します。
 
 ## 4. リソースプロバイダーを確認する
 

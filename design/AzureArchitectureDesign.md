@@ -59,20 +59,20 @@ This document defines the technical architecture requirements for the Azure IaaS
 #### Virtual Machine Specifications
 
 **Web Tier VMs (2 instances):**
-- VM SKU: Standard_B2als_v2 (2 vCPU, 4 GB RAM)
+- VM SKU: Standard_D2s_v6 (2 vCPU, 8 GiB RAM)
 - OS: Ubuntu 24.04 LTS
 - Availability: Spread across AZ 1 and AZ 2
 - Managed Disk: Standard SSD (OS: 30 GB)
 - Software: NGINX
-- **Rationale**: Basv2-series burstable VMs are ideal for workshop's intermittent, low-traffic workload (CPU credit model with burst capability)
+- **Rationale**: Dsv6 provides steady general-purpose performance; this size was selected for Japan West workshop capacity.
 
 **App Tier VMs (2 instances):**
-- VM SKU: Standard_B2als_v2 (2 vCPU, 4 GB RAM)
+- VM SKU: Standard_D2s_v6 (2 vCPU, 8 GiB RAM)
 - OS: Ubuntu 24.04 LTS
 - Availability: Spread across AZ 1 and AZ 2
 - Managed Disk: Standard SSD (OS: 30 GB)
 - Software: Node.js 24 LTS, Express (TypeScript), PM2 (process manager)
-- **Rationale**: Basv2-series is cost-effective for Node.js apps with low concurrent users (10-20 during workshop)
+- **Rationale**: Dsv6 offers 8 GiB for Node.js, Express, and the OS without relying on burst credits.
 - **Environment Configuration**: Bicep CustomScript injects production environment variables
   - `NODE_ENV=production`
   - `MONGODB_URI=mongodb://blogapp:<password>@10.0.3.4:27017,10.0.3.5:27017/blogapp?replicaSet=blogapp-rs0&authSource=blogapp`
@@ -80,14 +80,14 @@ This document defines the technical architecture requirements for the Azure IaaS
   - See [BackendApplicationDesign.md](BackendApplicationDesign.md#environment-aware-configuration) for details
 
 **DB Tier VMs (2 instances):**
-- VM SKU: Standard_B4as_v2 (4 vCPU, 16 GB RAM)
+- VM SKU: Standard_D4s_v6 (4 vCPU, 16 GiB RAM)
 - OS: Ubuntu 24.04 LTS
 - Availability: Spread across AZ 1 and AZ 2
 - Managed Disk: 
   - OS: Standard SSD (30 GB)
   - Data: Premium SSD (128 GB or 256 GB)
 - Software: MongoDB (Replica Set configuration)
-- **Rationale**: B4as_v2 supports Premium SSD, provides sufficient memory for MongoDB with workshop data volumes, and uses the Basv2 CPU credit model for light database operations
+- **Rationale**: Dsv6 supports Premium SSD and offers 16 GiB for MongoDB. Its NVMe data disk is identified by Azure's LUN 0 link, not its `/dev/nvme*` name.
 
 #### VM Extensions Required
 - Azure Monitor Agent (for all VMs)
@@ -186,72 +186,19 @@ main.bicepparam (Student edits)
 - **Proximity Placement Groups**: NOT used (explain: AZ distribution takes priority)
 - **Ephemeral OS Disks**: Evaluate per tier (consider for stateless web tier)
 
-#### Architecture Decision Record: VM Series Selection (Basv2-series vs D-series)
+#### Architecture Decision Record: VM Series Selection (Dsv6)
 
-**Decision**: Use Basv2-series (burstable) VMs instead of D-series (general-purpose) VMs for workshop environment
+**Decision**: Use four Standard_D2s_v6 VMs and two Standard_D4s_v6 VMs for the Japan West workshop.
 
 **Context**:
-- Workshop duration: 2 days (48 hours)
-- Expected load: 10-20 concurrent users per student deployment
-- Usage pattern: Intermittent testing during workshop with idle periods during lectures
-- Students use personal Azure subscriptions (cost-sensitive)
-- Educational environment, not production workload
+- The workshop uses two Availability Zones and needs 16 Dsv6-family and 16 total regional vCPUs for a new deployment.
+- Basv2 and Dsv5 sizes were capacity-constrained during workshop deployment; quotas and SKU listings alone do not guarantee zonal capacity.
+- Dsv6 supplies consistent CPU performance and Premium SSD support. Its NVMe interface requires the DB setup script to identify the managed data disk by Azure LUN instead of a Linux device name.
 
-**Comparison Analysis**:
-
-| Criteria | Basv2-series (Chosen) | D-series (Alternative) |
-|----------|-------------------|------------------------|
-| **Cost (48h, East US)** | ~$22/student | ~$37/student |
-| **Cost Savings** | ✅ **41% cheaper** | Baseline |
-| **Workload Match** | ✅ Perfect for burstable | Overkill for workshop |
-| **CPU Model** | 30-40% baseline + burst to 100% | 100% always available |
-| **Availability Zones** | ✅ Supported | ✅ Supported |
-| **Premium SSD (DB)** | ✅ Supported (B4as_v2) | ✅ Supported |
-| **Best For** | Dev/test, low-traffic apps | Production, sustained load |
-
-**Cost Analysis (per student, 48 hours)**:
-- Web: 2 × B2als_v2 @ $0.0376/hr = $3.61 (vs 2 × D2s_v5 @ $0.096/hr = $9.22)
-- App: 2 × B2als_v2 @ $0.0376/hr = $3.61 (vs 2 × D2s_v5 @ $0.096/hr = $9.22)
-- DB: 2 × B4as_v2 @ $0.150/hr = $14.40 (vs 2 × D4s_v5 @ $0.192/hr = $18.43)
-- **Total: $21.62 vs $36.87 = $15.25 savings per student**
-- **For 25 students: $381.25 total savings**
-
-**Why Basv2-series Works for This Workshop**:
-1. **Burstable workload pattern**: Students deploy → test briefly → idle during lectures → occasional testing
-2. **CPU credits system**: VMs earn credits during idle time, spend during bursts (perfect match)
-3. **Low baseline sufficient**: Basv2 baseline CPU plus burst credits are enough for NGINX/Node.js with light workshop traffic
-4. **Memory adequate**: 4 GB sufficient for web/app tiers; 16 GB appropriate for MongoDB with workshop data
-5. **No performance compromise**: Workshop load is unlikely to exhaust CPU credits; even if it does, Basv2 baseline performance is acceptable for the lab workload
-
-**When Would D-series Be Better?** (Teaching Opportunity)
-- Production workloads with sustained 24/7 traffic
-- CPU utilization consistently > 40-50%
-- Strict performance SLAs required
-- Latency-sensitive applications
-- High-throughput database operations
-
-**Educational Value**:
-This choice becomes a teaching moment: "We're using Basv2-series because workshop load is intermittent and burstable. In production with sustained traffic, you'd choose:
-- **D-series**: General-purpose workloads
-- **E-series**: Memory-optimized (large databases, caching)
-- **F-series**: Compute-optimized (batch processing, analytics)
-- Understanding workload patterns is key to Azure cost optimization."
-
-**AWS Comparison for Students**:
-- Basv2-series ≈ AWS T3/T4g instances (burstable)
-- D-series ≈ AWS M6i instances (general-purpose)
-
-**Consequences**:
-- ✅ 41% cost reduction for students
-- ✅ Same HA/DR learning objectives achieved
-- ✅ Additional lesson on VM selection and cost optimization
-- ⚠️ If students stress-test heavily, may hit CPU baseline (becomes teaching opportunity)
-- ✅ All technical requirements met (AZ support, Premium SSD, ASR compatibility)
-
-**Alternatives Considered**:
-1. D-series: Better for production, but unnecessarily expensive for workshop
-2. A-series: Cheaper but older generation, limited AZ support
-3. PaaS (App Service, Cosmos DB): Better for production, but workshop focuses on IaaS learning
+**Trade-offs and alternatives**:
+- Dsv6 is expected to cost more than burstable Basv2. Calculate current Japan West costs per student with the [Azure Pricing Calculator](https://azure.microsoft.com/pricing/calculator/) before each workshop.
+- If available in the required zones, Basv2 remains a lower-cost option for intermittent workloads (similar to AWS T3/T4g); Dsv6 is comparable to a general-purpose AWS M-series VM.
+- PaaS services simplify operations but do not meet this workshop's IaaS learning objective.
 
 ### 3. Load Balancing
 
@@ -594,10 +541,9 @@ Required tags for all resources:
 
 #### VM Sizing Strategy
 - Right-size for workshop duration (2 days)
-- Match VM series to workload characteristics (burstable for intermittent load)
-- Use Basv2-series burstable VMs (cost-optimized for dev/test scenarios)
-- **Cost Optimization**: Basv2-series saves 41% compared to D-series ($22 vs $37 per student for 48 hours)
-- **Production Note**: Production workloads would typically use D/E/F-series for consistent performance
+- Use Dsv6-series general-purpose VMs for the two-day workshop in Japan West.
+- Check Dsv6-family and total regional quota (16 vCPUs each) and both zones' SKU restrictions before deploying.
+- Review cost for 20-30 concurrent student deployments; Dsv6 is not covered by the former Basv2 estimate.
 
 #### Resource Lifecycle
 - Auto-shutdown for non-production resources
@@ -606,38 +552,20 @@ Required tags for all resources:
 
 #### Cost Estimation (per student, 2-day workshop)
 
-**VM Compute Costs (48 hours, East US region, pay-as-you-go)**:
-- Web Tier: 2 × B2als_v2 @ $0.0376/hr = **$3.61**
-- App Tier: 2 × B2als_v2 @ $0.0376/hr = **$3.61**
-- DB Tier: 2 × B4as_v2 @ $0.150/hr = **$14.40**
-- **VM Subtotal**: **$21.62**
+Use the [Azure Pricing Calculator](https://azure.microsoft.com/pricing/calculator/) for current Japan West rates for four D2s_v6 and two D4s_v6 VMs (48 hours), six Standard SSD OS disks, two 128-GiB Premium SSD data disks, Application Gateway, Bastion, networking, monitoring, and any optional backup/replication resources. The former East US Basv2-based dollar figures do not apply.
 
-**Additional Infrastructure Costs (48 hours)**:
-- Managed Disks (6 × Standard SSD 30GB + 2 × Premium SSD 128GB): **~$2.50**
-- Application Gateway (Standard_v2, 1 capacity unit) + Public IP: **~$12.00**
-- Internal Load Balancer + Private IP: **~$1.00**
-- Storage Account (Standard LRS, minimal usage): **~$0.50**
-- Azure Bastion (Standard SKU): **~$9.00** (enables native client SSH from terminal)
-- Log Analytics (30-day retention, light ingestion): **~$2.00**
-- Azure Backup (Recovery Services Vault): **~$1.00**
-- Azure Site Recovery (replication): **~$6.00**
-- Data transfer (minimal): **~$0.50**
-
-**Total Estimated Cost**: **~$56 per student** for 48-hour workshop
-
-**Note**: Application Gateway adds ~$11 vs Standard Load Balancer, but provides:
+Application Gateway provides:
 - SSL/TLS termination (no NGINX HTTPS config needed)
 - Azure-provided DNS label (no custom domain needed)
 - Layer 7 load balancing features
 - Optional WAF for security
 
 **Cost Optimization Tips for Students**:
-- Deallocate VMs during breaks: Save ~$0.50/hour
-- Use Bastion only when needed: Deallocate to save $0.19/hour
+- Deallocate VMs during breaks to reduce compute charges (preserve managed disks).
+- Deploy Bastion only when needed and confirm its ongoing charges.
 - Delete all resources after workshop: Zero ongoing costs
-- **For 25 students, total workshop cost**: ~$1,175
 
-*Note: Prices based on East US region, pay-as-you-go rates (December 2025). Actual costs vary by region, currency, and enterprise agreements.*
+*Actual costs depend on region, usage, currency, and subscription discounts.*
 
 ### 12. Performance Requirements
 
@@ -718,19 +646,11 @@ Required tags for all resources:
   - Multi-VM file access
 - **Tradeoffs**: Document cost, performance, protocol differences
 
-### Basv2-series vs D-series VMs
-- **Workshop Choice**: Basv2-series (burstable VMs)
-- **Production Alternative**: D-series (general-purpose), E-series (memory-optimized), F-series (compute-optimized)
-- **Reason for Basv2-series**:
-  - 41% cost savings for workshop ($22 vs $37 per student)
-  - Workload characteristics match perfectly (intermittent, low-traffic)
-  - Teaches VM selection and cost optimization concepts
-- **When to Use D-series**:
-  - Production workloads with sustained traffic
-  - CPU utilization > 40-50% consistently
-  - Strict performance SLAs
-- **Tradeoffs**: Basv2-series uses a CPU credit system (30-40% baseline, burst to 100%); D-series provides consistent 100% CPU availability
-- **AWS Equivalent**: Basv2-series ≈ T3/T4g; D-series ≈ M6i
+### Dsv6-series vs Basv2-series VMs
+- **Workshop Choice**: Dsv6-series (steady general-purpose performance, NVMe-managed disks).
+- **Alternative**: Basv2-series (CPU-credit-based burstable VMs) if the required sizes and zonal capacity are available.
+- **Trade-off**: Dsv6 avoids CPU-credit throttling but costs more; validate current Japan West pricing and capacity before workshops.
+- **AWS Equivalent**: Dsv6 ≈ general-purpose M-series; Basv2 ≈ burstable T-series.
 
 ### IaaS VMs vs PaaS
 - **Workshop Choice**: IaaS VMs (intentional for learning)

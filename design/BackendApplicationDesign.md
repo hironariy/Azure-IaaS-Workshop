@@ -5388,9 +5388,9 @@ For production environments, consider blue-green deployment pattern:
 
 | Component | Specification | Rationale |
 |-----------|--------------|-----------|
-| **CPU** | 2 vCPU (Standard_B2als_v2) | Node.js single-threaded, Basv2 CPU credit model with burst capability |
-| **Memory** | 4 GB RAM | ~512 MB per Node process + OS overhead + workshop headroom |
-| **Storage** | 30 GB Premium SSD | Fast npm install, TypeScript compilation, logs |
+| **CPU** | 2 vCPU (Standard_D2s_v6) | Steady performance for Node.js and OS overhead |
+| **Memory** | 8 GiB RAM | ~512 MB per Node process + OS overhead + workshop headroom |
+| **Storage** | 30 GiB Standard SSD (OS) | npm install, TypeScript compilation, logs |
 | **Network** | 1 Gbps | Sufficient for API responses (JSON payloads) |
 
 **Performance Baselines** (workshop scale):
@@ -5420,25 +5420,11 @@ When to add more API VMs:
 ```
 10,000 daily active users:
 - Peak RPS: ~100 requests/second
-- Recommended: 4-6 VMs (Standard_B2als_v2)
+- Recommended: 4-6 VMs (right-size from Standard_D2s_v6 after measuring load)
 - Or migrate to Azure Container Apps (auto-scaling)
 ```
 
-**Cost Estimate** (East US, pay-as-you-go):
-
-```
-Workshop Configuration (2 VMs):
-- 2x Standard_B2als_v2: ~$27/month each = ~$55/month
-- 2x Premium SSD 30GB: $5/month each = $10/month
-- Load Balancer: $18/month
-- Bandwidth: ~$5/month
-Total: ~$88/month
-
-Scale-up Configuration (6 VMs):
-- 6x Standard_B2als_v2: ~$165/month
-- Other resources: $30/month
-Total: ~$195/month
-```
+**Cost Estimate**: Use the [Azure Pricing Calculator](https://azure.microsoft.com/pricing/calculator/) with Japan West rates for the chosen Dsv6 VM count, Standard SSD OS disks, load balancer, and bandwidth. The former Basv2/East US estimate is not applicable.
 
 **Monitoring Resource Usage**:
 
@@ -6032,12 +6018,12 @@ Benefits: Optimal scaling, polyglot microservices
 
 | Pattern | Monthly Cost | Auto-scale? | Management Effort |
 |---------|--------------|-------------|-------------------|
-| **VMs** (Standard_B2als_v2) | ~$55 (2 VMs always on) | ❌ Manual | High (OS patching, systemd) |
-| **Container Apps** (consumption) | ~$60 (scale to zero) | ✅ Yes | Low (managed platform) |
-| **Azure Functions** (consumption) | ~$10 (pay per execution) | ✅ Yes | Very low (fully serverless) |
+| **VMs** (Standard_D2s_v6) | Varies by region and usage | ❌ Manual | High (OS patching, systemd) |
+| **Container Apps** (consumption) | Usage-based | ✅ Yes | Low (managed platform) |
+| **Azure Functions** (consumption) | Pay per execution | ✅ Yes | Very low (fully serverless) |
 
-**Workshop Scale**: VMs are cost-competitive at small scale.  
-**Production Scale** (10,000+ users): Container Apps or Functions become more cost-effective.
+**Workshop Scale**: Compare current VM and managed-service rates before selecting a hosting model.
+**Production Scale** (10,000+ users): Reassess whether Container Apps or Functions offer better cost and operational fit.
 
 ---
 

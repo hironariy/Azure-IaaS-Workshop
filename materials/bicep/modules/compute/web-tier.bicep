@@ -13,11 +13,9 @@
 // Traffic Flow:
 //   Internet → Application Gateway (HTTPS) → Web Tier (HTTP/NGINX) → App Tier
 //
-// VM Sizing Rationale (B2als_v2):
-//   - 2 vCPU, 4 GB RAM
-//   - Basv2 CPU credit model with burst capability
-//   - Perfect for NGINX reverse proxy workload
-//   - Cost-effective Basv2 option for workshop traffic
+// VM Sizing Rationale (D2s_v6):
+//   - 2 vCPU, 8 GiB RAM
+//   - General-purpose performance for NGINX and workshop traffic
 // =============================================================================
 
 @description('Azure region for all resources')
@@ -44,7 +42,7 @@ param adminUsername string = 'azureuser'
 param sshPublicKey string
 
 @description('VM size for web tier')
-param vmSize string = 'Standard_B2als_v2'
+param vmSize string = 'Standard_D2s_v6'
 
 @description('Enable Azure Monitor Agent')
 param enableMonitoring bool = true
