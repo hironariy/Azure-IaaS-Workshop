@@ -204,6 +204,11 @@ resource vm 'Microsoft.Compute/virtualMachines@2023-09-01' = if (!skipVmCreation
           ]
         }
         // Enable automatic OS patching
+        // Platform patching uses the VM's own package manager and patch sources
+        // (https://learn.microsoft.com/azure/virtual-machines/automatic-vm-guest-patching).
+        // DB VMs remove the rolling `linux-azure` kernel metapackages and pin apt to
+        // the 6.8 LTS track (linux-azure-lts-24.04), so patch + reboot keeps
+        // MongoDB 8.0 on a supported kernel (Issue #26, db-tier.bicep).
         patchSettings: {
           patchMode: 'AutomaticByPlatform'
           automaticByPlatformSettings: {

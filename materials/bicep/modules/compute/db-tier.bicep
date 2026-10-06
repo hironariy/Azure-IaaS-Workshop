@@ -23,6 +23,13 @@
 //   - Educational value: Demonstrates replication without complexity
 //   - Limitation: Cannot survive majority loss (both nodes needed for writes)
 //   - Alternative: 3-node with arbiter for production (discussed in workshop)
+//
+// OS Kernel (Issue #26):
+//   - MongoDB 8.0.x does not start on Linux >= 6.19 (SERVER-121912)
+//   - DB VMs therefore run Ubuntu 24.04's long-term Azure kernel track
+//     `linux-azure-lts-24.04` (6.8.x, security updates continue) instead of
+//     the rolling `linux-azure` track (7.0 at the time of writing)
+//   - Helper: scripts/mongodb-kernel-track.sh (apt pin, GRUB, finalize unit)
 // =============================================================================
 
 @description('Azure region for all resources')
@@ -95,15 +102,23 @@ var dataDisks = [
   }
 ]
 
+// Kernel-track helper (Issue #26): keeps DB VMs on the Ubuntu 24.04 LTS Azure
+// kernel (6.8) because MongoDB 8.0 does not start on Linux >= 6.19.
+// Embedded into the install script as base64 and installed on the VM as
+// /usr/local/sbin/blogapp-kernel-track.
+var kernelTrackScript = loadTextContent('scripts/mongodb-kernel-track.sh')
+
 // MongoDB 8.0 installation script (base64 encoded)
 // This script:
-//   1. Updates apt packages
-//   2. Mounts data disk to /data/mongodb
-//   3. Installs MongoDB 8.0
-//   4. Configures for replica set
-//   5. Enables and starts mongod service
+//   1. Switches to the 6.8 LTS kernel track (apt pin + linux-azure-lts-24.04)
+//   2. Updates apt packages
+//   3. Mounts data disk to /data/mongodb
+//   4. Installs MongoDB 8.0 (8.0 repository only, no major upgrades)
+//   5. Configures for replica set
+//   6. Enables mongod; starts it on the 6.8 kernel, or schedules a reboot
+//      into 6.8 first (fresh VM) - mongod then starts after that reboot
 // Note: Replica set initialization is a separate manual step
-var mongoInstallScript = replace('''
+var mongoInstallScript = replace(replace('''
 #!/bin/bash
 set -e
 
@@ -147,6 +162,27 @@ export DEBIAN_FRONTEND=noninteractive
 
 # Execute wait function (initial check to reduce log spam)
 wait_for_apt_lock
+
+# ==========================================================
+# Kernel track: Ubuntu 24.04 LTS Azure kernel (6.8) for MongoDB 8.0 (Issue #26)
+# ==========================================================
+# MongoDB 8.0.x refuses to start on Linux >= 6.19 (SERVER-121912), but the
+# marketplace image follows the rolling `linux-azure` kernel (now 7.0).
+# The helper (scripts/mongodb-kernel-track.sh, embedded below) installs
+# `linux-azure-lts-24.04`, removes the rolling metapackages and writes an apt
+# pin, so neither the `apt-get upgrade` below, unattended-upgrades nor Azure
+# platform patching (AutomaticByPlatform) brings a >= 6.19 kernel back.
+# It runs BEFORE `apt-get upgrade` on purpose.
+# https://discourse.ubuntu.com/t/kernel-7-0-is-now-the-default-for-ubuntu-24-04-lts-on-azure/88459
+# https://ubuntu.com/cloud/public-cloud/docs/all-clouds-how-to/migrate-kernel-variants/
+# Troubleshooting on the VM: sudo blogapp-kernel-track status
+# ==========================================================
+KERNEL_TRACK_HELPER=/usr/local/sbin/blogapp-kernel-track
+echo '__KERNEL_TRACK_B64__' | base64 -d > "${KERNEL_TRACK_HELPER}.new"
+install -m 0755 "${KERNEL_TRACK_HELPER}.new" "$KERNEL_TRACK_HELPER"
+rm -f "${KERNEL_TRACK_HELPER}.new"
+"$KERNEL_TRACK_HELPER" prepare
+"$KERNEL_TRACK_HELPER" install-units
 
 # Update packages with lock timeout (backup protection against race conditions)
 # DPkg::Lock::Timeout waits up to 120 seconds if another process holds the lock
@@ -418,9 +454,28 @@ systemctl stop mongod 2>/dev/null || true
 # Ensure correct ownership after config change
 chown -R mongodb:mongodb /data/mongodb
 
-# Enable and start MongoDB with new configuration
+# Enable MongoDB so it starts on every boot
 systemctl daemon-reload
 systemctl enable mongod
+
+# ==========================================================
+# Start MongoDB only on the 6.8 LTS kernel (Issue #26)
+# ==========================================================
+# A fresh VM is still running the image's rolling kernel (6.17/7.0) at this
+# point. Then we do NOT start mongod; instead the helper selects the 6.8 kernel
+# in GRUB and schedules a reboot in 1 minute. The CustomScript must not
+# reboot synchronously, so it exits 0 here:
+# https://learn.microsoft.com/azure/virtual-machines/extensions/custom-script-linux#troubleshooting
+# After the reboot mongod starts automatically (enabled above) and
+# blogapp-kernel-track-finalize.service purges the non-LTS kernels.
+# Reruns (forceUpdateTag) on the LTS kernel take the normal start path.
+if ! "$KERNEL_TRACK_HELPER" is-lts-running; then
+  "$KERNEL_TRACK_HELPER" schedule-switch 1
+  echo "MongoDB installed and enabled. It will start after the scheduled reboot into the 6.8 LTS kernel."
+  echo "Check after ~3 minutes: uname -r (6.8.x), systemctl is-active mongod, sudo blogapp-kernel-track status"
+  exit 0
+fi
+
 systemctl start mongod
 
 # Wait for MongoDB to start (give it more time on first boot)
@@ -462,7 +517,7 @@ exit 1
 #
 # Check replica set status:
 # mongosh --eval "rs.status()"
-''', '__DATA_DISK_SIZE_GB__', string(dataDiskSizeGB))
+''', '__DATA_DISK_SIZE_GB__', string(dataDiskSizeGB)), '__KERNEL_TRACK_B64__', base64(kernelTrackScript))
 
 // =============================================================================
 // Database Tier VMs
