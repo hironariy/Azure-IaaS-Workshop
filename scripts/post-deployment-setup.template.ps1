@@ -2,7 +2,7 @@
 # Post-Deployment Setup Script - TEMPLATE (Windows 11 / PowerShell)
 # =============================================================================
 # This script configures the deployed Azure VMs after Bicep deployment:
-#   1. Initializes MongoDB replica set
+#   1. Initializes the 3-member MongoDB replica set (Issue #30)
 #   2. Creates MongoDB application users
 #   3. Verifies all configurations
 #
@@ -19,6 +19,11 @@
 #
 # Usage:
 #   .\scripts\post-deployment-setup.local.ps1 [-ResourceGroup "rg-workshop-3"]
+#
+# Re-running is safe (idempotent): an already-initialized replica set is never
+# re-initiated or force-reconfigured, and existing users are kept.
+# Existing 2-node environments: add the 3rd member with the migration
+# procedure in the troubleshooting runbook (section 7.2), not with this script.
 #
 # =============================================================================
 
@@ -42,12 +47,14 @@ $Config = @{
     # VM Names (change if using different naming convention)
     DbVm1Name  = "vm-db-az1-prod"
     DbVm2Name  = "vm-db-az2-prod"
+    DbVm3Name  = "vm-db-az3-prod"
     AppVm1Name = "vm-app-az1-prod"
     WebVm1Name = "vm-web-az1-prod"
 
     # MongoDB IPs (from Bicep deployment)
     DbVm1Ip = "10.0.3.4"
     DbVm2Ip = "10.0.3.5"
+    DbVm3Ip = "10.0.3.6"
 }
 # =============================================================================
 
@@ -149,13 +156,24 @@ catch {
 try {
     $DbVm1 = Get-AzVM -ResourceGroupName $ResourceGroup -Name $Config.DbVm1Name -ErrorAction Stop
     $DbVm2 = Get-AzVM -ResourceGroupName $ResourceGroup -Name $Config.DbVm2Name -ErrorAction Stop
-    Write-LogSuccess "All DB VMs found in resource group"
 }
 catch {
     Write-LogError "DB VMs not found! Ensure Bicep deployment completed successfully."
     Write-LogError $_.Exception.Message
     exit 1
 }
+try {
+    $DbVm3 = Get-AzVM -ResourceGroupName $ResourceGroup -Name $Config.DbVm3Name -ErrorAction Stop
+}
+catch {
+    # Issue #30: the replica set needs 3 data-bearing voting members so that
+    # any single-node failure still leaves a majority (2 of 3).
+    Write-LogError "$($Config.DbVm3Name) not found. The workshop now uses a 3-node replica set (Issue #30)."
+    Write-LogError "New deployment: re-run the Bicep deployment (it creates vm-db-az3)."
+    Write-LogError "Existing 2-node environment: follow troubleshooting runbook 7.2 '2-node to 3-node migration'."
+    exit 1
+}
+Write-LogSuccess "All 3 DB VMs found in resource group"
 
 # -----------------------------------------------------------------------------
 # Step 2: Wait for VMs to be ready
@@ -213,12 +231,13 @@ function Wait-DbVmReady {
     Write-LogError "MongoDB 8.0 needs the 6.8 LTS kernel (Issue #26). On $VMName run:"
     Write-LogError "  uname -r ; sudo blogapp-kernel-track status ; sudo journalctl -u mongod -u blogapp-kernel-track-finalize -b --no-pager | tail -50"
     Write-LogError "Fix: troubleshooting runbook section 7.1 'MongoDB Does Not Start: Linux Kernel 6.19 Or Newer' (Issue #26)."
-    Write-LogError "Re-run this script when both DB VMs are ready (it is safe to re-run)."
+    Write-LogError "Re-run this script when all 3 DB VMs are ready (it is safe to re-run)."
     exit 1
 }
 
 Wait-DbVmReady -VMName $Config.DbVm1Name
 Wait-DbVmReady -VMName $Config.DbVm2Name
+Wait-DbVmReady -VMName $Config.DbVm3Name
 
 Write-LogSuccess "VMs are ready"
 
@@ -227,43 +246,85 @@ Write-LogSuccess "VMs are ready"
 # -----------------------------------------------------------------------------
 Write-LogInfo "Step 3: Initializing MongoDB replica set..."
 
-# Check if replica set is already initialized
-$rsStatusScript = "mongosh --quiet --eval 'rs.status().ok' 2>/dev/null || echo '0'"
-$rsStatusResult = Invoke-VMCommand -ResourceGroupName $ResourceGroup -VMName $Config.DbVm1Name -Script $rsStatusScript
+# Replica set seed list: all 3 members. mongosh/drivers use it to find the
+# current PRIMARY, so later steps work even if an election already moved the
+# PRIMARY away from vm-db-az1.
+$RsHosts = "$($Config.DbVm1Ip):27017,$($Config.DbVm2Ip):27017,$($Config.DbVm3Ip):27017"
+$RsUri = "mongodb://$RsHosts/?replicaSet=$($Config.ReplicaSetName)"
 
-$rsInitialized = $rsStatusResult.Value | Where-Object { $_.Message -match "^1$" }
-
-if ($rsInitialized) {
-    Write-LogWarning "Replica set already initialized, skipping..."
+function Get-RunCommandText {
+    param($Result)
+    return (($Result.Value | ForEach-Object { $_.Message }) -join "`n")
 }
-else {
-    Write-LogInfo "Initializing replica set $($Config.ReplicaSetName)..."
-    
+
+# Check whether the replica set is already initialized (idempotency).
+# rs.conf() throws NotYetInitialized on a fresh node.
+$rsStateScript = @'
+mongosh --quiet --eval 'try { print("RSSTATE initialized " + rs.conf().members.length) } catch (e) { print("RSSTATE uninitialized " + e.codeName) }'
+'@
+$rsStateResult = Invoke-VMCommand -ResourceGroupName $ResourceGroup -VMName $Config.DbVm1Name -Script $rsStateScript
+$rsStateMatch = [regex]::Match((Get-RunCommandText $rsStateResult), 'RSSTATE (initialized|uninitialized) (\S+)')
+
+if ($rsStateMatch.Success -and $rsStateMatch.Groups[1].Value -eq "initialized") {
+    $rsMemberCount = $rsStateMatch.Groups[2].Value
+    Write-LogWarning "Replica set already initialized ($rsMemberCount members), skipping rs.initiate."
+    if ($rsMemberCount -ne "3") {
+        # Never force-reconfigure here: adding a member to a live set must be
+        # done with rs.add() after the new VM is ready (runbook 7.2).
+        Write-LogWarning "Expected 3 members. For an existing 2-node set, follow troubleshooting runbook 7.2 (rs.add, wait for initial sync)."
+    }
+}
+elseif ($rsStateMatch.Success) {
+    Write-LogInfo "Initializing replica set $($Config.ReplicaSetName) with 3 members..."
+
+    # All 3 members are data-bearing, voting (votes: 1) and electable
+    # (priority > 0). vm-db-az1 gets priority 2 only to make the INITIAL
+    # PRIMARY deterministic for the workshop steps. Side effect to observe on
+    # Day 2: after vm-db-az1 recovers and catches up, it calls a "priority
+    # takeover" election and becomes PRIMARY again (a second short election).
     $initScript = @"
 mongosh --quiet --eval 'rs.initiate({
     _id: "$($Config.ReplicaSetName)",
     members: [
-        { _id: 0, host: "$($Config.DbVm1Ip):27017", priority: 2 },
-        { _id: 1, host: "$($Config.DbVm2Ip):27017", priority: 1 }
+        { _id: 0, host: "$($Config.DbVm1Ip):27017", priority: 2, votes: 1 },
+        { _id: 1, host: "$($Config.DbVm2Ip):27017", priority: 1, votes: 1 },
+        { _id: 2, host: "$($Config.DbVm3Ip):27017", priority: 1, votes: 1 }
     ]
 })'
 "@
-    
+
     Invoke-VMCommand -ResourceGroupName $ResourceGroup -VMName $Config.DbVm1Name -Script $initScript
-    
-    Write-LogInfo "Waiting for replica set to elect primary (30 seconds)..."
-    Start-Sleep -Seconds 30
-    
-    Write-LogSuccess "Replica set initialized"
+    Write-LogSuccess "Replica set initiated"
+}
+else {
+    Write-LogError "Could not read the replica set state from $($Config.DbVm1Name)."
+    Write-LogError "Check: mongosh --eval 'db.hello()' on $($Config.DbVm1Name), then re-run this script."
+    exit 1
+}
+
+# Wait until the set is healthy: exactly 1 PRIMARY and 2 SECONDARY.
+# (Replaces a fixed sleep: initial sync of an empty set takes ~10-30s.)
+Write-LogInfo "Waiting for 1 PRIMARY + 2 SECONDARY (up to 3 minutes)..."
+$rsHealthScript = @'
+mongosh --quiet --eval 'for (let i = 0; i < 36; i++) { let p = 0, s = 0; try { rs.status().members.forEach(m => { if (m.stateStr === "PRIMARY") p++; if (m.stateStr === "SECONDARY") s++; }); } catch (e) {} if (p === 1 && s === 2) { print("RSHEALTH ok"); quit(0); } sleep(5000); } print("RSHEALTH timeout");'
+'@
+$rsHealthResult = Invoke-VMCommand -ResourceGroupName $ResourceGroup -VMName $Config.DbVm1Name -Script $rsHealthScript
+if ((Get-RunCommandText $rsHealthResult) -match 'RSHEALTH ok') {
+    Write-LogSuccess "Replica set healthy: 1 PRIMARY + 2 SECONDARY"
+}
+else {
+    Write-LogWarning "Replica set did not reach 1 PRIMARY + 2 SECONDARY in time. See Step 6 output and troubleshooting runbook 7."
 }
 
 # -----------------------------------------------------------------------------
 # Step 4: Create MongoDB Admin User
 # -----------------------------------------------------------------------------
 Write-LogInfo "Step 4: Creating MongoDB admin user..."
+# Connect with the replica set URI so the write goes to the current PRIMARY
+# (createUser uses w:"majority" by default on a replica set).
 
 $adminUserScript = @"
-mongosh --quiet --eval '
+mongosh --quiet "$RsUri" --eval '
     db = db.getSiblingDB("admin");
     if (db.getUser("$($Config.AdminUser)") === null) {
         db.createUser({
@@ -293,7 +354,7 @@ Write-LogSuccess "MongoDB admin user ready"
 Write-LogInfo "Step 5: Creating MongoDB application user..."
 
 $appUserScript = @"
-mongosh --quiet --eval '
+mongosh --quiet "$RsUri" --eval '
     db = db.getSiblingDB("blogapp");
     if (db.getUser("$($Config.AppUser)") === null) {
         db.createUser({
@@ -324,8 +385,9 @@ Write-LogInfo "Step 6: Verifying configuration..."
 
 # Verify replica set status
 Write-LogInfo "Checking replica set status..."
-$rsVerifyScript = 'mongosh --quiet --eval "rs.status().members.forEach(m => print(m.name + \": \" + m.stateStr))"'
+$rsVerifyScript = 'mongosh --quiet --eval "rs.status().members.forEach(m => print(m.name + \": \" + m.stateStr + \" (health=\" + m.health + \")\"))"'
 Invoke-VMCommand -ResourceGroupName $ResourceGroup -VMName $Config.DbVm1Name -Script $rsVerifyScript
+Write-LogInfo "Expected: 3 members = 1 PRIMARY + 2 SECONDARY (10.0.3.4 is normally PRIMARY)."
 
 # -----------------------------------------------------------------------------
 # Step 7: Verify App Tier Environment Variables
@@ -375,5 +437,5 @@ Write-Host "  2. Build and deploy frontend to Web VMs"
 Write-Host "  3. Update NGINX configuration for API proxy"
 Write-Host ""
 Write-LogInfo "Connection string for backend:"
-Write-Host "  mongodb://$($Config.AppUser):$($Config.AppPassword)@$($Config.DbVm1Ip):27017,$($Config.DbVm2Ip):27017/blogapp?replicaSet=$($Config.ReplicaSetName)&authSource=blogapp"
+Write-Host "  mongodb://$($Config.AppUser):$($Config.AppPassword)@$RsHosts/blogapp?replicaSet=$($Config.ReplicaSetName)&authSource=blogapp&w=majority"
 Write-Host ""

@@ -3,7 +3,7 @@
 # Post-Deployment Setup Script - TEMPLATE
 # =============================================================================
 # This script configures the deployed Azure VMs after Bicep deployment:
-#   1. Initializes MongoDB replica set
+#   1. Initializes the 3-member MongoDB replica set (Issue #30)
 #   2. Creates MongoDB application users
 #   3. Verifies all configurations
 #
@@ -23,6 +23,11 @@
 #
 # Example:
 #   ./scripts/post-deployment-setup.local.sh rg-workshop-3
+#
+# Re-running is safe (idempotent): an already-initialized replica set is never
+# re-initiated or force-reconfigured, and existing users are kept.
+# Existing 2-node environments: add the 3rd member with the migration
+# procedure in the troubleshooting runbook (section 7.2), not with this script.
 # =============================================================================
 
 set -e
@@ -50,12 +55,14 @@ APP_PASSWORD="<YOUR_MONGODB_APP_PASSWORD>"
 # VM Names (change if using different naming convention)
 DB_VM1_NAME="vm-db-az1-prod"
 DB_VM2_NAME="vm-db-az2-prod"
+DB_VM3_NAME="vm-db-az3-prod"
 APP_VM1_NAME="vm-app-az1-prod"
 WEB_VM1_NAME="vm-web-az1-prod"
 
 # MongoDB IPs (from Bicep deployment)
 DB_VM1_IP="10.0.3.4"
 DB_VM2_IP="10.0.3.5"
+DB_VM3_IP="10.0.3.6"
 # =============================================================================
 
 # Colors for output
@@ -118,9 +125,18 @@ fi
 # Get VM IDs
 DB_VM1_ID=$(az vm show -g "$RESOURCE_GROUP" -n "$DB_VM1_NAME" --query id -o tsv 2>/dev/null || echo "")
 DB_VM2_ID=$(az vm show -g "$RESOURCE_GROUP" -n "$DB_VM2_NAME" --query id -o tsv 2>/dev/null || echo "")
+DB_VM3_ID=$(az vm show -g "$RESOURCE_GROUP" -n "$DB_VM3_NAME" --query id -o tsv 2>/dev/null || echo "")
 
 if [ -z "$DB_VM1_ID" ] || [ -z "$DB_VM2_ID" ]; then
     log_error "DB VMs not found! Ensure Bicep deployment completed successfully."
+    exit 1
+fi
+if [ -z "$DB_VM3_ID" ]; then
+    # Issue #30: the replica set needs 3 data-bearing voting members so that
+    # any single-node failure still leaves a majority (2 of 3).
+    log_error "$DB_VM3_NAME not found. The workshop now uses a 3-node replica set (Issue #30)."
+    log_error "New deployment: re-run the Bicep deployment (it creates vm-db-az3)."
+    log_error "Existing 2-node environment: follow troubleshooting runbook 7.2 '2-node to 3-node migration'."
     exit 1
 fi
 
@@ -178,12 +194,13 @@ wait_for_db_ready() {
     log_error "MongoDB 8.0 needs the 6.8 LTS kernel (Issue #26). On $vm_name run:"
     log_error "  uname -r ; sudo blogapp-kernel-track status ; sudo journalctl -u mongod -u blogapp-kernel-track-finalize -b --no-pager | tail -50"
     log_error "Fix: troubleshooting runbook section 7.1 'MongoDB Does Not Start: Linux Kernel 6.19 Or Newer' (Issue #26)."
-    log_error "Re-run this script when both DB VMs are ready (it is safe to re-run)."
+    log_error "Re-run this script when all 3 DB VMs are ready (it is safe to re-run)."
     exit 1
 }
 
 wait_for_db_ready "$DB_VM1_NAME" "$DB_VM1_ID"
 wait_for_db_ready "$DB_VM2_NAME" "$DB_VM2_ID"
+wait_for_db_ready "$DB_VM3_NAME" "$DB_VM3_ID"
 
 log_success "VMs are ready"
 
@@ -192,22 +209,14 @@ log_success "VMs are ready"
 # -----------------------------------------------------------------------------
 log_info "Step 3: Initializing MongoDB replica set..."
 
-# Check if replica set is already initialized
-RS_STATUS=$(az network bastion ssh \
-    --name "$BASTION_NAME" \
-    -g "$RESOURCE_GROUP" \
-    --target-resource-id "$DB_VM1_ID" \
-    --auth-type "ssh-key" \
-    --username "$USERNAME" \
-    --ssh-key "$SSH_KEY" \
-    -- -o StrictHostKeyChecking=no -t \
-    "mongosh --quiet --eval 'rs.status().ok' 2>/dev/null || echo '0'" 2>/dev/null | tr -d '\r\n')
+# Replica set seed list: all 3 members. mongosh/drivers use it to find the
+# current PRIMARY, so later steps work even if an election already moved the
+# PRIMARY away from vm-db-az1.
+RS_HOSTS="$DB_VM1_IP:27017,$DB_VM2_IP:27017,$DB_VM3_IP:27017"
+RS_URI="mongodb://$RS_HOSTS/?replicaSet=$REPLICA_SET_NAME"
 
-if [ "$RS_STATUS" = "1" ]; then
-    log_warning "Replica set already initialized, skipping..."
-else
-    log_info "Initializing replica set $REPLICA_SET_NAME..."
-    
+# Run a command on DB VM 1 through Bastion.
+db_vm1_ssh() {
     az network bastion ssh \
         --name "$BASTION_NAME" \
         -g "$RESOURCE_GROUP" \
@@ -216,24 +225,64 @@ else
         --username "$USERNAME" \
         --ssh-key "$SSH_KEY" \
         -- -o StrictHostKeyChecking=no -t \
-        "mongosh --quiet --eval 'rs.initiate({
+        "$1"
+}
+
+# Check whether the replica set is already initialized (idempotency).
+# rs.conf() throws NotYetInitialized on a fresh node.
+RS_STATE_LINE=$(db_vm1_ssh "mongosh --quiet --eval 'try { print(\"RSSTATE initialized \" + rs.conf().members.length) } catch (e) { print(\"RSSTATE uninitialized \" + e.codeName) }'" 2>/dev/null \
+    | tr -d '\r' | grep '^RSSTATE ' | tail -1 || true)
+log_info "Replica set state on $DB_VM1_NAME: ${RS_STATE_LINE:-unknown}"
+
+if [[ "$RS_STATE_LINE" == "RSSTATE initialized "* ]]; then
+    RS_MEMBER_COUNT="${RS_STATE_LINE##* }"
+    log_warning "Replica set already initialized ($RS_MEMBER_COUNT members), skipping rs.initiate."
+    if [ "$RS_MEMBER_COUNT" != "3" ]; then
+        # Never force-reconfigure here: adding a member to a live set must be
+        # done with rs.add() after the new VM is ready (runbook 7.2).
+        log_warning "Expected 3 members. For an existing 2-node set, follow troubleshooting runbook 7.2 (rs.add, wait for initial sync)."
+    fi
+elif [[ "$RS_STATE_LINE" == "RSSTATE uninitialized "* ]]; then
+    log_info "Initializing replica set $REPLICA_SET_NAME with 3 members..."
+
+    # All 3 members are data-bearing, voting (votes: 1) and electable
+    # (priority > 0). vm-db-az1 gets priority 2 only to make the INITIAL
+    # PRIMARY deterministic for the workshop steps. Side effect to observe on
+    # Day 2: after vm-db-az1 recovers and catches up, it calls a "priority
+    # takeover" election and becomes PRIMARY again (a second short election).
+    db_vm1_ssh "mongosh --quiet --eval 'rs.initiate({
             _id: \"$REPLICA_SET_NAME\",
             members: [
-                { _id: 0, host: \"$DB_VM1_IP:27017\", priority: 2 },
-                { _id: 1, host: \"$DB_VM2_IP:27017\", priority: 1 }
+                { _id: 0, host: \"$DB_VM1_IP:27017\", priority: 2, votes: 1 },
+                { _id: 1, host: \"$DB_VM2_IP:27017\", priority: 1, votes: 1 },
+                { _id: 2, host: \"$DB_VM3_IP:27017\", priority: 1, votes: 1 }
             ]
         })'"
-    
-    log_info "Waiting for replica set to elect primary (30 seconds)..."
-    sleep 30
-    
-    log_success "Replica set initialized"
+
+    log_success "Replica set initiated"
+else
+    log_error "Could not read the replica set state from $DB_VM1_NAME (got: '${RS_STATE_LINE:-nothing}')."
+    log_error "Check: mongosh --eval 'db.hello()' on $DB_VM1_NAME, then re-run this script."
+    exit 1
+fi
+
+# Wait until the set is healthy: exactly 1 PRIMARY and 2 SECONDARY.
+# (Replaces a fixed sleep: initial sync of an empty set takes ~10-30s.)
+log_info "Waiting for 1 PRIMARY + 2 SECONDARY (up to 3 minutes)..."
+RS_HEALTH=$(db_vm1_ssh "mongosh --quiet --eval 'for (let i = 0; i < 36; i++) { let p = 0, s = 0; try { rs.status().members.forEach(m => { if (m.stateStr === \"PRIMARY\") p++; if (m.stateStr === \"SECONDARY\") s++; }); } catch (e) {} if (p === 1 && s === 2) { print(\"RSHEALTH ok\"); quit(0); } sleep(5000); } print(\"RSHEALTH timeout\");'" 2>/dev/null \
+    | tr -d '\r' | grep '^RSHEALTH ' | tail -1 || true)
+if [ "$RS_HEALTH" = "RSHEALTH ok" ]; then
+    log_success "Replica set healthy: 1 PRIMARY + 2 SECONDARY"
+else
+    log_warning "Replica set did not reach 1 PRIMARY + 2 SECONDARY in time (${RS_HEALTH:-no answer}). See Step 6 output and troubleshooting runbook 7."
 fi
 
 # -----------------------------------------------------------------------------
 # Step 4: Create MongoDB Admin User
 # -----------------------------------------------------------------------------
 log_info "Step 4: Creating MongoDB admin user..."
+# Connect with the replica set URI so the write goes to the current PRIMARY
+# (createUser uses w:"majority" by default on a replica set).
 
 az network bastion ssh \
     --name "$BASTION_NAME" \
@@ -243,7 +292,7 @@ az network bastion ssh \
     --username "$USERNAME" \
     --ssh-key "$SSH_KEY" \
     -- -o StrictHostKeyChecking=no -t \
-    "mongosh --quiet --eval '
+    "mongosh --quiet \"$RS_URI\" --eval '
         db = db.getSiblingDB(\"admin\");
         if (db.getUser(\"$ADMIN_USER\") === null) {
             db.createUser({
@@ -274,7 +323,7 @@ az network bastion ssh \
     --username "$USERNAME" \
     --ssh-key "$SSH_KEY" \
     -- -o StrictHostKeyChecking=no -t \
-    "mongosh --quiet --eval '
+    "mongosh --quiet \"$RS_URI\" --eval '
         db = db.getSiblingDB(\"blogapp\");
         if (db.getUser(\"$APP_USER\") === null) {
             db.createUser({
@@ -307,7 +356,8 @@ az network bastion ssh \
     --username "$USERNAME" \
     --ssh-key "$SSH_KEY" \
     -- -o StrictHostKeyChecking=no -t \
-    "mongosh --quiet --eval 'rs.status().members.forEach(m => print(m.name + \": \" + m.stateStr))'"
+    "mongosh --quiet --eval 'rs.status().members.forEach(m => print(m.name + \": \" + m.stateStr + \" (health=\" + m.health + \")\"))'"
+log_info "Expected: 3 members = 1 PRIMARY + 2 SECONDARY (10.0.3.4 is normally PRIMARY)."
 
 # -----------------------------------------------------------------------------
 # Step 7: Verify App Tier Environment Variables
@@ -367,5 +417,5 @@ echo "  2. Build and deploy frontend to Web VMs"
 echo "  3. Update NGINX configuration for API proxy"
 echo ""
 log_info "Connection string for backend:"
-echo "  mongodb://$APP_USER:$APP_PASSWORD@$DB_VM1_IP:27017,$DB_VM2_IP:27017/blogapp?replicaSet=$REPLICA_SET_NAME&authSource=blogapp"
+echo "  mongodb://$APP_USER:$APP_PASSWORD@$RS_HOSTS/blogapp?replicaSet=$REPLICA_SET_NAME&authSource=blogapp&w=majority"
 echo ""
