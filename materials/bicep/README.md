@@ -61,8 +61,8 @@ Click the button below to deploy the infrastructure directly to your Azure subsc
 - Active Azure subscription
 - Contributor role on the subscription or resource group
 - Sufficient quota for:
-  - 6 VMs (16 Dsv6-family and total regional vCPUs)
-  - 6 managed disks
+  - 7 VMs (20 Dsv6-family and total regional vCPUs; the DB size must be available in zones 1, 2 and 3)
+  - 10 managed disks (7 OS disks + 3 MongoDB data disks)
   - 1 public IP address
   - 1 Application Gateway v2
   - 1 Internal Load Balancer
