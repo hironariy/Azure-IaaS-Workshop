@@ -4,6 +4,7 @@
  * Reference: /design/DatabaseDesign.md
  */
 
+import { randomBytes } from 'node:crypto';
 import mongoose, { Document, Schema, Types } from 'mongoose';
 
 export interface IPost extends Document {
@@ -87,17 +88,89 @@ postSchema.index({ tags: 1, status: 1, publishedAt: -1 }); // Posts by tag
 // Text index for search
 postSchema.index({ title: 'text', content: 'text', tags: 'text' });
 
+const MAX_SLUG_CODE_POINTS = 100;
+const FALLBACK_SLUG_BYTES = 6;
+
+export type SlugExistsChecker = (slug: string) => Promise<boolean>;
+
+function trimSlugEdges(slug: string): string {
+  return slug.replace(/^-+|-+$/g, '');
+}
+
+function truncateSlug(slug: string): string {
+  return trimSlugEdges(Array.from(slug).slice(0, MAX_SLUG_CODE_POINTS).join(''));
+}
+
+function buildSlugSegment(value: string): string {
+  const normalizedValue = value.normalize('NFKC').toLowerCase().trim();
+  const slug = normalizedValue
+    .replace(/[\s_-]+/gu, '-')
+    .replace(/[^\p{L}\p{M}\p{N}-]+/gu, '')
+    .replace(/-+/g, '-');
+
+  return truncateSlug(slug);
+}
+
+function createFallbackSlug(): string {
+  return `post-${randomBytes(FALLBACK_SLUG_BYTES).toString('hex')}`;
+}
+
 /**
- * Generate slug from title
+ * Generates a URL-safe slug that preserves Unicode letters and numbers.
+ *
+ * Azure workshop learners often test with Japanese, Chinese, or Korean titles.
+ * JavaScript's `\w` only keeps ASCII word characters, so this implementation
+ * uses Unicode property escapes and code point truncation to avoid corrupting
+ * non-ASCII slugs or splitting surrogate pairs.
+ *
+ * @param title - Post title supplied by the author.
+ * @returns A non-empty slug, or a title-independent `post-<id>` fallback.
  */
 export function generateSlug(title: string): string {
-  return title
-    .toLowerCase()
-    .trim()
-    .replace(/[^\w\s-]/g, '') // Remove non-word chars
-    .replace(/\s+/g, '-') // Replace spaces with -
-    .replace(/-+/g, '-') // Replace multiple - with single -
-    .substring(0, 100); // Limit length
+  const slug = buildSlugSegment(title);
+
+  if (/[\p{L}\p{N}]/u.test(slug)) {
+    return slug;
+  }
+
+  return createFallbackSlug();
+}
+
+/**
+ * Applies username-aware collision handling for post slugs.
+ *
+ * The route first tries the base slug, then `{base}-by-{username}`, then
+ * `{base}-by-{username}-{n}`. The existence check is injected so this logic can
+ * be unit tested without a MongoDB connection.
+ *
+ * @param baseSlug - Slug generated from the post title.
+ * @param username - Author username used when a title collision occurs.
+ * @param slugExists - Async predicate that returns true when a slug is taken.
+ * @returns The first available slug following the workshop collision pattern.
+ */
+export async function generateUniqueSlug(
+  baseSlug: string,
+  username: string,
+  slugExists: SlugExistsChecker
+): Promise<string> {
+  if (!(await slugExists(baseSlug))) {
+    return baseSlug;
+  }
+
+  const usernameSlug = buildSlugSegment(username) || 'user';
+  let slug = `${baseSlug}-by-${usernameSlug}`;
+
+  if (!(await slugExists(slug))) {
+    return slug;
+  }
+
+  let counter = 2;
+  while (await slugExists(slug)) {
+    slug = `${baseSlug}-by-${usernameSlug}-${counter}`;
+    counter++;
+  }
+
+  return slug;
 }
 
 export const Post = mongoose.model<IPost>('Post', postSchema);

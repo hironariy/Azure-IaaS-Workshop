@@ -626,18 +626,30 @@ GET /api/posts?sort=viewCount&order=desc
 
 **Slug Generation Algorithm**:
 
-Slugs are generated from the post title with intelligent collision handling:
+Slugs are generated from the post title with Unicode-aware normalization and
+intelligent collision handling:
+
+1. Normalize with NFKC, lowercase, and trim.
+2. Keep Unicode letters, combining marks, and numbers (`\p{L}\p{M}\p{N}`).
+3. Convert whitespace, underscore, and hyphen runs to a single hyphen.
+4. Drop URL-reserved and punctuation characters such as `/`, `?`, `#`, `%`, and `&`.
+5. Trim leading/trailing hyphens and limit to 100 Unicode code points.
+6. If the title has no letters or numbers (for example emoji-only), use a
+   title-independent `post-<id>` fallback so the slug is non-empty and unique.
 
 | Scenario | Generated Slug |
 |----------|---------------|
 | No collision | `my-first-post` |
+| Unicode title | `日本語の記事タイトル` |
+| Accented Latin title | `café-résumé` |
+| Emoji-only title | `post-a1b2c3d4e5f6` |
 | Same title, different user | `my-first-post-by-johndoe` |
 | Same title, same user again | `my-first-post-by-johndoe-2` |
 
 **Implementation Pattern**:
 ```typescript
 async function generateUniqueSlug(title: string, username: string): Promise<string> {
-  const baseSlug = slugify(title, { lower: true, strict: true });
+  const baseSlug = generateSlug(title);
   
   // Check if base slug exists
   const existingPost = await Post.findOne({ slug: baseSlug });
@@ -698,7 +710,7 @@ async function generateUniqueSlug(title: string, username: string): Promise<stri
 **Business Rules**:
 - Only post author can update
 - If status changes from `draft` to `published`, set `publishedAt` to current time
-- Recalculate slug if title changes (ensure uniqueness)
+- Keep the existing slug if title changes (do not regenerate URLs for existing posts)
 - Recalculate excerpt, wordCount, readingTime
 - Update `updatedAt` timestamp
 
@@ -1752,6 +1764,7 @@ export const Post = mongoose.model<IPost>('Post', PostSchema);
 
 ```typescript
 // src/utils/slug.util.ts
+import { randomBytes } from 'node:crypto';
 import { Post } from '../models/Post.model';
 
 /**
@@ -1761,13 +1774,20 @@ import { Post } from '../models/Post.model';
  * @returns Slug string
  */
 export const generateSlug = (title: string): string => {
-  return title
+  const slug = title
+    .normalize('NFKC')
     .toLowerCase()
     .trim()
-    .replace(/[^\w\s-]/g, '') // Remove special characters
-    .replace(/\s+/g, '-') // Replace spaces with hyphens
-    .replace(/-+/g, '-') // Replace multiple hyphens with single hyphen
-    .substring(0, 100); // Limit length
+    .replace(/[\s_-]+/gu, '-')
+    .replace(/[^\p{L}\p{M}\p{N}-]+/gu, '')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
+  const truncatedSlug = Array.from(slug).slice(0, 100).join('').replace(/^-+|-+$/g, '');
+
+  return /[\p{L}\p{N}]/u.test(truncatedSlug)
+    ? truncatedSlug
+    : `post-${randomBytes(6).toString('hex')}`;
 };
 
 /**

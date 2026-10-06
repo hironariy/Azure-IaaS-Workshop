@@ -8,7 +8,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { body, param, query, validationResult } from 'express-validator';
 import { authenticate, optionalAuthenticate } from '../middleware/auth.middleware';
 import { ApiError } from '../middleware/error.middleware';
-import { Post, generateSlug, User } from '../models';
+import { Post, generateSlug, generateUniqueSlug, User } from '../models';
 import { logger } from '../utils/logger';
 import { sanitizeHtml, sanitizePlain, sanitizeTagValue } from '../utils/sanitize';
 
@@ -222,29 +222,20 @@ router.post(
         });
       }
 
-      // Generate unique slug with username-aware collision handling
-      // 1. Try base slug (from title)
-      // 2. If exists → try {base-slug}-by-{username}
-      // 3. If still exists → try {base-slug}-by-{username}-{counter}
+      // Generate unique slug with username-aware collision handling.
+      // Emoji-only and punctuation-only titles receive a post-<id> fallback.
       const baseSlug = generateSlug(req.body.title);
-      let slug = baseSlug;
-      let slugExists = await Post.exists({ slug });
-
-      if (slugExists) {
-        // Collision - add username
-        slug = `${baseSlug}-by-${user.username}`;
-        slugExists = await Post.exists({ slug });
-
-        if (slugExists) {
-          // Same user has duplicate titles - add counter
-          let counter = 2;
-          while (slugExists) {
-            slug = `${baseSlug}-by-${user.username}-${counter}`;
-            slugExists = await Post.exists({ slug });
-            counter++;
-          }
-        }
+      if (!baseSlug) {
+        next(
+          ApiError.badRequest(
+            'Unable to generate a URL slug for this title. Please change the title and try again.'
+          )
+        );
+        return;
       }
+      const slug = await generateUniqueSlug(baseSlug, user.username, async (candidateSlug) =>
+        Boolean(await Post.exists({ slug: candidateSlug }))
+      );
 
       const postData = {
         title: sanitizePlain(req.body.title),
