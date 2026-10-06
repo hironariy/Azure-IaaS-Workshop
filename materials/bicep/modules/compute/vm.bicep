@@ -391,11 +391,14 @@ output vmId string = skipVmCreation ? existingVm.id : vm.id
 @description('Name of the Virtual Machine')
 output vmName string = skipVmCreation ? existingVm.name : vm.name
 
+// The null-forgiving operator is safe here because each ternary branch matches
+// the corresponding resource declaration condition: skipVmCreation references
+// existing resources, while !skipVmCreation references resources created above.
 @description('Private IP address of the VM')
-output privateIpAddress string = skipVmCreation ? existingNic.properties.ipConfigurations[0].properties.privateIPAddress : nic.properties.ipConfigurations[0].properties.privateIPAddress
+output privateIpAddress string = skipVmCreation ? existingNic!.properties.ipConfigurations[0].properties.privateIPAddress : nic!.properties.ipConfigurations[0].properties.privateIPAddress
 
 @description('Principal ID of the VM managed identity (for RBAC assignments)')
-output principalId string = skipVmCreation ? existingVm.identity.principalId : vm.identity.principalId
+output principalId string = skipVmCreation ? existingVm!.identity.principalId : vm!.identity.principalId
 
 @description('Resource ID of the Network Interface')
 output nicId string = skipVmCreation ? existingNic.id : nic.id
