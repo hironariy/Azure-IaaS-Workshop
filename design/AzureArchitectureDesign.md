@@ -81,13 +81,32 @@ This document defines the technical architecture requirements for the Azure IaaS
 
 **DB Tier VMs (2 instances):**
 - VM SKU: Standard_D4s_v6 (4 vCPU, 16 GiB RAM)
-- OS: Ubuntu 24.04 LTS
+- OS: Ubuntu 24.04 LTS, **Azure long-term kernel track `linux-azure-lts-24.04` (6.8.x)**, not the rolling `linux-azure` track (see "DB Tier OS Kernel Track" below)
 - Availability: Spread across AZ 1 and AZ 2
 - Managed Disk: 
   - OS: Standard SSD (30 GB)
   - Data: Premium SSD (128 GB or 256 GB)
 - Software: MongoDB (Replica Set configuration)
 - **Rationale**: Dsv6 supports Premium SSD and offers 16 GiB for MongoDB. Its NVMe data disk is identified by Azure's LUN 0 link, not its `/dev/nvme*` name.
+
+#### DB Tier OS Kernel Track (Issue #26)
+
+MongoDB 8.0.x refuses to start on Linux kernel 6.19 or newer ([SERVER-121912](https://jira.mongodb.org/browse/SERVER-121912)). The Ubuntu 24.04 marketplace image follows the rolling `linux-azure` metapackage, which [moved to kernel 7.0](https://discourse.ubuntu.com/t/kernel-7-0-is-now-the-default-for-ubuntu-24-04-lts-on-azure/88459). A routine patch and reboot therefore took MongoDB down. The DB tier now uses Ubuntu's long-term Azure kernel track instead:
+
+| Aspect | Design |
+|---|---|
+| Kernel metapackage | `linux-azure-lts-24.04` (6.8.x; security updates for the life of Ubuntu 24.04 LTS) |
+| Rolling metas | `linux-azure`, `linux-image-azure`, `linux-headers-azure`, `linux-tools-azure`, `linux-cloud-tools-azure` (and `-edge`) removed |
+| apt pin | `/etc/apt/preferences.d/blogapp-mongodb-kernel-track`: Pin-Priority -1 for the rolling/edge metas and for per-version `*-azure` kernel packages 6.19 or newer |
+| First boot | The image boots the rolling kernel (higher version than 6.8). CustomScript installs MongoDB and enables mongod but does not start it. It sets `GRUB_DEFAULT` to the 6.8 menu entry id in `/etc/default/grub.d/99-blogapp-kernel-track.cfg` and schedules a reboot 1 minute later. CustomScript must not reboot synchronously. |
+| After the reboot | `blogapp-kernel-track-finalize.service` purges the non-running non-LTS kernels and resets `GRUB_DEFAULT=0`, so the newest installed kernel (always 6.8.x) boots. mongod starts on 6.8. |
+| Guard | mongod drop-in `ExecStartPre=/usr/local/sbin/blogapp-kernel-track check-mongod` fails fast with an actionable message on kernel 6.19 or newer. MongoDB's own check is not bypassed. |
+| Patching | `patchMode: AutomaticByPlatform` (rebootSetting `IfRequired`) and unattended-upgrades use apt with the VM's own sources ([Automatic VM guest patching](https://learn.microsoft.com/azure/virtual-machines/automatic-vm-guest-patching) does not configure the patch source). No installed package depends on a rolling kernel any more, and the pin blocks it explicitly, so patching only installs 6.8.x LTS kernel updates. |
+| Exit criterion | Remove the pin and guard and return to `linux-azure` only after a MongoDB release that supports Linux 6.19 or newer has been validated |
+
+Implementation: `materials/bicep/modules/compute/scripts/mongodb-kernel-track.sh` (embedded by `db-tier.bicep`). Existing VMs are migrated with `az vm run-command invoke ... --parameters migrate`, one DB VM at a time (see the troubleshooting runbook, section 7.1). Web and App tiers are unaffected and stay on the rolling kernel.
+
+**AWS comparison:** this is equivalent to keeping a self-managed database on EC2 on a specific Amazon Linux kernel line. With Amazon DocumentDB, AWS owns the kernel/engine compatibility.
 
 #### VM Extensions Required
 - Azure Monitor Agent (for all VMs)

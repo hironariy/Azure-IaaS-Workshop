@@ -314,6 +314,7 @@ Open Application Gateway in Azure Portal and check Backend health.
 | `git clone` fails | Wrong URL, template source URL, or private repository | Use your Day 0 repository copy and confirm unauthenticated clone works from the VMs |
 | `/` returns `403 Forbidden` | Frontend `index.html` is missing | Step 11 succeeded on both Web VMs |
 | `/api/posts` returns `502` or `504` | Backend is not running or MongoDB connection fails | PM2 status, backend logs, and MongoDB password alignment |
+| Backend log shows `ECONNREFUSED 10.0.3.x:27017` / `ReplicaSetNoPrimary` | mongod is not running on the DB VMs, e.g. the DB VM booted a Linux kernel 6.19 or newer that MongoDB 8.0 does not support | On each DB VM: `uname -r` (6.8.x), `sudo systemctl status mongod`; see [runbook 7.1](../operations/troubleshooting-runbook.md#71-mongodb-does-not-start-linux-kernel-619-or-newer-issue-26) |
 | `config.json` is missing | It was overwritten during static file deployment | Restore it from backup or rerun the web VM setup path |
 | Login fails | SPA redirect URI or API permission is missing | Day 0 API permission and Day 1 resource Step 12 |
 

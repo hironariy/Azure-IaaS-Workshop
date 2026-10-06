@@ -176,6 +176,118 @@ az vm list --resource-group "$RESOURCE_GROUP" --show-details \
 - Day 1 の post-deployment setup を再確認します。
 - パスワード不一致が疑われる場合は `main.local.bicepparam` と `post-deployment-setup.local.sh` の値を照合します。
 - `mongoDbAppPassword` に `@` を含めた場合、Bicep が作成する `MONGODB_URI` の user info 区切りとして解釈され、接続文字列が壊れます。この教材では password を作り直し、`main.local.bicepparam` と `post-deployment-setup.local.sh` を同じ値にそろえてから再実行します。
+- API のログに `ECONNREFUSED` / `ReplicaSetNoPrimary` が出る場合は 7.1 を確認します。
+
+### 7.1 MongoDB が起動しない: Linux カーネル 6.19 以上 (Issue #26)
+
+**症状:**
+
+- PM2 の `blogapp-api` が再起動を繰り返し、次のようなログが出ます。
+
+  ```text
+  MongooseServerSelectionError: connect ECONNREFUSED 10.0.3.4:27017
+  ReplicaSetNoPrimary
+  servers: 10.0.3.4:27017 = Unknown, 10.0.3.5:27017 = Unknown
+  ```
+
+- DB VM 上で `mongod.service` が `failed` になり、27017 で待ち受けていません。
+- `post-deployment-setup` が Step 2 で `MongoDB is not ready after ...s` を出して停止します。
+
+**原因:**
+
+MongoDB 8.0.x は TCMalloc / rseq の互換性問題により、Linux カーネル 6.19 以上では起動を拒否します（[SERVER-121912](https://jira.mongodb.org/browse/SERVER-121912)）。Ubuntu 24.04 の Azure イメージは *ローリング* の `linux-azure` カーネルを追従しており、[7.0 に切り替わりました](https://discourse.ubuntu.com/t/kernel-7-0-is-now-the-default-for-ubuntu-24-04-lts-on-azure/88459)。この教材では DB VM を Ubuntu の *長期* Azure カーネルトラック `linux-azure-lts-24.04`（6.8.x、セキュリティ更新は継続）に固定して対処します。新規デプロイでは自動的にこの構成になります。修正前に作成した DB VM は、下記の移行手順を実施します。
+
+> **AWS との比較:** EC2 上の DB ホストで、最新ではなく特定の Amazon Linux カーネル系列に留める判断と同じです。Amazon DocumentDB や RDS ではホスト OS を AWS が管理し、カーネルとエンジンの組み合わせを保証するため、この問題は表に出ません。IaaS VM では利用者がこの責任を持ちます。
+
+**確認（各 DB VM 内で実行）:**
+
+```bash
+uname -r                                   # 6.8.x なら OK、6.19 以上 / 7.x は非互換
+dpkg-query -W mongodb-org-server           # 8.0.x
+sudo systemctl status mongod --no-pager -l
+sudo journalctl -u mongod -b --no-pager | grep -iE "kernel|SERVER-121912|blogapp-kernel-track"
+sudo ss -lntp '( sport = :27017 )'
+sudo blogapp-kernel-track status           # 修正後にデプロイした DB VM に存在します
+```
+
+MongoDB のエラーは `MongoDB cannot start: Linux kernel versions 6.19 and newer has a known incompatibility with this version of MongoDB.` です。修正後にデプロイした VM では、その前にガードが `mongod 8.0.x cannot run on kernel ...` を出力します。
+
+`uname -r` が 6.8.x ではなく、`blogapp-kernel-track status` が `finalize : pending` を示す場合は、初回起動時の切り替え中です。3〜5 分待ってから再確認します。
+
+**対処: 既存の DB VM を LTS カーネルトラックへ移行する（推奨）**
+
+DB VM は 1 台ずつ、**DB2 から** 実施します。Cloud Shell でリポジトリのルートから実行します。ヘルパーは次の処理を行います。
+
+1. `linux-azure-lts-24.04` をインストールする
+2. ローリングカーネルのメタパッケージを削除する
+3. apt pin を書き込む
+4. GRUB で 6.8 カーネルを選択し、1 分後に VM を再起動する
+5. 再起動後、LTS 以外のカーネルを削除する
+
+MongoDB のデータとレプリカセット構成は変更しません。
+
+```bash
+cd ~/Azure-IaaS-Workshop
+az vm run-command invoke -g "$RESOURCE_GROUP" -n vm-db-az2-prod \
+  --command-id RunShellScript \
+  --scripts @materials/bicep/modules/compute/scripts/mongodb-kernel-track.sh \
+  --parameters migrate
+```
+
+3〜5 分待ってから、Bastion SSH で DB2 を確認します。
+
+```bash
+uname -r                                        # 6.8.x
+findmnt --mountpoint /data/mongodb
+sudo systemctl is-active mongod                 # active
+mongosh --quiet --eval 'db.hello().isWritablePrimary + " " + db.hello().secondary'
+sudo blogapp-kernel-track status                # finalize : done/not-needed
+```
+
+レプリカセットの状態も確認します: `mongosh --quiet --eval 'rs.status().members.map(m => m.name + " " + m.stateStr)'`。その後、`vm-db-az1-prod` で同じ手順を繰り返します。
+
+> **2 ノード構成の注意:** 2 台のうち 1 台が再起動している間は、残り 1 台では過半数を維持できないため、**数分間 Primary が存在せず** API の書き込みが失敗します。これは想定どおりの動作で、本番では 3 台のデータ保持メンバーを使う理由を示す良い例です。
+
+下記の暫定回避策を使っていた場合でも、ヘルパーの `/etc/default/grub.d/99-blogapp-kernel-track.cfg` がそれを上書きします。移行後は `/etc/default/grub` の `GRUB_DEFAULT` を `0` に戻し、`sudo update-grub` を実行して設定を整理します。
+
+**暫定回避策: インストール済みの旧カーネルで起動する（移行を実行できない場合のみ）**
+
+6.19 未満の旧カーネル（例: `6.17.0-1022-azure`）が残っている場合は、GRUB でそのカーネルを起動できます。これは **短期の回避策** で、後で必ず LTS トラックへ移行します。事前にバックアップ／スナップショットを取得し、カーネルやデータディスクは削除しません。
+
+```bash
+uname -r
+ls -l /boot/vmlinuz-6.17.0-1022-azure /boot/initrd.img-6.17.0-1022-azure
+ls -ld /lib/modules/6.17.0-1022-azure
+sudo grep -E '^[[:space:]]*(submenu|menuentry) ' /boot/grub/grub.cfg   # 実際のメニュー名を確認
+grep -rn GRUB_DEFAULT /etc/default/grub /etc/default/grub.d/ 2>/dev/null
+```
+
+確認したメニュー名を使って `/etc/default/grub` に次を設定し、`/etc/default/grub.d/` で上書きされていないことを確認します。
+
+```text
+GRUB_DEFAULT="Advanced options for Ubuntu>Ubuntu, with Linux 6.17.0-1022-azure"
+```
+
+```bash
+sudo update-grub
+sudo grub-script-check /boot/grub/grub.cfg && echo OK
+sudo reboot
+```
+
+DB2 から復旧し、次に DB1 を復旧します。
+
+- `/boot/grub/grub.cfg` は直接編集しません。
+- データの再フォーマット、MongoDB のダウングレード、`rs.initiate()` の再実行はしません。
+- MongoDB の起動チェックを無効化しません。
+- `/data/mongodb` がマウントされていない場合は、mongod を手動で起動しません。
+
+**MongoDB が Linux 6.19 以上に対応したら:** その組み合わせを検証してから固定を解除します。
+
+1. `/etc/apt/preferences.d/blogapp-mongodb-kernel-track` を削除する
+2. ガード `/etc/systemd/system/mongod.service.d/10-blogapp-kernel-guard.conf` を削除する
+3. `sudo systemctl daemon-reload` を実行する
+4. `linux-azure` をインストールする
+5. DB VM を 1 台ずつ再起動する
 
 ## 8. Cloud Shell が切断された
 
