@@ -42,8 +42,8 @@ router.get(
   handleValidation,
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const page = (req.query.page as unknown as number) || 1;
-      const limit = (req.query.limit as unknown as number) || 10;
+      const page = Number(req.query.page ?? 1);
+      const limit = Number(req.query.limit ?? 10);
       const skip = (page - 1) * limit;
       const tag = req.query.tag as string | undefined;
       const authorUsername = req.query.author as string | undefined;
@@ -106,8 +106,8 @@ router.get(
   handleValidation,
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const page = (req.query.page as unknown as number) || 1;
-      const limit = (req.query.limit as unknown as number) || 10;
+      const page = Number(req.query.page ?? 1);
+      const limit = Number(req.query.limit ?? 10);
       const skip = (page - 1) * limit;
       const statusFilter = req.query.status as string | undefined;
 
