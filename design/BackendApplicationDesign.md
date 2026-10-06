@@ -1308,7 +1308,7 @@ LOG_LEVEL=debug
 MONGODB_URI=mongodb://localhost:27017,localhost:27018/blogapp?replicaSet=blogapp-rs0
 
 # Note: In Azure production, Bicep sets MONGODB_URI with authentication:
-# MONGODB_URI=mongodb://blogapp:<password>@10.0.3.4:27017,10.0.3.5:27017/blogapp?replicaSet=blogapp-rs0&authSource=blogapp
+# MONGODB_URI=mongodb://blogapp:<password>@10.0.3.4:27017,10.0.3.5:27017,10.0.3.6:27017/blogapp?replicaSet=blogapp-rs0&authSource=blogapp
 
 # Microsoft Entra ID Configuration
 ENTRA_TENANT_ID=your-tenant-id-here
@@ -1330,7 +1330,7 @@ Bicep CustomScript Extension sets these system environment variables on App VMs:
 ```bash
 # /etc/environment (set by Bicep CustomScript)
 NODE_ENV=production
-MONGODB_URI=mongodb://blogapp:BlogAppUser2024@10.0.3.4:27017,10.0.3.5:27017/blogapp?replicaSet=blogapp-rs0&authSource=blogapp
+MONGODB_URI=mongodb://blogapp:BlogAppUser2024@10.0.3.4:27017,10.0.3.5:27017,10.0.3.6:27017/blogapp?replicaSet=blogapp-rs0&authSource=blogapp
 PORT=3000
 LOG_LEVEL=info
 CORS_ORIGINS=http://<load-balancer-ip>
@@ -3732,7 +3732,7 @@ Environment=NODE_ENV=production
 
 # Environment variables (alternatively use EnvironmentFile)
 Environment=PORT=3000
-Environment=MONGODB_URI=mongodb://blogapp_api_user:PASSWORD@10.0.3.4:27018,10.0.3.5:27018/blogapp?replicaSet=blogapp-rs0&readPreference=primaryPreferred&w=majority
+Environment=MONGODB_URI=mongodb://blogapp_api_user:PASSWORD@10.0.3.4:27018,10.0.3.5:27018,10.0.3.6:27018/blogapp?replicaSet=blogapp-rs0&readPreference=primaryPreferred&w=majority
 Environment=ENTRA_TENANT_ID=your-tenant-id
 Environment=ENTRA_CLIENT_ID=your-client-id
 Environment=CORS_ORIGIN=http://10.0.1.4,http://10.0.1.5
@@ -4529,7 +4529,7 @@ const mongoPassword = await getSecret('mongodb-api-password');
    NODE_ENV=production
    PORT=3000
    
-   MONGODB_URI=mongodb://blogapp_api_user:${MONGODB_PASSWORD}@10.0.3.4:27018,10.0.3.5:27018/blogapp?replicaSet=blogapp-rs0&readPreference=primaryPreferred&w=majority
+   MONGODB_URI=mongodb://blogapp_api_user:${MONGODB_PASSWORD}@10.0.3.4:27018,10.0.3.5:27018,10.0.3.6:27018/blogapp?replicaSet=blogapp-rs0&readPreference=primaryPreferred&w=majority
    
    ENTRA_TENANT_ID=${AZURE_TENANT_ID}
    ENTRA_CLIENT_ID=${AZURE_CLIENT_ID}
@@ -4736,7 +4736,7 @@ sudo -u blogapp node dist/server.js
 **Diagnosis**:
 ```bash
 # Test MongoDB connection from app VM
-mongosh "mongodb://10.0.3.4:27018,10.0.3.5:27018/?replicaSet=blogapp-rs0"
+mongosh "mongodb://10.0.3.4:27018,10.0.3.5:27018,10.0.3.6:27018/?replicaSet=blogapp-rs0"
 
 # Check NSG rules
 az network nsg rule list --nsg-name nsg-app-prod --resource-group rg-blogapp-prod-eastus
@@ -6685,7 +6685,7 @@ curl http://localhost:3000/api/health  # Local health check
 curl http://10.0.2.4:3000/api/health   # Remote health check
 
 # MongoDB checks
-mongosh "mongodb://10.0.3.4:27018,10.0.3.5:27018/?replicaSet=blogapp-rs0"
+mongosh "mongodb://10.0.3.4:27018,10.0.3.5:27018,10.0.3.6:27018/?replicaSet=blogapp-rs0"
 ```
 
 ### E. Reference Documentation

@@ -19,33 +19,38 @@ This document defines the MongoDB database architecture and schema requirements 
 
 #### Topology
 - **Replica Set Name**: `blogapp-rs0`
-- **Architecture**: 2-node replica set (no arbiter)
+- **Architecture**: 3-member replica set, all data-bearing and voting (PSS, no arbiter) (Issue #30)
 - **Node Distribution**: 
-  - Primary node: DB VM in Availability Zone 1 (10.0.3.4)
-  - Secondary node: DB VM in Availability Zone 2 (10.0.3.5)
+  - Initial primary node: `vm-db-az1` in Availability Zone 1 (10.0.3.4)
+  - Secondary node: `vm-db-az2` in Availability Zone 2 (10.0.3.5)
+  - Secondary node: `vm-db-az3` in Availability Zone 3 (10.0.3.6)
 - **Deployment Method**: Self-managed MongoDB on Ubuntu 24.04 LTS VMs
 - **OS Kernel**: Ubuntu 24.04 Azure long-term kernel track `linux-azure-lts-24.04` (6.8.x). MongoDB 8.0.x does not start on Linux 6.19 or newer ([SERVER-121912](https://jira.mongodb.org/browse/SERVER-121912)), and the rolling `linux-azure` track is now 7.0 (Issue #26). The DB install script pins the track, and the first deployment reboots each DB VM once into 6.8 before mongod starts. See [AzureArchitectureDesign.md: DB Tier OS Kernel Track](AzureArchitectureDesign.md#db-tier-os-kernel-track-issue-26).
 - **MongoDB Version**: 8.0 series only (the apt source is the `mongodb-org/8.0` repository, so no major upgrades happen through apt)
 
-**Why 2 Nodes Instead of 3?**
-- Cost optimization for workshop (20-30 students)
-- Demonstrates HA principles while keeping infrastructure simple
-- Trade-off: Requires manual intervention if primary fails (educational value)
-- Production recommendation: 3+ nodes documented in workshop materials
+**Why 3 Data-Bearing Nodes? (Issue #30)**
+- Elections and `w: "majority"` writes both need a majority of voting members: 2 of 3.
+- With 3 members, **any single node** (or any single Availability Zone) can fail and the remaining 2 still elect a PRIMARY automatically and acknowledge majority writes. No `rs.reconfig({force: true})` is needed.
+- The earlier 2-node design could not do this: losing either node left 1 of 2 votes, so writes stopped until a manual forced reconfig. That was cheaper but taught a failover pattern that should not be used in production.
+- Cost: one more Standard_D4s_v6 VM and one more 128 GB Premium SSD data disk per learner environment (12 DB-tier vCPUs instead of 8). The workshop owner accepted this cost.
+- **Limitation**: losing **2 of 3** nodes loses the majority. The last node stays (or becomes) SECONDARY, reads with `primaryPreferred` can still be served, but no writes are possible until a second node returns. This is by design: MongoDB refuses to let a minority accept writes that could later be rolled back.
+- **Zone requirement**: the region must support 3 Availability Zones for Standard_D4s_v6. If a region has only 2 zones, `dbVmAz3Zone` in `db-tier.bicep` can place the 3rd member in Zone 1 or 2. Node failures stay automatic, but a whole-zone outage of the doubled zone then loses the majority (explicitly documented, never silent).
+
+**AWS Comparison**: This is the same pattern as running self-managed MongoDB on 3 EC2 instances in 3 AZs. Amazon DocumentDB hides this (storage replicates 6 ways across 3 AZs and the service promotes a replica), but you still choose replica instances per AZ. Here you own the replica set config, elections and member lifecycle.
 
 #### Replica Set Members
 
-**Primary Node (db-vm-az1)**:
+**Primary Node (vm-db-az1)** (initial primary; any member can become primary after an election):
 - **Role**: Primary (accepts writes and reads)
 - **VM**: Standard_D4s_v6 (4 vCPU, 16 GiB RAM)
 - **Availability Zone**: Zone 1
 - **Private IP**: 10.0.3.4
 - **MongoDB Port**: 27017 (standard default port)
-- **Priority**: 2 (higher priority to prefer as primary)
+- **Priority**: 2 (makes the initial primary deterministic for workshop steps; when this node rejoins after a failover and catches up, it calls a short "priority takeover" election and becomes primary again)
 - **Votes**: 1
 - **Rationale**: Dsv6 general-purpose VM with Premium SSD support; MongoDB data is stored on the LUN 0 managed disk, identified by its Azure NVMe device link
 
-**Secondary Node (db-vm-az2)**:
+**Secondary Node (vm-db-az2)**:
 - **Role**: Secondary (reads only, synchronous replication)
 - **VM**: Standard_D4s_v6 (4 vCPU, 16 GiB RAM)
 - **Availability Zone**: Zone 2
@@ -54,6 +59,15 @@ This document defines the MongoDB database architecture and schema requirements 
 - **Priority**: 1 (lower priority)
 - **Votes**: 1
 - **Rationale**: Same Dsv6 size and managed-disk configuration as the primary node for workshop replication
+
+**Secondary Node (vm-db-az3)** (Issue #30):
+- **Role**: Secondary (data-bearing, voting, electable, so it is not an arbiter)
+- **VM**: Standard_D4s_v6 (4 vCPU, 16 GiB RAM), same data disk, identity, monitoring and kernel-track CustomScript as the other DB VMs
+- **Availability Zone**: Zone 3 (`dbVmAz3Zone`)
+- **Private IP**: 10.0.3.6 (`.0`-`.3` are reserved by Azure in every subnet)
+- **MongoDB Port**: 27017
+- **Priority**: 1
+- **Votes**: 1
 
 #### Replica Set Initialization
 
@@ -74,9 +88,23 @@ rs.initiate({
       host: "10.0.3.5:27017",
       priority: 1,
       votes: 1
+    },
+    {
+      _id: 2,
+      host: "10.0.3.6:27017",
+      priority: 1,
+      votes: 1
     }
   ]
 });
+// Expected after ~10-30 s: 1 PRIMARY (10.0.3.4) + 2 SECONDARY
+```
+
+`scripts/post-deployment-setup.*` runs this command. It is idempotent: an already-initialized set is never re-initiated or force-reconfigured. Existing 2-node environments are migrated with `rs.add()` (see the troubleshooting runbook, section 7.2).
+
+```javascript
+// Migration from the earlier 2-node design (run on the PRIMARY, after vm-db-az3 is ready)
+rs.add({ host: "10.0.3.6:27017", priority: 1, votes: 1 });
 ```
 
 #### Read Preference Strategy
@@ -105,11 +133,11 @@ rs.initiate({
 
 ```bash
 # Application backend should use this format
-mongodb://blogapp:<password>@10.0.3.4:27017,10.0.3.5:27017/blogapp?replicaSet=blogapp-rs0&authSource=blogapp&readPreference=primaryPreferred&w=majority
+mongodb://blogapp:<password>@10.0.3.4:27017,10.0.3.5:27017,10.0.3.6:27017/blogapp?replicaSet=blogapp-rs0&authSource=blogapp&readPreference=primaryPreferred&w=majority
 ```
 
 **Key Components**:
-- **Hosts**: Both replica set members (comma-separated)
+- **Hosts**: All 3 replica set members (comma-separated seed list). The driver needs only one reachable seed to discover the topology, but listing all 3 lets it connect even when any one node is down at startup.
 - **Database**: `blogapp`
 - **Replica Set**: `blogapp-rs0` parameter enables automatic failover
 - **Read Preference**: `primaryPreferred` for HA
@@ -120,7 +148,7 @@ mongodb://blogapp:<password>@10.0.3.4:27017,10.0.3.5:27017/blogapp?replicaSet=bl
 **Administrative Access**:
 ```bash
 # For database administration (use admin database)
-mongodb://blogadmin:<admin_password>@10.0.3.4:27017,10.0.3.5:27017/admin?replicaSet=blogapp-rs0
+mongodb://blogadmin:<admin_password>@10.0.3.4:27017,10.0.3.5:27017,10.0.3.6:27017/admin?replicaSet=blogapp-rs0
 ```
 
 **Direct Connection to Specific Node** (troubleshooting only):
@@ -132,7 +160,7 @@ mongodb://blogadmin:<admin_password>@10.0.3.4:27017/blogapp
 **Environment Variable Pattern**:
 ```bash
 # In backend .env file
-MONGODB_URI=mongodb://blogapp:${MONGODB_PASSWORD}@10.0.3.4:27017,10.0.3.5:27017/blogapp?replicaSet=blogapp-rs0&authSource=blogapp&readPreference=primaryPreferred&w=majority
+MONGODB_URI=mongodb://blogapp:${MONGODB_PASSWORD}@10.0.3.4:27017,10.0.3.5:27017,10.0.3.6:27017/blogapp?replicaSet=blogapp-rs0&authSource=blogapp&readPreference=primaryPreferred&w=majority
 MONGODB_DATABASE=blogapp
 ```
 
@@ -157,102 +185,73 @@ const mongoUri = secret.value;
 
 #### Automatic Failover
 
-**Scenario: Primary Node Fails**
-1. Secondary detects primary unavailable (heartbeat timeout: 10 seconds)
-2. **MANUAL INTERVENTION REQUIRED** (2-node limitation)
-3. Administrator must reconfigure replica set or force secondary to primary
-4. Application reconnects automatically via replica set connection string
+**Scenario: Primary Node Fails** (3-member set)
+1. The 2 secondaries stop receiving heartbeats from the primary (`electionTimeoutMillis`: 10 seconds by default).
+2. One secondary calls an election; the 2 surviving members hold 2 of 3 votes, which is a majority, so a new PRIMARY is elected **automatically** (typically about 10-15 s after the failure).
+3. The Node.js driver detects the new primary through the replica set seed list. `retryWrites` (default on) retries a write that failed during the switch once.
+4. `w: "majority"` writes continue: they need 2 of 3 members, and 2 are still up.
+5. When the failed node returns, it rejoins as SECONDARY and catches up from the oplog. If it is `vm-db-az1` (priority 2), it then takes PRIMARY back through a short priority-takeover election.
 
-**Workshop Learning Objective**: 
-- Students observe 2-node limitation (quorum requires majority)
-- Demonstrates importance of 3+ node deployments
-- Practice manual failover procedures (Day 2, Step 12)
+**Scenario: One Secondary Fails**: no election. The primary still has a majority (itself plus one secondary), so reads and majority writes continue unchanged.
+
+**Scenario: Two Nodes Fail**: majority lost. The surviving node steps down to (or stays) SECONDARY, and writes fail until a second node is back. Do **not** use `rs.reconfig({force: true})` to "fix" this in normal operation: it can roll back writes and create split-brain risk. It is a disaster-recovery last resort only (see the DR guide).
+
+**Workshop Learning Objective** (Day 2 resiliency checklist):
+- Stop the PRIMARY (mongod, then the VM) and observe an automatic election; record election time and app recovery time.
+- Stop each node in turn and confirm reads and writes keep working.
+- Understand why stopping a 2nd node makes the set read-only.
 
 #### Election Process
 
-**Why Automatic Election Fails with 2 Nodes**:
+MongoDB replica set elections, and `w: "majority"` write acknowledgement, require a **majority of voting members** (> 50%):
 
-MongoDB replica set elections require a **majority vote** (> 50% of voting members):
-- **3 nodes**: Majority = 2 votes ✅ (one node can fail, 2 remain for election)
-- **2 nodes**: Majority = 2 votes ⚠️ (one node fails, only 1 remains - not a majority)
+| Voting members | Majority | Node failures tolerated |
+|---|---|---|
+| 2 (earlier workshop design) | 2 | 0, so a forced reconfig is needed |
+| **3 (current design)** | **2** | **1** |
+| 5 | 3 | 2 |
 
 **Decision Tree**:
 
 ```text
-Primary Node Fails
+One node fails (3-member set)
 │
-├─ 2-Node Setup (Workshop) ────────────────────────────────┐
-│  ├─ Surviving Secondary: 1 vote                          │
-│  ├─ Required for Election: 2 votes (majority of 2)       │
-│  └─ Result: ELECTION BLOCKED ❌                           │
-│     └─ Solution: Manual intervention required            │
-│        └─ rs.reconfig({...}, {force: true})              │
-│                                                           │
-└─ 3-Node Setup (Production) ──────────────────────────────┤
-   ├─ Surviving Nodes: 2 votes                             │
-   ├─ Required for Election: 2 votes (majority of 3)       │
-   └─ Result: AUTOMATIC ELECTION ✅                         │
-      └─ Secondary auto-promotes to Primary (10-30 sec)    │
+├─ Failed node was PRIMARY
+│  ├─ Surviving nodes: 2 votes  (majority of 3 = 2)
+│  └─ Result: AUTOMATIC ELECTION ✅ (~10-15 s), majority writes resume
+│
+├─ Failed node was a SECONDARY
+│  └─ Result: no election needed ✅, PRIMARY + 1 SECONDARY = majority
+│
+└─ A second node also fails
+   ├─ Surviving node: 1 vote (< 2)
+   └─ Result: NO PRIMARY ❌, read-only until a second node is back
 ```
 
-**Manual Failover Procedure** (Workshop Learning Exercise):
+**Why Not an Arbiter (PSA)?**
 
-When primary fails in 2-node setup:
-
-```javascript
-// Step 1: Connect to surviving secondary
-mongo --host 10.0.3.5:27017 -u admin -p
-
-// Step 2: Check current status (should show no primary)
-rs.status()
-
-// Step 3: Force reconfiguration (makes secondary the new primary)
-cfg = rs.conf()
-cfg.members = [cfg.members[1]]  // Keep only surviving node
-rs.reconfig(cfg, {force: true})
-
-// Step 4: Verify new primary
-rs.status()  // Should show surviving node as PRIMARY
-
-// Step 5 (Later): Add original primary back as secondary
-rs.add({_id: 0, host: "10.0.3.4:27017", priority: 2, votes: 1})
-```
-
-**Educational Value**: 
-- Students learn quorum mathematics
-- Understand production requirement for 3+ nodes
-- Practice manual recovery procedures
-- Appreciate automatic failover in larger deployments
-
-**Common Mistake: Adding Arbiter to 2-Node Setup**
-
-**Students may ask**: "Why not add an arbiter to get 3 votes?"
-
-**Answer**: Arbiters solve quorum but sacrifice data durability:
+An arbiter votes but stores no data. With Primary + Secondary + Arbiter:
 
 ```text
-2 data nodes + 1 arbiter = 3 votes ✅
-- Primary fails: Secondary + Arbiter = 2 votes = majority ✅
-- BUT: Only 1 data copy remains (no redundancy) ❌
+Primary fails: Secondary + Arbiter = 2 votes, so an election succeeds ✅
+BUT: only 1 data-bearing member remains, and w:"majority" needs 2 data-bearing
+     members to acknowledge, so majority writes BLOCK or time out ❌
+     (and there is only 1 copy of the data)
 ```
 
+Because this application writes with `w: "majority"`, PSA would elect a primary that cannot complete the writes the app needs. PSS (3 data-bearing members) keeps both election and majority-write availability after any single failure, so the workshop uses PSS.
+
 **Production Guideline**:
-- **PSA** (Primary-Secondary-Arbiter): Acceptable for budget-constrained environments
-- **PSS** (Primary-Secondary-Secondary): Preferred for data durability
-- **PSSS+** (3+ data nodes): Production standard
-
-**Workshop Choice**: 2-node no-arbiter teaches quorum without false sense of HA
-
-**Production Recommendation** (documented in workshop):
-- Minimum 3 data-bearing nodes for automatic failover
-- Avoid arbiters unless cost is primary constraint
+- **PSS** (3 data-bearing members across 3 AZs): minimum recommended, used here
+- **PSSSS** (5 members): tolerates 2 failures
+- **PSA**: avoid when the app relies on `w: "majority"`
 
 ### MongoDB Configuration
 
 #### mongod.conf Settings
 
 ```yaml
-# /etc/mongod.conf on both DB VMs
+# /etc/mongod.conf on all 3 DB VMs
 
 # Network settings
 net:
@@ -940,7 +939,7 @@ db.sessions.createIndex(
 #### Azure Backup Configuration
 
 **Bicep/Portal Configuration**:
-- Enable Azure Backup on both DB VMs
+- Enable Azure Backup on all 3 DB VMs (one protected item per VM)
 - Create Recovery Services Vault in same region
 - Configure backup policy:
   - Daily backup at 2:00 AM UTC
@@ -1045,11 +1044,10 @@ mongo --host localhost:27017 -u admin -p $MONGODB_ADMIN_PASSWORD --authenticatio
 |----------|-------------------------------|--------------------------------|--------|
 | Database corruption | 30 minutes | 24 hours | MongoDB native restore |
 | Accidental data deletion | 30 minutes | 24 hours | MongoDB native restore |
-| VM failure (single node) | 0 minutes (auto-failover*) | 0 minutes | Replica set failover |
+| VM / zone failure (single node) | ~10-30 seconds (automatic election) | 0 (w=majority writes are on 2 of 3 nodes) | Replica set failover |
+| Two nodes lost at once | Until a 2nd node is back (read-only meanwhile) | 0 if a node returns with its disk | Restart/restore a 2nd node; forced reconfig only as DR last resort |
 | Complete region failure | 2-4 hours | 24 hours | Azure Site Recovery (DR) |
-| Disaster (both VMs lost) | 1-2 hours | 24 hours | Azure Backup restore |
-
-*Automatic failover limited with 2-node setup (requires manual intervention)
+| Disaster (all DB VMs lost) | 1-2 hours | 24 hours | Azure Backup restore |
 
 ### Disaster Recovery Testing Procedures
 
@@ -1253,7 +1251,7 @@ db.posts.aggregate([
 
 ## Scenario: Complete Database Loss
 
-**Trigger**: Both DB VMs unavailable, data corruption, ransomware attack
+**Trigger**: All DB VMs (or 2 of 3, majority lost and not recoverable) unavailable, data corruption, ransomware attack
 
 **Prerequisites**:
 - [ ] Azure Backup Recovery Services Vault accessible
@@ -1264,7 +1262,7 @@ db.posts.aggregate([
 **Recovery Steps**:
 
 ### Step 1: Assess Damage (5 minutes)
-- [ ] Verify both DB VMs are unrecoverable
+- [ ] Verify the DB VMs are unrecoverable
 - [ ] Check Azure Backup recovery points available
 - [ ] Check MongoDB native backup timestamps
 - [ ] Notify team of DR activation
@@ -1282,7 +1280,7 @@ db.posts.aggregate([
 ### Step 4: Reconfigure Replica Set (5-10 minutes)
 - [ ] Initialize replica set on restored nodes
 - [ ] Configure replica set members
-- [ ] Wait for initial sync (if 2 nodes)
+- [ ] Wait for initial sync of the other members (target: 1 PRIMARY + 2 SECONDARY)
 - [ ] Verify rs.status() shows healthy state
 
 ### Step 5: Update Application (5 minutes)
@@ -1617,6 +1615,12 @@ rs.status()
     },
     {
       "name": "10.0.3.5:27017",
+      "health": 1,
+      "state": 2,  // SECONDARY
+      "stateStr": "SECONDARY"
+    },
+    {
+      "name": "10.0.3.6:27017",
       "health": 1,
       "state": 2,  // SECONDARY
       "stateStr": "SECONDARY"
@@ -2055,7 +2059,7 @@ mongoose.connect(process.env.MONGODB_URI, {
 |---------|--------------------------------|----------------|--------------|
 | **Type** | Self-managed MongoDB | Managed MongoDB-compatible | Managed NoSQL key-value |
 | **HA Setup** | Manual replica set config | Automatic (6 replicas across 3 AZs) | Automatic (3 AZ replication) |
-| **Failover** | Manual (2-node) or auto (3+ nodes) | Automatic (< 30s) | Automatic (instant) |
+| **Failover** | Automatic election (3 data-bearing members across 3 AZs, ~10-15 s) | Automatic (< 30s) | Automatic (instant) |
 | **Backup** | Manual (mongodump + Azure Backup) | Automated continuous backups | Automated continuous backups |
 | **Scaling** | Vertical (resize VM) | Vertical (instance size) | Horizontal (automatic) |
 | **Operational Overhead** | High (patching, monitoring, backups) | Low (AWS manages) | Very Low (fully managed) |
@@ -2103,7 +2107,7 @@ db.posts.updateMany(
 **Scenario**: Migrate to Azure Cosmos DB for MongoDB API
 
 **Approach**:
-1. **Dual-write**: Write to both MongoDB VMs and Cosmos DB temporarily
+1. **Dual-write**: Write to the MongoDB replica set and Cosmos DB temporarily
 2. **Sync existing data**: Use `mongodump` + `mongorestore` to Cosmos DB
 3. **Cutover**: Switch read traffic to Cosmos DB
 4. **Decommission**: Remove MongoDB VMs after validation
@@ -2224,8 +2228,8 @@ db.getUsers()
 **Expected Time**: 20-25 minutes
 
 **Success Criteria**:
-- Replica set initialized with 2 members
-- Both members showing healthy status (PRIMARY + SECONDARY)
+- Replica set initialized with 3 members
+- All members healthy: 1 PRIMARY + 2 SECONDARY
 - Application user created with readWrite role
 - Seed data loaded (5 users, 10 posts)
 - Connection from app tier VM successful
@@ -2234,20 +2238,20 @@ db.getUsers()
 
 **Student Actions**:
 1. Note current primary node
-2. Stop MongoDB on primary: `sudo systemctl stop mongod`
-3. Observe application behavior (should show errors or timeouts)
-4. Manually reconfigure replica set (2-node limitation)
-5. Verify application resumes (may require app restart)
-6. Start stopped MongoDB node
-7. Verify it rejoins as secondary
+2. Stop MongoDB on primary: `sudo systemctl stop mongod` (then repeat with a VM stop)
+3. Observe automatic election of a new PRIMARY; record election time and app recovery time
+4. Verify the app reads, creates and updates posts (w=majority) without restart or reconfig
+5. Start the stopped node and verify it rejoins as SECONDARY and catches up
+6. Repeat by stopping each SECONDARY in turn (no election, writes continue)
+7. Discuss (do not leave running): stopping a 2nd node loses the majority, so writes stop
 
-**Expected Time**: 15-20 minutes
+**Expected Time**: 20-30 minutes
 
 **Learning Objectives**:
-- Experience manual failover with 2-node setup
-- Understand quorum requirements (2/2 cannot auto-elect)
-- Practice recovery procedures
-- Compare with 3+ node automatic failover (documented)
+- Experience automatic failover with a 3-member replica set
+- Understand quorum (2 of 3) and why an arbiter would not keep w=majority writes available
+- Understand the 2-node-loss limitation
+- Compare with Amazon DocumentDB managed failover
 
 ---
 
@@ -2296,12 +2300,12 @@ db.killOp(<opid>)
 
 **Replica Set with All Options**:
 ```
-mongodb://user:password@10.0.3.4:27017,10.0.3.5:27017/blogapp?replicaSet=blogapp-rs0&readPreference=primaryPreferred&w=majority&retryWrites=true&maxPoolSize=50
+mongodb://user:password@10.0.3.4:27017,10.0.3.5:27017,10.0.3.6:27017/blogapp?replicaSet=blogapp-rs0&readPreference=primaryPreferred&w=majority&retryWrites=true&maxPoolSize=50
 ```
 
 **Admin Connection**:
 ```
-mongodb://admin:password@10.0.3.4:27017/admin?replicaSet=blogapp-rs0
+mongodb://admin:password@10.0.3.4:27017,10.0.3.5:27017,10.0.3.6:27017/admin?replicaSet=blogapp-rs0
 ```
 
 **Direct Connection (Troubleshooting)**:
