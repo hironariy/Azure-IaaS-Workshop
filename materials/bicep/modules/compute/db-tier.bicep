@@ -1,28 +1,49 @@
 // =============================================================================
 // Database Tier Module
 // =============================================================================
-// Purpose: Deploy 2 MongoDB replica set VMs across Availability Zones
+// Purpose: Deploy 3 MongoDB replica set VMs across Availability Zones
 // Reference: /design/AzureArchitectureDesign.md - Section 2: Compute Resources
 // Reference: /design/DatabaseDesign.md - MongoDB Replica Set configuration
 //
-// Architecture:
-//   - 2 VMs: vm-db-az1 (Primary, Zone 1), vm-db-az2 (Secondary, Zone 2)
+// Architecture (Issue #30):
+//   - 3 VMs: vm-db-az1 (Zone 1), vm-db-az2 (Zone 2), vm-db-az3 (Zone 3)
+//   - All 3 are data-bearing, voting, electable members (NO arbiter)
 //   - MongoDB 8.0 replica set (blogapp-rs0)
 //   - Premium SSD data disks for database files
 //   - Automatic failover within the replica set
 //
 // Traffic Flow:
 //   App Tier (Express) → DB Tier (MongoDB:27017)
-//   DB VM ↔ DB VM (replica set sync:27017)
+//   DB VM ↔ DB VM (replica set sync + heartbeats:27017)
+//   NSG rules use the DB subnet prefix (10.0.3.0/24), not per-VM IPs, so the
+//   3rd VM needs no NSG change.
 //
 // VM Sizing Rationale (D4s_v6):
 //   - 4 vCPU, 16 GiB RAM
 //   - General-purpose performance and Premium SSD support for MongoDB
 //
-// 2-Node Replica Set Considerations:
-//   - Educational value: Demonstrates replication without complexity
-//   - Limitation: Cannot survive majority loss (both nodes needed for writes)
-//   - Alternative: 3-node with arbiter for production (discussed in workshop)
+// Why 3 data-bearing members (Issue #30):
+//   - Elections and w:"majority" writes need a majority of voting members.
+//     2 members → majority is 2: losing EITHER node stops elections and
+//     majority writes (no automatic failover).
+//     3 members → majority is 2: ANY single node (or zone) can fail and the
+//     remaining 2 elect a PRIMARY automatically and keep acknowledging
+//     w:"majority" writes.
+//   - Why not 2 data nodes + arbiter: the arbiter votes but stores no data, so
+//     with one data node down, w:"majority" writes cannot be acknowledged
+//     (only 1 data node can confirm), even though a PRIMARY exists.
+//   - Limitation: losing 2 of 3 nodes loses the majority → the survivor stays
+//     SECONDARY (read-only) until a node returns. This is by design.
+//   - AWS analogy: MongoDB on EC2 with one member per AZ in 3 AZs.
+//
+// Zone requirement and fallback:
+//   - The region and VM SKU must offer 3 Availability Zones
+//     (check: az vm list-skus -l <region> --size Standard_D4s_v6 --zone -o table).
+//   - If a region only offers 2 zones for the SKU, set dbVmAz3Zone to '1' or
+//     '2' explicitly. Then automatic failover still survives any single VM
+//     failure, but NOT the loss of the zone hosting 2 members. Document that
+//     choice; do not do it silently.
+//   - Quota: 3 x D4s_v6 = 12 vCPU in the DSv6 family (plus Web/App VMs).
 //
 // OS Kernel (Issue #26):
 //   - MongoDB 8.0.x does not start on Linux >= 6.19 (SERVER-121912)
@@ -73,14 +94,24 @@ param tags object = {}
 @description('Force update tag - changing this value forces CustomScript to re-run')
 param forceUpdateTag string = ''
 
-@description('Skip VM creation and only update extensions (for re-deployment)')
+@description('Skip VM creation for vm-db-az1/vm-db-az2 and only update extensions (for re-deployment)')
 param skipVmCreation bool = false
+
+@description('Skip VM creation for vm-db-az3. Defaults to skipVmCreation. Set false while skipVmCreation=true to add the 3rd member to an existing 2-node environment (Issue #30 migration).')
+param skipVmCreationAz3 bool = skipVmCreation
 
 @description('Static private IP for DB VM in Zone 1 (must be in dbSubnet range)')
 param dbVmAz1PrivateIp string = '10.0.3.4'
 
 @description('Static private IP for DB VM in Zone 2 (must be in dbSubnet range)')
 param dbVmAz2PrivateIp string = '10.0.3.5'
+
+@description('Static private IP for the 3rd DB VM (must be in dbSubnet range; .0-.3 are reserved by Azure)')
+param dbVmAz3PrivateIp string = '10.0.3.6'
+
+@description('Availability Zone for the 3rd DB VM. Keep \'3\' so each replica set member is in its own zone. Use \'1\' or \'2\' only in regions/SKUs without a 3rd zone (then a zone outage that hosts 2 members loses the majority).')
+@allowed(['1', '2', '3'])
+param dbVmAz3Zone string = '3'
 
 // =============================================================================
 // Variables
@@ -117,7 +148,14 @@ var kernelTrackScript = loadTextContent('scripts/mongodb-kernel-track.sh')
 //   5. Configures for replica set
 //   6. Enables mongod; starts it on the 6.8 kernel, or schedules a reboot
 //      into 6.8 first (fresh VM) - mongod then starts after that reboot
-// Note: Replica set initialization is a separate manual step
+// Note: Replica set initialization is a separate step
+//   (scripts/post-deployment-setup.*: rs.initiate with 3 voting, data-bearing
+//   members 10.0.3.4/.5/.6; Issue #30).
+// IMPORTANT (Issue #30): the script body below is intentionally byte-identical
+//   for all 3 VMs and unchanged by #30. Changing its content changes the
+//   CustomScript settings, which re-runs it on EXISTING DB VMs on the next
+//   deployment (restarting mongod). Keeping it stable lets the 2→3 node
+//   migration add vm-db-az3 without re-running the script on vm-db-az1/az2.
 var mongoInstallScript = replace(replace('''
 #!/bin/bash
 set -e
@@ -539,8 +577,11 @@ exit 1
 // =============================================================================
 // Database Tier VMs
 // =============================================================================
-// Deploy 2 VMs in different Availability Zones for high availability
-// Each has a Premium SSD data disk for MongoDB data files
+// Deploy 3 VMs in different Availability Zones for high availability
+// Each has a Premium SSD data disk for MongoDB data files and the same
+// CustomScript (incl. the Issue #26 LTS kernel-track helper).
+// The "Role" tag only describes the intended initial role: after any
+// automatic election, any of the 3 members can be PRIMARY.
 // =============================================================================
 
 // Primary MongoDB VM in Availability Zone 1
@@ -595,6 +636,33 @@ module vmAz2 'vm.bicep' = {
   }
 }
 
+// Third MongoDB VM (Issue #30): data-bearing, voting, electable member.
+// Gives the replica set a majority (2 of 3) after any single-node failure.
+module vmAz3 'vm.bicep' = {
+  name: 'deploy-vm-db-az3'
+  params: {
+    location: location
+    vmName: 'vm-db-az3-${environment}'
+    vmSize: vmSize
+    availabilityZone: dbVmAz3Zone  // '3' by default; see "Zone requirement and fallback" above
+    subnetId: subnetId
+    adminUsername: adminUsername
+    sshPublicKey: sshPublicKey
+    osDiskType: 'StandardSSD_LRS'
+    osDiskSizeGB: 30
+    dataDisks: dataDisks
+    loadBalancerBackendPoolId: ''  // No LB for DB tier
+    privateIPAddress: dbVmAz3PrivateIp  // Static IP for predictable replica set config
+    enableMonitoring: enableMonitoring
+    logAnalyticsWorkspaceId: logAnalyticsWorkspaceId
+    dataCollectionRuleId: dataCollectionRuleId
+    customScriptContent: base64(mongoInstallScript)
+    forceUpdateTag: forceUpdateTag
+    skipVmCreation: skipVmCreationAz3  // Separate flag for the 2→3 node migration
+    tags: union(allTags, { Role: 'secondary' })
+  }
+}
+
 // =============================================================================
 // Outputs
 // =============================================================================
@@ -603,25 +671,29 @@ module vmAz2 'vm.bicep' = {
 output vmIds array = [
   vmAz1.outputs.vmId
   vmAz2.outputs.vmId
+  vmAz3.outputs.vmId
 ]
 
 @description('Names of DB tier VMs')
 output vmNames array = [
   vmAz1.outputs.vmName
   vmAz2.outputs.vmName
+  vmAz3.outputs.vmName
 ]
 
 @description('Private IP addresses of DB tier VMs')
 output privateIpAddresses array = [
   vmAz1.outputs.privateIpAddress
   vmAz2.outputs.privateIpAddress
+  vmAz3.outputs.privateIpAddress
 ]
 
 @description('Principal IDs of VM managed identities')
 output principalIds array = [
   vmAz1.outputs.principalId
   vmAz2.outputs.principalId
+  vmAz3.outputs.principalId
 ]
 
-@description('MongoDB connection string (after replica set initialization)')
-output mongoConnectionString string = 'mongodb://${dbVmAz1PrivateIp}:27017,${dbVmAz2PrivateIp}:27017/blogapp?replicaSet=blogapp-rs0'
+@description('MongoDB connection string with all 3 replica set members (after replica set initialization). The driver discovers the current PRIMARY from any reachable seed.')
+output mongoConnectionString string = 'mongodb://${dbVmAz1PrivateIp}:27017,${dbVmAz2PrivateIp}:27017,${dbVmAz3PrivateIp}:27017/blogapp?replicaSet=blogapp-rs0&w=majority'

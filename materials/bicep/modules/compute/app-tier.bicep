@@ -79,6 +79,9 @@ param entraClientId string
 @secure()
 param mongoDbAppPassword string
 
+@description('Comma-separated MongoDB replica set seed list (host:port) for the connection string. List ALL members so the driver can bootstrap from any surviving node (Issue #30: 3 members).')
+param mongoDbHosts string = '10.0.3.4:27017,10.0.3.5:27017,10.0.3.6:27017'
+
 // =============================================================================
 // Variables
 // =============================================================================
@@ -94,7 +97,13 @@ var allTags = union(defaultTags, tags)
 // Uses blogapp user with credentials created during DB provisioning
 // Reference: /design/DatabaseDesign.md - Section 3.4: Authentication & Users
 // IMPORTANT: mongoDbAppPassword must match the password used in post-deployment script
-var mongoDbUri = 'mongodb://blogapp:${mongoDbAppPassword}@10.0.3.4:27017,10.0.3.5:27017/blogapp?replicaSet=blogapp-rs0&authSource=blogapp'
+// Seed list (Issue #30): all 3 replica set members. The driver only needs ONE
+// reachable seed to discover the topology and then follows the current PRIMARY
+// automatically after an election (no app restart / config change needed).
+// w=majority is stated explicitly (it is also MongoDB's implicit default for
+// this topology) so writes are only acknowledged once 2 of 3 members have
+// them; do not weaken it to w=1 to "survive" a 2-node outage.
+var mongoDbUri = 'mongodb://blogapp:${mongoDbAppPassword}@${mongoDbHosts}/blogapp?replicaSet=blogapp-rs0&authSource=blogapp&w=majority'
 
 // Node.js 24 LTS installation script
 // This script:

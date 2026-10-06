@@ -127,6 +127,9 @@ param skipVmCreationApp bool = false
 @description('Skip DB tier VM creation - only update extensions on existing VMs')
 param skipVmCreationDb bool = false
 
+@description('Skip creation of the 3rd DB VM (vm-db-az3) only. Defaults to skipVmCreationDb. Set false with skipVmCreationDb=true to add the 3rd member to an existing 2-node environment (Issue #30).')
+param skipVmCreationDbAz3 bool = skipVmCreationDb
+
 // =============================================================================
 // Microsoft Entra ID Parameters (Authentication Configuration)
 // =============================================================================
@@ -195,6 +198,17 @@ var webSubnetPrefix = '10.0.1.0/24'
 var appSubnetPrefix = '10.0.2.0/24'
 var dbSubnetPrefix = '10.0.3.0/24'
 var bastionSubnetPrefix = '10.0.255.0/26'
+
+// DB tier static private IPs (Issue #30: 3-member MongoDB replica set)
+// Single source of truth for the DB VMs AND the App tier connection string.
+// Azure reserves .0-.3 in every subnet, so .4/.5/.6 are the first usable IPs.
+// One member per Availability Zone: az1=.4, az2=.5, az3=.6
+var dbVmPrivateIps = [
+  '10.0.3.4'
+  '10.0.3.5'
+  '10.0.3.6'
+]
+var mongoDbHosts = join(map(dbVmPrivateIps, ip => '${ip}:27017'), ',')
 
 // =============================================================================
 // Module 1: Monitoring (Log Analytics + Data Collection Rule)
@@ -464,6 +478,7 @@ module appTier 'modules/compute/app-tier.bicep' = {
     entraTenantId: entraTenantId
     entraClientId: entraClientId
     mongoDbAppPassword: mongoDbAppPassword  // Issue #1: Synchronized password
+    mongoDbHosts: mongoDbHosts  // Issue #30: all 3 replica set members as seeds
     forceUpdateTag: forceUpdateTagApp
     skipVmCreation: skipVmCreationApp
     tags: allTags
@@ -473,7 +488,10 @@ module appTier 'modules/compute/app-tier.bicep' = {
 // =============================================================================
 // Module 10: DB Tier VMs
 // =============================================================================
-// 2 MongoDB VMs across Availability Zones
+// 3 MongoDB VMs across Availability Zones 1/2/3 (Issue #30)
+// All 3 are data-bearing voting members (no arbiter), so any single VM or zone
+// failure leaves a majority (2 of 3) for automatic election and w:majority.
+// Requires a region/SKU with 3 zones; see db-tier.bicep "Zone requirement".
 // =============================================================================
 
 module dbTier 'modules/compute/db-tier.bicep' = {
@@ -499,6 +517,10 @@ module dbTier 'modules/compute/db-tier.bicep' = {
     dataCollectionRuleId: ''  // DCR created post-deployment via scripts/configure-dcr.sh
     forceUpdateTag: forceUpdateTagDb
     skipVmCreation: skipVmCreationDb
+    skipVmCreationAz3: skipVmCreationDbAz3
+    dbVmAz1PrivateIp: dbVmPrivateIps[0]
+    dbVmAz2PrivateIp: dbVmPrivateIps[1]
+    dbVmAz3PrivateIp: dbVmPrivateIps[2]
     tags: allTags
   }
 }
