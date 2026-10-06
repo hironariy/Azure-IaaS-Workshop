@@ -133,7 +133,7 @@ search " 500 " or " 502 " or " 503 "
 |---|---|---|
 | Web VM 停止 | Application Gateway backend health | 片方の backend が Unhealthy、アプリは継続 |
 | App VM 停止 | API 疎通、VM Heartbeat | API が継続または短時間で復旧 |
-| DB VM 停止 | API 疎通、Syslog、VM 状態 | 一時的な失敗の有無と復旧後の安定 |
+| DB Primary 停止 | API 疎通、Syslog（mongod の election ログ）、VM 状態、`rs.status()` | 約 10-15 秒で残り 2 台から新 Primary が選出され、API が自動復旧する。Secondary 停止では選出は起きない |
 | ASR test failover | Recovery Services vault job | Test failover job と cleanup 状態 |
 
 ## 8. よくあるつまずき

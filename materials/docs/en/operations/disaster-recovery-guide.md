@@ -25,6 +25,12 @@ Review the BCDR concepts used in this workshop: Azure Backup for recovery points
 
 For this IaaS workshop, Web and App tiers are easier to reason about because they are mostly stateless. DB tier failover requires more care because MongoDB replica set behavior and data consistency matter.
 
+| Tier | Configuration | Expected Behavior |
+|---|---|---|
+| Web | 2 VMs + Application Gateway | One VM can stop; traffic routes to the healthy VM |
+| App | 2 VMs + internal Load Balancer | One VM can stop; the API continues or recovers shortly |
+| DB | 3 VMs (Zones 1/2/3, data-bearing voting members, no arbiter) + MongoDB replica set | Any one VM can stop; the remaining two (a majority) elect a PRIMARY automatically and `w=majority` writes continue. Writes can fail for about 10-15 seconds during the election. Stopping two at once loses the majority and stops writes |
+
 ## 2. Azure Backup Pattern
 
 1. Create a Recovery Services vault in the workload region.
@@ -50,9 +56,13 @@ For this IaaS workshop, Web and App tiers are easier to reason about because the
 
 MongoDB replica sets help with node or zonal failures, but regional DR requires a plan.
 
-- If DB VMs are replicated with ASR, start DB first in a recovery plan.
+- If DB VMs are replicated with ASR, include **all three** (`vm-db-az1/az2/az3-prod`) in the same recovery plan group and start them before Web/App. Failing over only one node gives it 1 of 3 votes, so it cannot elect a PRIMARY.
+- If Azure Backup protects the DB tier, protect all three VMs. A restore usually starts from one member's data disk; the other members rebuild through initial sync.
+- `rs.reconfig({force: true})` after losing two or more members is a last resort that can roll back committed writes. Do not use it for normal failures.
 - Validate replica set health and primary election after failover.
 - If the workshop keeps DB regional DR as a design exercise, focus hands-on ASR on Web/App or representative VMs.
+
+> **AWS comparison:** like self-managed MongoDB on EC2 across three AZs, the replica set absorbs a zone failure, while regional DR needs a separate design (comparable to AWS Elastic Disaster Recovery or DocumentDB Global Clusters).
 
 ## 5. RPO And RTO
 

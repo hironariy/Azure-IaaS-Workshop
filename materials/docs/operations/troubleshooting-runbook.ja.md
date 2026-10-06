@@ -69,7 +69,7 @@ az vm list-usage --location japanwest \
   -o table
 ```
 
-**判断:** このワークショップでは Dsv6 シリーズで合計 16 vCPU が必要です。ファミリーとリージョン全体の両方の残量（Limit - Current）を確認します。クォータが足りても実際のゾーン内キャパシティが不足する場合があります。詳細は Day 0 のクォータ確認を参照してください。
+**判断:** このワークショップでは Dsv6 シリーズで合計 20 vCPU（DB VM 3 台分を含む）が必要です。DB VM は Zone 1/2/3 に 1 台ずつ配置するため、DB の SKU が 3 つのゾーンすべてで利用できる必要があります。ファミリーとリージョン全体の両方の残量（Limit - Current）を確認します。クォータが足りても実際のゾーン内キャパシティが不足する場合があります。詳細は Day 0 のクォータ確認を参照してください。
 
 **対処:**
 
@@ -160,8 +160,8 @@ az vm list --resource-group "$RESOURCE_GROUP" --show-details \
 
 **確認すること:**
 
-- DB VM が running か。
-- MongoDB レプリカセットの primary が存在するか。
+- DB VM 3 台（`vm-db-az1/az2/az3-prod`）が running か。2 台以上止まると過半数を失い、Primary が存在しなくなります。
+- MongoDB レプリカセットの primary が存在するか（`rs.status()` で PRIMARY 1 台 + SECONDARY 2 台）。
 - App subnet から DB subnet の 27017/TCP が許可されているか。
 - post-deployment setup が完了しているか。
 
@@ -177,6 +177,7 @@ az vm list --resource-group "$RESOURCE_GROUP" --show-details \
 - パスワード不一致が疑われる場合は `main.local.bicepparam` と `post-deployment-setup.local.sh` の値を照合します。
 - `mongoDbAppPassword` に `@` を含めた場合、Bicep が作成する `MONGODB_URI` の user info 区切りとして解釈され、接続文字列が壊れます。この教材では password を作り直し、`main.local.bicepparam` と `post-deployment-setup.local.sh` を同じ値にそろえてから再実行します。
 - API のログに `ECONNREFUSED` / `ReplicaSetNoPrimary` が出る場合は 7.1 を確認します。
+- Issue #30 以前に作成した 2 ノード環境で、post-deployment setup が `vm-db-az3-prod` が見つからない、またはメンバー数が 3 未満と警告する場合は 7.2 を実施します。
 
 ### 7.1 MongoDB が起動しない: Linux カーネル 6.19 以上 (Issue #26)
 
@@ -187,7 +188,7 @@ az vm list --resource-group "$RESOURCE_GROUP" --show-details \
   ```text
   MongooseServerSelectionError: connect ECONNREFUSED 10.0.3.4:27017
   ReplicaSetNoPrimary
-  servers: 10.0.3.4:27017 = Unknown, 10.0.3.5:27017 = Unknown
+  servers: 10.0.3.4:27017 = Unknown, 10.0.3.5:27017 = Unknown, 10.0.3.6:27017 = Unknown
   ```
 
 - DB VM 上で `mongod.service` が `failed` になり、27017 で待ち受けていません。
@@ -216,7 +217,7 @@ MongoDB のエラーは `MongoDB cannot start: Linux kernel versions 6.19 and ne
 
 **対処: 既存の DB VM を LTS カーネルトラックへ移行する（推奨）**
 
-DB VM は 1 台ずつ、**DB2 から** 実施します。Cloud Shell でリポジトリのルートから実行します。ヘルパーは次の処理を行います。
+DB VM は 1 台ずつ、**`vm-db-az3-prod` → `vm-db-az2-prod` → `vm-db-az1-prod`（通常は Primary）の順** に実施します。2 ノード環境の場合は az3 を飛ばします。Cloud Shell でリポジトリのルートから実行します。ヘルパーは次の処理を行います。
 
 1. `linux-azure-lts-24.04` をインストールする
 2. ローリングカーネルのメタパッケージを削除する
@@ -239,7 +240,7 @@ az vm run-command invoke -g "$RESOURCE_GROUP" -n vm-db-az2-prod \
 - 修正前のヘルパー（2026-10 以前のリポジトリ）で移行した VM で、mongod が `this subcommand must run as root` を出して起動しない場合は、最新のリポジトリで同じ `migrate` を再実行してから `sudo systemctl restart mongod` を実行します（Issue #31）この VM では、インストール済みのヘルパーが常に `migrate` を実行するため、`sudo blogapp-kernel-track status` は使わずに再実行してください。
 - Run Command が長時間（10 分以上）戻らない場合は、拡張機能（Azure Policy で配布される `MDE.Linux` など）の処理待ちの可能性があります。`az vm extension list -g "$RESOURCE_GROUP" --vm-name <VM 名> -o table` で状態を確認し、Bastion SSH でヘルパーを VM にコピーして `sudo bash mongodb-kernel-track.sh migrate` を実行します。
 
-3〜5 分待ってから、Bastion SSH で DB2 を確認します。
+3〜5 分待ってから、Bastion SSH で対象の DB VM を確認します。
 
 ```bash
 uname -r                                        # 6.8.x
@@ -249,9 +250,11 @@ mongosh --quiet --eval 'db.hello().isWritablePrimary + " " + db.hello().secondar
 sudo blogapp-kernel-track status                # finalize : done/not-needed
 ```
 
-レプリカセットの状態も確認します: `mongosh --quiet --eval 'rs.status().members.map(m => m.name + " " + m.stateStr)'`。その後、`vm-db-az1-prod` で同じ手順を繰り返します。
+レプリカセットの状態も確認します: `mongosh --quiet --eval 'rs.status().members.map(m => m.name + " " + m.stateStr)'`。対象が `SECONDARY` として復帰したことを確認してから、次の VM で同じ手順を繰り返します。Primary（通常 `vm-db-az1-prod`）は最後に実施し、計画的に切り替える場合は下記の注意どおり `rs.stepDown(300)` を実行します。
 
-> **2 ノード構成の注意:** 2 台のうち 1 台が再起動している間は、残り 1 台では過半数を維持できないため、**数分間 Primary が存在せず** API の書き込みが失敗します。これは想定どおりの動作で、本番では 3 台のデータ保持メンバーを使う理由を示す良い例です。2 ノード構成では、`rs.stepDown()` を実行しても停止時間は短くならないため不要です。
+> **3 ノード構成での影響:** 1 台ずつ再起動する限り、残り 2 台で過半数（3 票中 2 票）を維持するため、API は動き続けます。Primary の VM では、Run Command が戻った直後（再起動の約 1 分前）に、Primary 上で `rs.stepDown(300)` を実行します。既定の 60 秒では再起動の前に期限が切れ、priority 2 の az1 が Primary に戻ってしまいます。正常なシャットダウンでは mongod が自分で Primary を引き渡すため、選出は通常数秒で終わります。**2 台を同時に再起動しないでください**（過半数を失い、Primary が存在しなくなります）。
+>
+> **旧 2 ノード構成の注意:** Issue #30 以前の 2 ノード環境では、1 台の再起動中に残り 1 台では過半数を維持できないため、**数分間 Primary が存在せず** API の書き込みが失敗します。`rs.stepDown()` を実行しても停止時間は短くならないため不要です。7.2 で 3 ノード構成へ移行することを推奨します。
 
 下記の暫定回避策を使っていた場合でも、ヘルパーの `/etc/default/grub.d/99-blogapp-kernel-track.cfg` がそれを上書きします。移行後は `/etc/default/grub` の `GRUB_DEFAULT` を `0` に戻し、`sudo update-grub` を実行して設定を整理します。
 
@@ -279,7 +282,7 @@ sudo grub-script-check /boot/grub/grub.cfg && echo OK
 sudo reboot
 ```
 
-DB2 から復旧し、次に DB1 を復旧します。
+Secondary（az3、az2）から復旧し、最後に Primary（通常 az1）を復旧します。
 
 - `/boot/grub/grub.cfg` は直接編集しません。
 - データの再フォーマット、MongoDB のダウングレード、`rs.initiate()` の再実行はしません。
@@ -293,6 +296,135 @@ DB2 から復旧し、次に DB1 を復旧します。
 3. `sudo systemctl daemon-reload` を実行する
 4. `linux-azure` をインストールする
 5. DB VM を 1 台ずつ再起動する
+
+### 7.2 既存の 2 ノード環境を 3 ノードへ移行する (Issue #30)
+
+**対象:** Issue #30 より前にデプロイし、`vm-db-az1-prod` と `vm-db-az2-prod` の 2 台だけで MongoDB レプリカセットを構成している環境です。
+
+**なぜ移行するか:** 2 ノード構成では、どちらか 1 台が止まると残り 1 台は 2 票中 1 票しか持たず、過半数を満たせません。そのため Primary を自動選出できず、手動の強制再構成が必要でした。3 台のデータ保持メンバー（PSS）にすると、どの 1 台が止まっても残り 2 台で自動選出でき、`w=majority` の書き込みも続きます。
+
+> **AWS との比較:** EC2 上の自己管理 MongoDB で、2 AZ 構成に 3 つ目の AZ のインスタンスを足すのと同じ作業です。Amazon DocumentDB ではレプリカインスタンスを追加するだけですが、ここではメンバー追加、初期同期の待機、接続文字列の更新を自分で行います。
+
+**方針:** オンラインで 1 台を追加します（`rs.add()`）。`rs.reconfig({force: true})` やレプリカセットの再作成、既存データの再初期化は **行いません**。
+
+**コストとクォータ:** 受講者 1 人あたり、`Standard_D4s_v6` 1 台（+4 vCPU）、128 GB Premium SSD 1 本、OS ディスク 1 本が増えます。
+
+#### 手順 1: バックアップを取得する
+
+どちらかを実施します。
+
+- Azure Backup を構成済みの場合: `vm-db-az1-prod` と `vm-db-az2-prod` で **Backup now** を実行し、完了を確認します。
+- 構成していない場合: 両 DB VM のデータディスクのスナップショットを作成します。
+
+```bash
+for vm in vm-db-az1-prod vm-db-az2-prod; do
+  DISK_ID=$(az vm show -g "$RESOURCE_GROUP" -n $vm --query "storageProfile.dataDisks[0].managedDisk.id" -o tsv)
+  az snapshot create -g "$RESOURCE_GROUP" -n "snap-${vm}-pre-issue30" --source "$DISK_ID" --incremental true
+done
+```
+
+任意で、Primary 上で `mongodump --db blogapp --out /tmp/pre-issue30` を実行し、論理バックアップも取得します。
+
+#### 手順 2: クォータとゾーンを確認する
+
+```bash
+LOCATION="japanwest"   # デプロイしたリージョンに合わせます
+az vm list-usage --location "$LOCATION" \
+  --query "[?contains(name.value, 'DSv6') || name.value=='cores'].{Name:name.localizedValue, Current:currentValue, Limit:limit}" -o table
+az vm list-skus --location "$LOCATION" --size Standard_D4s_v6 \
+  --query "[].locationInfo[].zones" -o tsv
+```
+
+**判断:** 残量（Limit - Current）が 4 vCPU 以上あり、ゾーン一覧に `3` が含まれていれば続行します。Zone 3 がない場合は、講師と相談してください（`dbVmAz3Zone` で別ゾーンに置けますが、2 台が同じゾーンに入るとゾーン障害時に過半数を失う可能性があります）。
+
+#### 手順 3: Bicep を再デプロイして `vm-db-az3-prod` だけを作成する
+
+既存 VM は作り直さず、3 台目だけを作成します。`skipVmCreationDbAz3` は既定で `skipVmCreationDb` と同じ値になるため、明示的に `false` を指定します。
+
+```bash
+cd ~/Azure-IaaS-Workshop
+git pull   # Issue #30 を含む版を取得
+az deployment group create \
+  --resource-group "$RESOURCE_GROUP" \
+  --template-file materials/bicep/main.bicep \
+  --parameters materials/bicep/main.local.bicepparam \
+  --parameters skipVmCreationWeb=true skipVmCreationApp=true skipVmCreationDb=true skipVmCreationDbAz3=false
+```
+
+**期待結果:** `provisioningState` が `Succeeded` になり、`vm-db-az3-prod`（10.0.3.6、Zone 3）が作成されます。
+
+**影響:**
+
+- 既存の DB VM の Custom Script は内容が同じため再実行されません。
+- App VM の Custom Script は `MONGODB_URI` が 3 ホストに変わるため **再実行されます**（パッケージ更新を含みます）。`/opt/blogapp/.env` と `/etc/environment` は新しい URI に更新されますが、実行中の API と `/opt/blogapp/dist/.env` は変わりません（手順 6 で反映します）。
+- `--parameters` の上書き指定がエラーになる場合は、`main.local.bicepparam` に同じ 4 つの値を書いてから実行します。
+
+#### 手順 4: 新しい DB VM の準備完了を待つ
+
+新規 DB VM は初回起動時に LTS カーネル（6.8）へ切り替えるため、1 回再起動します（7.1 参照）。3〜5 分待ってから、Bastion SSH で `vm-db-az3-prod` を確認します。
+
+```bash
+uname -r                                  # 6.8.x
+sudo blogapp-kernel-track status          # finalize : done/not-needed
+findmnt --mountpoint /data/mongodb
+sudo systemctl is-active mongod           # active
+mongosh --quiet --eval 'db.hello().isWritablePrimary'   # false（まだメンバーではない）
+```
+
+#### 手順 5: Primary で `rs.add()` を実行する
+
+Primary（通常 `vm-db-az1-prod`）に Bastion SSH で接続します。
+
+```bash
+mongosh --quiet --eval 'db.hello().isWritablePrimary'   # true であること
+mongosh --quiet --eval 'rs.add({ host: "10.0.3.6:27017", priority: 1, votes: 1 })'
+```
+
+**期待結果:** `{ ok: 1 }` が返ります。すでに追加済みの場合は `Found two member configurations with same host field` というエラーになります。この場合は追加済みなので、手順 6 に進みます。
+
+> **なぜ `priority: 1, votes: 1` か:** 新規デプロイと同じ構成（az1 = priority 2、az2/az3 = priority 1、全員 1 票）にそろえます。初期同期中のメンバーは選出に立候補せず、多数決の計算にも影響しません。そのため、同期を待たずに追加しても安全です。
+
+#### 手順 6: 初期同期の完了を待つ
+
+```bash
+mongosh --quiet --eval '
+const s = rs.status();
+const p = s.members.find(m => m.stateStr === "PRIMARY");
+s.members.forEach(m => print(m.name, m.stateStr, "lagSec=" + ((p.optimeDate - m.optimeDate) / 1000)));
+'
+```
+
+`10.0.3.6:27017` が `STARTUP2`（初期同期中）から `SECONDARY` になり、`lagSec=0`（または数秒）になるまで、1 分おきに繰り返します。ワークショップのデータ量なら通常は数分以内です。
+
+#### 手順 7: アプリの接続文字列を更新し、API を 1 台ずつ再起動する
+
+Driver は既存の 2 ホストからも新メンバーを自動検出しますが、seed list に 3 ホストすべてを含めておきます。そうすると、将来 az1/az2 が停止した状態で API が起動しても接続できます。App VM ごとに（`vm-app-az1-prod` → `vm-app-az2-prod`）Bastion SSH で実行します。
+
+```bash
+grep '^MONGODB_URI' /opt/blogapp/.env | sed -E 's#//[^@]*@#//***@#'   # 3 ホスト (10.0.3.4/5/6) と replicaSet=blogapp-rs0 を確認
+cp /opt/blogapp/.env /opt/blogapp/dist/.env
+chmod 600 /opt/blogapp/dist/.env
+pm2 restart blogapp-api --update-env
+sleep 5
+curl -s http://localhost:3000/health
+```
+
+**期待結果:** `healthy` が返ります。1 台目が正常になってから 2 台目を実施します。内部 Load Balancer がもう一方の App VM に振り分けるため、API は停止しません。
+
+手順 3 で App tier を再デプロイしなかった場合は、`/opt/blogapp/.env` と `/opt/blogapp/dist/.env` の `MONGODB_URI` のホスト部を `10.0.3.4:27017,10.0.3.5:27017,10.0.3.6:27017` に編集してから再起動します。
+
+#### 手順 8: 動作を確認する
+
+```bash
+mongosh --quiet --eval 'rs.status().members.map(m => m.name + " " + m.stateStr + " votes=" + rs.conf().members.find(c => c.host === m.name).votes)'
+```
+
+- PRIMARY 1 台、SECONDARY 2 台、すべて `votes=1` であること。
+- ブラウザで投稿の作成と編集ができること。
+- post-deployment setup を再実行すると、`Replica set already initialized (3 members)` と表示され、再初期化されないこと。
+- Day 2 の DB フェイルオーバー演習（Primary 停止で自動選出）が実施できること。
+
+**ロールバック:** 問題があれば、Primary で `rs.remove("10.0.3.6:27017")` を実行し、2 ノード構成に戻します（接続文字列の 3 つ目のホストは無視されます）。不要になった `vm-db-az3-prod` とそのディスクを削除し、手順 1 のスナップショットは確認後に削除します。
 
 ## 8. Cloud Shell が切断された
 

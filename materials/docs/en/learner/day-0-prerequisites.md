@@ -66,14 +66,16 @@ Switch subscriptions if needed.
 az account set --subscription "<SUBSCRIPTION_ID_OR_NAME>"
 ```
 
-This workshop uses 6 Dsv6-series VMs.
+This workshop uses 7 Dsv6-series VMs (the DB tier is a 3-member MongoDB replica set, one VM in each of Zones 1/2/3, Issue #30).
 
 | VM Size | Count | vCPU Each | Total |
 |---|---:|---:|---:|
 | Standard_D2s_v6 (Web) | 2 | 2 | 4 |
 | Standard_D2s_v6 (App) | 2 | 2 | 4 |
-| Standard_D4s_v6 (DB) | 2 | 4 | 8 |
-| **Total** | **6** |  | **16 vCPU** |
+| Standard_D4s_v6 (DB) | 3 | 4 | 12 |
+| **Total** | **7** |  | **20 vCPU** |
+
+> **Cost note:** because the DB tier now has three VMs (Issue #30), each learner environment costs one more `Standard_D4s_v6`, one 128 GB Premium SSD data disk, and one OS disk compared with the old 2-node design. Disks are billed even when VMs are stopped (deallocated), so delete the whole resource group after the workshop.
 
 ```bash
 az extension add --name quota
@@ -87,9 +89,9 @@ az quota usage list --scope "$COMPUTE_SCOPE" \
   -o table
 ```
 
-**Expected Result:** Both `Standard DSv6 Family vCPUs` and `Total Regional vCPUs` have at least **16 vCPUs** available (`Limit - Current`). If either row is missing, run `az quota list --scope "$COMPUTE_SCOPE" -o table` and `az quota usage list --scope "$COMPUTE_SCOPE" -o table` to discover the actual quota names.
+**Expected Result:** Both `Standard DSv6 Family vCPUs` and `Total Regional vCPUs` have at least **20 vCPUs** available (`Limit - Current`). If either row is missing, run `az quota list --scope "$COMPUTE_SCOPE" -o table` and `az quota usage list --scope "$COMPUTE_SCOPE" -o table` to discover the actual quota names.
 
-**Checkpoint:** Quota does not guarantee VM capacity in a zone. Check SKU restrictions in zones 1 and 2 with `az vm list-skus --location japanwest --size Standard_D2s_v6 --zone -o table` and `az vm list-skus --location japanwest --size Standard_D4s_v6 --zone -o table`. If quota or capacity is insufficient, ask the instructor about a different SKU/region or a quota increase.
+**Checkpoint:** Quota does not guarantee VM capacity in a zone. Check SKU restrictions with `az vm list-skus --location japanwest --size Standard_D2s_v6 --zone -o table` and `az vm list-skus --location japanwest --size Standard_D4s_v6 --zone -o table`: Web/App need zones 1 and 2, and **the DB size (Standard_D4s_v6) must be available in zones 1, 2 and 3**. If quota or capacity is insufficient, ask the instructor about a different SKU/region or a quota increase.
 
 ## 4. Check Resource Providers
 

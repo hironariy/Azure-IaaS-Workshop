@@ -196,7 +196,7 @@ Run the script.
 ./post-deployment-setup.local.sh "$RESOURCE_GROUP"
 ```
 
-**Expected Result:** MongoDB replica set initialization and user creation succeed.
+**Expected Result:** The 3-member MongoDB replica set and the users are created, and the Step 6 check shows 1 `PRIMARY` and 2 `SECONDARY`. The script is safe to re-run (it never re-initializes an initialized set).
 
 **Checkpoint:** Password mismatch or a password containing `@` will prevent the backend from connecting to MongoDB.
 
@@ -204,7 +204,7 @@ Run the script.
 
 MongoDB 8.0 does not start on Linux kernel 6.19 or newer, so the DB VMs use Ubuntu 24.04's long-term Azure kernel `linux-azure-lts-24.04` (6.8.x) instead of the rolling `linux-azure` kernel (7.0). A new DB VM boots the image's rolling kernel first. The CustomScript then installs MongoDB, switches GRUB to 6.8, and **reboots the VM once, about 1 minute after the deployment step finishes**. mongod starts after that reboot. Step 2 of the post-deployment script waits for this automatically (up to 15 minutes per DB VM).
 
-To check manually, connect to `vm-db-az1-prod` and then `vm-db-az2-prod`:
+To check manually, connect to `vm-db-az1-prod`, `vm-db-az2-prod` and `vm-db-az3-prod` in turn:
 
 ```bash
 az network bastion ssh \
@@ -227,6 +227,30 @@ sudo blogapp-kernel-track status           # running kernel ... OK (6.8 LTS trac
 **Checkpoint:** If `uname -r` shows 6.19 or newer (for example `7.0.x`) or mongod is `failed`, see [Troubleshooting runbook 7.1](../operations/troubleshooting-runbook.md#71-mongodb-does-not-start-linux-kernel-619-or-newer-issue-26).
 
 > **AWS comparison:** with Amazon DocumentDB, AWS chooses and patches the host kernel for you. With MongoDB on IaaS VMs, you choose the kernel track, just as you would when pinning a kernel line on an EC2 database host.
+
+### 9.2 Check The 3-Member Replica Set
+
+The DB tier is 3 data-bearing members: 1 PRIMARY + 2 SECONDARY, no arbiter (Issue #30). Connect to `vm-db-az1-prod` and run:
+
+```bash
+mongosh --quiet --eval 'rs.status().members.forEach(m => print(m.name, m.stateStr, "health=" + m.health))'
+mongosh --quiet --eval 'rs.conf().members.forEach(m => print(m.host, "priority=" + m.priority, "votes=" + m.votes))'
+```
+
+**Expected Result:**
+
+```text
+10.0.3.4:27017 PRIMARY health=1
+10.0.3.5:27017 SECONDARY health=1
+10.0.3.6:27017 SECONDARY health=1
+10.0.3.4:27017 priority=2 votes=1
+10.0.3.5:27017 priority=1 votes=1
+10.0.3.6:27017 priority=1 votes=1
+```
+
+**Checkpoint:** Only 2 members means an environment from the earlier 2-node design. Add the 3rd member with [Troubleshooting runbook 7.2](../operations/troubleshooting-runbook.md#72-migrate-an-existing-2-node-environment-to-3-nodes-issue-30). Priority 2 on `10.0.3.4` only makes the initial PRIMARY predictable for the workshop steps; any member can be elected PRIMARY.
+
+> **AWS comparison:** this is the same layout as self-managed MongoDB on 3 EC2 instances, one per AZ. With Amazon DocumentDB the service promotes a replica for you; here you own the replica set configuration and elections.
 
 ## 10. Configure The Data Collection Rule
 
@@ -285,7 +309,8 @@ Open the Frontend SPA app registration in Azure Portal.
 - `main.local.bicepparam` is configured.
 - Bicep deployment is `Succeeded`.
 - Bastion extension is ready.
-- Both DB VMs run a 6.8.x kernel and mongod is active.
+- All 3 DB VMs run a 6.8.x kernel and mongod is active.
+- `rs.status()` shows 3 members: 1 `PRIMARY` + 2 `SECONDARY`.
 - Post-deployment setup is complete.
 - DCR is configured.
 - Application Gateway FQDN is collected.

@@ -39,8 +39,8 @@ For multiple groups, set `RESOURCE_GROUP` to something like `rg-blogapp-A-worksh
 | Bastion | `bastion-blogapp-prod` |
 | Web VMs | `vm-web-az1-prod`, `vm-web-az2-prod` |
 | App VMs | `vm-app-az1-prod`, `vm-app-az2-prod` |
-| DB VMs | `vm-db-az1-prod`, `vm-db-az2-prod` |
-| MongoDB replica set | `blogapp-rs0` |
+| DB VMs | `vm-db-az1-prod` (10.0.3.4, Zone 1), `vm-db-az2-prod` (10.0.3.5, Zone 2), `vm-db-az3-prod` (10.0.3.6, Zone 3) |
+| MongoDB replica set | `blogapp-rs0` (3 data-bearing members, PSS, no arbiter) |
 | VM admin user | `azureuser` |
 
 VM names do not change per group; always specify `--resource-group`.
@@ -93,6 +93,17 @@ az vm start --resource-group "$RESOURCE_GROUP" --name vm-web-az1-prod
 ```
 
 Use `az vm stop` for workshop failure simulation. Do not use `az vm deallocate` unless the instructor tells you to.
+
+### MongoDB Replica Set Status
+
+```bash
+az vm run-command invoke -g "$RESOURCE_GROUP" -n vm-db-az1-prod \
+  --command-id RunShellScript \
+  --scripts "mongosh --quiet --eval 'rs.status().members.map(m => m.name + \" \" + m.stateStr)'" \
+  --query "value[0].message" -o tsv
+```
+
+Healthy output is one PRIMARY and two SECONDARY members. With one node down, an automatic election keeps writes working; with two nodes down, the majority is lost and writes stop.
 
 ### Application Gateway FQDN
 

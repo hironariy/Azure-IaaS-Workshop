@@ -368,7 +368,7 @@ module natGateway 'modules/network/nat-gateway.bicep' = if (deployNatGateway) {
 - `modules/compute/app-tier.bicep`
 - `modules/compute/db-tier.bicep`
   - Web/App/DB という役割ごとのラッパーです。
-  - それぞれ Zone 1 と Zone 2 に 2 台の VM を展開します。
+  - Web/App は Zone 1 と Zone 2 に 2 台、DB は Zone 1/2/3 に 3 台の VM を展開します。
   - ティアごとの bootstrap script や static private IP、Load Balancer backend pool などを指定します。
 
 この構成により、「VM として共通の作り方」と「Web/App/DB ごとの違い」を分けて読めます。
@@ -413,7 +413,7 @@ Internet
 | Microsoft Entra ID | `entraTenantId`, `entraClientId`, `entraFrontendClientId` | Frontend/Backend の認証設定 |
 | HTTPS | `sslCertificateData`, `sslCertificatePassword`, `appGatewayDnsLabel` | Application Gateway の TLS 終端と FQDN |
 | DB | `mongoDbAppPassword` | App tier から MongoDB へ接続するためのパスワード |
-| 再デプロイ補助 | `forceUpdateTagWeb`, `forceUpdateTagApp`, `forceUpdateTagDb`, `skipVmCreationWeb`, `skipVmCreationApp`, `skipVmCreationDb` | Custom Script 再実行や VM 既存参照 |
+| 再デプロイ補助 | `forceUpdateTagWeb`, `forceUpdateTagApp`, `forceUpdateTagDb`, `skipVmCreationWeb`, `skipVmCreationApp`, `skipVmCreationDb`, `skipVmCreationDbAz3` | Custom Script 再実行や VM 既存参照。`skipVmCreationDbAz3` は既存 2 ノード環境に 3 台目の DB VM だけを追加するときに `false` にします |
 
 一般的な Azure 設定:
 
@@ -496,7 +496,7 @@ DB tier 用の Network Security Group を作ります。
 今回のワークショップの特徴的な設定:
 
 - MongoDB を PaaS ではなく VM 上に構築し、IaaS の可用性設計を学ぶ教材にしています。
-- 2 台構成の replica set とし、短時間で HA の挙動を確認できるようにしています。
+- 3 台のデータ保持メンバー（Zone 1/2/3）の replica set とし、どの 1 台が止まっても自動選出で書き込みが続く HA の挙動を確認できるようにしています。
 
 #### `network/nat-gateway.bicep`
 
@@ -643,19 +643,19 @@ App tier として、Node.js/Express VM を 2 台作ります。
 
 #### `compute/db-tier.bicep`
 
-DB tier として、MongoDB VM を 2 台作ります。
+DB tier として、MongoDB VM を 3 台作ります。
 
 一般的な Azure 設定:
 
-- Zone 1 と Zone 2 に VM を分けます。
+- Zone 1、Zone 2、Zone 3 に VM を 1 台ずつ分けます（`dbVmAz3Zone` で 3 台目のゾーンを指定。3 ゾーン未満のリージョンで同じゾーンに 2 台置くと、そのゾーンの障害で過半数を失う点に注意）。
 - DB 用 data disk を追加します。
 - static private IP を使い、DB 接続先と replica set の構成を安定させます。
 - DB tier は App tier からのみ接続される前提にします。
 
 今回のワークショップの特徴的な設定:
 
-- 2 node の MongoDB replica set を構成します。本番では 3 node 以上や managed service を検討しますが、ワークショップでは短時間で AZ 障害や復旧の考え方を学ぶため 2 node にしています。
-- `vm-db-az1` と `vm-db-az2` を固定 IP で配置し、接続文字列を `output` で返します。
+- 3 node（PRIMARY + SECONDARY + SECONDARY、アービターなし）の MongoDB replica set を構成します。3 票中 2 票の過半数が残るため、どの 1 台が止まっても自動選出でき、`w=majority` の書き込みも継続します。アービターを使わないのは、データ保持ノードが 1 台止まると `w=majority` を満たせなくなるためです（Issue #30）。AWS でいえば、3 つの AZ に EC2 を 1 台ずつ置いた自己管理 MongoDB と同じ考え方です。
+- `vm-db-az1`（10.0.3.4）、`vm-db-az2`（10.0.3.5）、`vm-db-az3`（10.0.3.6）を固定 IP で配置し、3 ホストを含む接続文字列を `output` で返します。
 - IaaS 上で DB を動かす場合のディスク、ネットワーク、可用性の設計ポイントを見える形にしています。
 
 ### 4.6 Monitoring module: Log Analytics
@@ -727,8 +727,8 @@ Blob 用の Storage Account を作ります。
 
 今回のワークショップの特徴的な設定:
 
-- 2 zone、各 tier 2 台構成にして、短時間で HA の考え方を確認できるようにしている。
-- MongoDB は 2 node replica set とし、IaaS 上の DB 可用性を教材として扱う。
+- Web/App は 2 zone・各 2 台、DB は 3 zone・3 台構成にして、短時間で HA の考え方を確認できるようにしている。
+- MongoDB は 3 node replica set（PSS）とし、IaaS 上の DB 可用性と過半数による自動選出を教材として扱う。
 - 自己署名証明書を使い、ドメインや商用証明書なしで HTTPS を体験できるようにしている。
 - VM サイズと Storage SKU は学習用にコストを抑えている。
 - アプリの配置は Bicep で完全自動化せず、受講者が Bastion SSH で確認しながら実施する流れを残している。
@@ -802,6 +802,7 @@ VM は、作成後に変えにくいプロパティがあります。たとえ�
 - `skipVmCreationWeb`
 - `skipVmCreationApp`
 - `skipVmCreationDb`
+- `skipVmCreationDbAz3`（既定値は `skipVmCreationDb` と同じ。既存 2 ノード環境に 3 台目の DB VM だけを追加するときは `false` にします。手順は [トラブルシューティングランブック 7.2](../operations/troubleshooting-runbook.ja.md#72-既存の-2-ノード環境を-3-ノードへ移行する-issue-30) を参照）
 
 `compute/vm.bicep` では、`skipVmCreation` が `true` の場合に VM と NIC を `existing` resource として参照します。
 

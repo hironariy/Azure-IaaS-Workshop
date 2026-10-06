@@ -126,7 +126,7 @@ search " 500 " or " 502 " or " 503 "
 |---|---|---|
 | Web VM stop | Application Gateway backend health | One backend becomes Unhealthy; app continues |
 | App VM stop | API traffic, VM Heartbeat | API continues or recovers quickly |
-| DB VM stop | API traffic, Syslog, VM state | Temporary failures may occur; app stabilizes after recovery |
+| DB PRIMARY stop | API traffic, Syslog (mongod election log), VM state, `rs.status()` | A new PRIMARY is elected from the remaining two in about 10-15 seconds and the API recovers automatically. Stopping a SECONDARY causes no election |
 | ASR test failover | Recovery Services vault jobs | Test failover job and cleanup state |
 
 ## Common Issues

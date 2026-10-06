@@ -57,7 +57,7 @@ Azure Backup は、VM やデータの復元ポイントを作成するための�
 |---|---|---|
 | Web | 2 VM + Application Gateway | 1 台停止しても正常 VM へルーティング |
 | App | 2 VM + Internal Load Balancer | 1 台停止しても API が継続または短時間で復旧 |
-| DB | 2 VM + MongoDB replica set | primary 再選出により復旧。ただし一時的な失敗が起こり得る |
+| DB | 3 VM（Zone 1/2/3、データ保持・投票メンバー、アービターなし）+ MongoDB replica set | どの 1 台が停止しても残り 2 台（過半数）で Primary を自動選出し、`w=majority` の書き込みが継続。選出中の約 10-15 秒は書き込みが失敗し得る。2 台同時停止では過半数を失い書き込み不可 |
 
 DB tier はステートフルであり、Web/App tier よりも停止の影響が大きくなります。演習では、停止、観測、起動、復旧確認を 1 セットで行います。
 
@@ -89,10 +89,14 @@ ASR は VM を別リージョンへレプリケートし、災害時の failover
 
 MongoDB レプリカセットはゾーン障害には有効ですが、リージョン DR では追加の設計が必要です。
 
-- DB VM を ASR 対象にする場合、Recovery Plan で DB を先に起動します。
+- DB VM を ASR 対象にする場合は、**3 台すべて**（`vm-db-az1/az2/az3-prod`）を同じ Recovery Plan のグループに入れ、Web/App より先に起動します。1 台だけをフェールオーバーしても、3 票中 1 票では Primary を選出できません。
+- Azure Backup で DB を保護する場合も 3 台すべてを対象にします。復元は通常 1 台分のデータディスクから行い、残りのメンバーは初期同期で再構築します。
 - フェールオーバー後、MongoDB replica set の primary と接続文字列を確認します。
 - 単一リージョン前提の replica set をそのまま別リージョンへ広げる設計は上級トピックとして扱います。
-- ワークショップ時間内では、DB の復旧は Azure Backup の Restore と、単一 VM 停止時の replica set 挙動確認を中心にします。
+- ワークショップ時間内では、DB の復旧は Azure Backup の Restore と、単一 VM 停止時の replica set 挙動確認（自動選出）を中心にします。
+- 2 台以上を失った場合の `rs.reconfig({force: true})` は、データ損失（コミット済み書き込みのロールバック）を伴い得る最終手段です。通常の障害対応では使いません。
+
+> **AWS との比較:** 3 AZ の EC2 に置いた自己管理 MongoDB と同じく、ゾーン障害はレプリカセットが吸収し、リージョン DR は別設計（AWS Elastic Disaster Recovery や DocumentDB Global Clusters に相当する仕組み）が必要です。
 
 ## 8. 成功条件
 
