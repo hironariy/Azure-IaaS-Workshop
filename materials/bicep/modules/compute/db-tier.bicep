@@ -404,15 +404,14 @@ apt-get -o DPkg::Lock::Timeout=120 -y install mongodb-org
 # ==========================================================
 # Configure MongoDB for Replica Set
 # ==========================================================
-# Backup original config
-cp /etc/mongod.conf /etc/mongod.conf.bak
-
 # Set ownership (mongodb user created by package installation)
 chown -R mongodb:mongodb /data/mongodb
 
 # Configure MongoDB
+# The new config is written to a temp file first so that a rerun
+# (forceUpdateTag) can tell whether anything actually changed (Issue #39).
 # Note: MongoDB 7.0+ no longer uses storage.journal.enabled (journaling is always on)
-cat > /etc/mongod.conf << 'EOF'
+cat > /etc/mongod.conf.new << 'EOF'
 # MongoDB 8.0 configuration file
 # Reference: https://www.mongodb.com/docs/manual/reference/configuration-options/
 
@@ -447,6 +446,24 @@ processManagement:
 replication:
   replSetName: blogapp-rs0
 EOF
+
+# Rerun on a healthy node (already on the LTS kernel, mongod running, same
+# config): leave mongod alone. The three DB VMs are deployed in parallel, so
+# restarting here would take the whole replica set down at once (Issue #39).
+if "$KERNEL_TRACK_HELPER" is-lts-running \
+  && systemctl is-active --quiet mongod \
+  && cmp -s /etc/mongod.conf.new /etc/mongod.conf; then
+  rm -f /etc/mongod.conf.new
+  systemctl daemon-reload
+  systemctl enable mongod
+  echo "MongoDB is already running with the current config; skipping restart."
+  mongod --version | head -1
+  exit 0
+fi
+
+# Backup the previous config and apply the new one
+cp /etc/mongod.conf /etc/mongod.conf.bak
+mv /etc/mongod.conf.new /etc/mongod.conf
 
 # Stop MongoDB if it was auto-started with default config
 systemctl stop mongod 2>/dev/null || true

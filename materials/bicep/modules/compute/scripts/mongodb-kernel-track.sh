@@ -207,7 +207,18 @@ cmd_install_units() {
   local self
   self=$(readlink -f "$0")
   if [ "$self" != "$HELPER_PATH" ]; then
-    install -D -m 0755 "$self" "$HELPER_PATH"
+    # Azure Run Command (RunShellScript) injects "export argN=..." and
+    # "set -- ..." right after the shebang to pass --parameters. Copying the
+    # file verbatim would make the installed helper always run that argument
+    # (e.g. "migrate") and break the mongod ExecStartPre (Issue #31).
+    local tmp="${HELPER_PATH}.tmp"
+    mkdir -p "$(dirname "$HELPER_PATH")"
+    awk 'NR == 1 || done { print; next }
+         /^export arg[0-9]+=/ || /^set -- / { next }
+         { done = 1; print }' "$self" > "$tmp"
+    bash -n "$tmp" || die "sanitized helper failed syntax check"
+    chmod 0755 "$tmp"
+    mv "$tmp" "$HELPER_PATH"
     log "Installed helper to $HELPER_PATH"
   fi
 

@@ -171,6 +171,10 @@ az vm run-command invoke -g "$RESOURCE_GROUP" -n vm-db-az2-prod \
   --parameters migrate
 ```
 
+- Run Command returns **before** the VM reboots (about 1 minute later). Its output is truncated to about 4 KB, so judge the result with the checks below.
+- If the VM is already running a 6.8.x kernel, the helper only finalizes and does not reboot. If mongod is still stopped in that case, start it with `sudo systemctl restart mongod`.
+- If a VM was migrated with the earlier helper (repository before 2026-10) and mongod fails with `this subcommand must run as root`, rerun the same `migrate` from the latest repository and then run `sudo systemctl restart mongod` (Issue #31).
+
 Wait about 3-5 minutes, then check DB2 (through Bastion SSH):
 
 ```bash
@@ -183,7 +187,7 @@ sudo blogapp-kernel-track status                # finalize : done/not-needed
 
 Also check replica set health: `mongosh --quiet --eval 'rs.status().members.map(m => m.name + " " + m.stateStr)'`. Then repeat the same steps for `vm-db-az1-prod`.
 
-> **2-node replica set caution:** while one of the two DB VMs reboots, the other cannot keep a majority, so there is **no primary for a few minutes** and API writes fail. This is expected and a good illustration of why production uses 3 data-bearing members.
+> **2-node replica set caution:** while one of the two DB VMs reboots, the other cannot keep a majority, so there is **no primary for a few minutes** and API writes fail. This is expected and a good illustration of why production uses 3 data-bearing members. On two nodes, `rs.stepDown()` does not shorten the outage, so skip it.
 
 If you previously used the temporary GRUB workaround below, the helper's `/etc/default/grub.d/99-blogapp-kernel-track.cfg` overrides it. After the migration, set `GRUB_DEFAULT=0` back in `/etc/default/grub` and run `sudo update-grub` to keep the configuration clean.
 

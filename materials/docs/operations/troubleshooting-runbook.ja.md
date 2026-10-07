@@ -234,6 +234,10 @@ az vm run-command invoke -g "$RESOURCE_GROUP" -n vm-db-az2-prod \
   --parameters migrate
 ```
 
+- Run Command は VM の再起動（約 1 分後）の **前に** 戻ります。出力は約 4 KB で切り詰められるため、結果は下記の確認コマンドで判断します。
+- 対象 VM が既に 6.8.x で起動している場合、ヘルパーは再起動せずに後処理（finalize）だけを行います。このとき mongod が停止したままなら、`sudo systemctl restart mongod` で起動します。
+- 修正前のヘルパー（2026-10 以前のリポジトリ）で移行した VM で、mongod が `this subcommand must run as root` を出して起動しない場合は、最新のリポジトリで同じ `migrate` を再実行してから `sudo systemctl restart mongod` を実行します（Issue #31）。
+
 3〜5 分待ってから、Bastion SSH で DB2 を確認します。
 
 ```bash
@@ -246,7 +250,7 @@ sudo blogapp-kernel-track status                # finalize : done/not-needed
 
 レプリカセットの状態も確認します: `mongosh --quiet --eval 'rs.status().members.map(m => m.name + " " + m.stateStr)'`。その後、`vm-db-az1-prod` で同じ手順を繰り返します。
 
-> **2 ノード構成の注意:** 2 台のうち 1 台が再起動している間は、残り 1 台では過半数を維持できないため、**数分間 Primary が存在せず** API の書き込みが失敗します。これは想定どおりの動作で、本番では 3 台のデータ保持メンバーを使う理由を示す良い例です。
+> **2 ノード構成の注意:** 2 台のうち 1 台が再起動している間は、残り 1 台では過半数を維持できないため、**数分間 Primary が存在せず** API の書き込みが失敗します。これは想定どおりの動作で、本番では 3 台のデータ保持メンバーを使う理由を示す良い例です。2 ノード構成では、`rs.stepDown()` を実行しても停止時間は短くならないため不要です。
 
 下記の暫定回避策を使っていた場合でも、ヘルパーの `/etc/default/grub.d/99-blogapp-kernel-track.cfg` がそれを上書きします。移行後は `/etc/default/grub` の `GRUB_DEFAULT` を `0` に戻し、`sudo update-grub` を実行して設定を整理します。
 
