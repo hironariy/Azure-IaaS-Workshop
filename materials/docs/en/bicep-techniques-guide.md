@@ -57,7 +57,7 @@ This keeps the workshop UX simple (one deployment command) while preserving good
 ### 2.2 Reusable VM module + tier wrappers
 Compute is split into:
 - `materials/bicep/modules/compute/vm.bicep` (a reusable “single VM” module)
-- `web-tier.bicep`, `app-tier.bicep`, `db-tier.bicep` (each deploys two VMs across AZ1 & AZ2)
+- `web-tier.bicep`, `app-tier.bicep` (each deploys two VMs across AZ1 & AZ2), `db-tier.bicep` (three MongoDB VMs across AZ1, AZ2 and AZ3; the third VM's zone is the `dbVmAz3Zone` parameter of `main.bicep`, default `'3'`)
 
 Tier modules are responsible for tier-specific decisions like:
 - which bootstrap script to run (NGINX / Node.js / MongoDB)
