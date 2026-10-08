@@ -92,6 +92,57 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
+# Mask the password in MongoDB connection strings before anything is printed
+# (RepositoryWideDesignRules.md 1.4): mongodb://user:secret@host -> mongodb://user:***@host
+mask_secrets() {
+    sed -E 's#(mongodb(\+srv)?://[^:/@[:space:]]*:)[^@[:space:]]*@#\1***@#g'
+}
+
+# Fail fast with an actionable message when SSH authentication fails.
+# Without this, a passphrase-protected key without ssh-agent looks like
+# "VM not reachable" and the script only times out after 15 minutes (Issue #32).
+fail_on_ssh_auth_error() {
+    local out="$1"
+    if printf '%s\n' "$out" | grep -qiE 'Permission denied \(publickey|Too many authentication failures|Load key .*(incorrect passphrase|invalid format|error in libcrypto)|UNPROTECTED PRIVATE KEY FILE|no such identity'; then
+        log_error "Bastion SSH authentication failed for user '$USERNAME' with key '$SSH_KEY':"
+        printf '%s\n' "$out" | tr -d '\r' | grep -iE 'denied|passphrase|Load key|identity|UNPROTECTED|authentication' | mask_secrets | head -5 | sed 's/^/    /'
+        log_error "Fix one of these, then re-run this script (it is safe to re-run):"
+        log_error "  - Passphrase-protected key: eval \"\$(ssh-agent -s)\" && ssh-add \"$SSH_KEY\""
+        log_error "  - Wrong key: set SSH_KEY to the private key whose public key you passed to Bicep (sshPublicKey)"
+        log_error "  - Permissions: chmod 600 \"$SSH_KEY\""
+        exit 1
+    fi
+}
+
+# Run a command on a VM through Bastion SSH.
+# Sets BASTION_OUT (stdout+stderr, CR removed) and BASTION_RC (exit code).
+# Never returns non-zero itself, so callers decide how to handle failures
+# under `set -e`; SSH authentication errors stop the script immediately.
+BASTION_OUT=""
+BASTION_RC=0
+bastion_run() {
+    local vm_id="$1" remote_cmd="$2"
+    BASTION_RC=0
+    BASTION_OUT=$(az network bastion ssh \
+        --name "$BASTION_NAME" \
+        -g "$RESOURCE_GROUP" \
+        --target-resource-id "$vm_id" \
+        --auth-type "ssh-key" \
+        --username "$USERNAME" \
+        --ssh-key "$SSH_KEY" \
+        -- -o StrictHostKeyChecking=no -o ConnectTimeout=20 -t \
+        "$remote_cmd" 2>&1) || BASTION_RC=$?
+    BASTION_OUT=$(printf '%s\n' "$BASTION_OUT" | tr -d '\r')
+    fail_on_ssh_auth_error "$BASTION_OUT"
+    return 0
+}
+
+# Like bastion_run, and also prints the masked output.
+bastion_show() {
+    bastion_run "$1" "$2"
+    printf '%s\n' "$BASTION_OUT" | mask_secrets
+}
+
 # =============================================================================
 # Main Script
 # =============================================================================
@@ -109,6 +160,23 @@ if [[ "$RESOURCE_GROUP" == *"<"* ]] || [[ "$BASTION_NAME" == *"<"* ]]; then
     log_error "Please edit this script and replace all <PLACEHOLDER> values!"
     log_error "Or copy post-deployment-setup.template.sh to post-deployment-setup.local.sh and edit."
     exit 1
+fi
+
+# SSH key preflight (Issue #32): az network bastion ssh cannot prompt for a
+# key passphrase reliably, so a protected key must be loaded into ssh-agent.
+SSH_KEY="${SSH_KEY/#\~/$HOME}"
+if [ ! -f "$SSH_KEY" ]; then
+    log_error "SSH private key not found: $SSH_KEY"
+    log_error "Set SSH_KEY to the private key that matches the sshPublicKey you passed to Bicep (for example ~/.ssh/id_rsa)."
+    exit 1
+fi
+if ! ssh-keygen -y -P "" -f "$SSH_KEY" >/dev/null 2>&1; then
+    if ! ssh-add -l >/dev/null 2>&1; then
+        log_error "SSH key $SSH_KEY is passphrase-protected, but no key is loaded in ssh-agent."
+        log_error "Run: eval \"\$(ssh-agent -s)\" && ssh-add \"$SSH_KEY\"   then re-run this script."
+        exit 1
+    fi
+    log_info "SSH key is passphrase-protected; using the key loaded in ssh-agent."
 fi
 
 # -----------------------------------------------------------------------------
@@ -160,21 +228,13 @@ DB_READY_INTERVAL_SEC=30
 
 wait_for_db_ready() {
     local vm_name="$1" vm_id="$2"
-    local elapsed=0 out line kernel="?" mongod_state="?" hello="?"
+    local elapsed=0 line kernel="?" mongod_state="?" hello="?" last_err
     log_info "Waiting for MongoDB on $vm_name (6.8 LTS kernel + mongod running, timeout ${DB_READY_TIMEOUT_SEC}s)..."
     while [ "$elapsed" -lt "$DB_READY_TIMEOUT_SEC" ]; do
-        # Fails while the VM is rebooting; that is expected, just retry.
-        out=$(az network bastion ssh \
-            --name "$BASTION_NAME" \
-            -g "$RESOURCE_GROUP" \
-            --target-resource-id "$vm_id" \
-            --auth-type "ssh-key" \
-            --username "$USERNAME" \
-            --ssh-key "$SSH_KEY" \
-            -- -o StrictHostKeyChecking=no -o ConnectTimeout=20 \
-            "echo DBREADY kernel=\$(uname -r) mongod=\$(systemctl is-active mongod) hello=\$(mongosh --quiet --eval 'db.hello().ok' 2>/dev/null || echo 0)" \
-            2>/dev/null || true)
-        line=$(printf '%s\n' "$out" | tr -d '\r' | grep '^DBREADY ' | tail -1 || true)
+        # Connection errors are expected while the VM is rebooting; just retry.
+        # SSH authentication errors are not, and stop the script (bastion_run).
+        bastion_run "$vm_id" "echo DBREADY kernel=\$(uname -r) mongod=\$(systemctl is-active mongod) hello=\$(mongosh --quiet --eval 'db.hello().ok' 2>/dev/null || echo 0)"
+        line=$(printf '%s\n' "$BASTION_OUT" | grep '^DBREADY ' | tail -1 || true)
         if [ -n "$line" ]; then
             kernel=$(printf '%s\n' "$line" | sed -n 's/.*kernel=\([^ ]*\).*/\1/p')
             mongod_state=$(printf '%s\n' "$line" | sed -n 's/.*mongod=\([^ ]*\).*/\1/p')
@@ -185,7 +245,8 @@ wait_for_db_ready() {
             fi
             log_info "  $vm_name not ready yet: kernel=$kernel mongod=$mongod_state hello=$hello (${elapsed}s)"
         else
-            log_info "  $vm_name not reachable yet (rebooting into the LTS kernel?) (${elapsed}s)"
+            last_err=$(printf '%s\n' "$BASTION_OUT" | grep -v '^[[:space:]]*$' | tail -1 | mask_secrets | cut -c1-160)
+            log_info "  $vm_name not reachable yet (rebooting into the LTS kernel?) (${elapsed}s): ${last_err:-no output}"
         fi
         sleep "$DB_READY_INTERVAL_SEC"
         elapsed=$((elapsed + DB_READY_INTERVAL_SEC))
@@ -215,23 +276,10 @@ log_info "Step 3: Initializing MongoDB replica set..."
 RS_HOSTS="$DB_VM1_IP:27017,$DB_VM2_IP:27017,$DB_VM3_IP:27017"
 RS_URI="mongodb://$RS_HOSTS/?replicaSet=$REPLICA_SET_NAME"
 
-# Run a command on DB VM 1 through Bastion.
-db_vm1_ssh() {
-    az network bastion ssh \
-        --name "$BASTION_NAME" \
-        -g "$RESOURCE_GROUP" \
-        --target-resource-id "$DB_VM1_ID" \
-        --auth-type "ssh-key" \
-        --username "$USERNAME" \
-        --ssh-key "$SSH_KEY" \
-        -- -o StrictHostKeyChecking=no -t \
-        "$1"
-}
-
 # Check whether the replica set is already initialized (idempotency).
 # rs.conf() throws NotYetInitialized on a fresh node.
-RS_STATE_LINE=$(db_vm1_ssh "mongosh --quiet --eval 'try { print(\"RSSTATE initialized \" + rs.conf().members.length) } catch (e) { print(\"RSSTATE uninitialized \" + e.codeName) }'" 2>/dev/null \
-    | tr -d '\r' | grep '^RSSTATE ' | tail -1 || true)
+bastion_run "$DB_VM1_ID" "mongosh --quiet --eval 'try { print(\"RSSTATE initialized \" + rs.conf().members.length) } catch (e) { print(\"RSSTATE uninitialized \" + e.codeName) }'"
+RS_STATE_LINE=$(printf '%s\n' "$BASTION_OUT" | grep '^RSSTATE ' | tail -1 || true)
 log_info "Replica set state on $DB_VM1_NAME: ${RS_STATE_LINE:-unknown}"
 
 if [[ "$RS_STATE_LINE" == "RSSTATE initialized "* ]]; then
@@ -250,15 +298,25 @@ elif [[ "$RS_STATE_LINE" == "RSSTATE uninitialized "* ]]; then
     # PRIMARY deterministic for the workshop steps. Side effect to observe on
     # Day 2: after vm-db-az1 recovers and catches up, it calls a "priority
     # takeover" election and becomes PRIMARY again (a second short election).
-    db_vm1_ssh "mongosh --quiet --eval 'rs.initiate({
-            _id: \"$REPLICA_SET_NAME\",
-            members: [
-                { _id: 0, host: \"$DB_VM1_IP:27017\", priority: 2, votes: 1 },
-                { _id: 1, host: \"$DB_VM2_IP:27017\", priority: 1, votes: 1 },
-                { _id: 2, host: \"$DB_VM3_IP:27017\", priority: 1, votes: 1 }
-            ]
-        })'"
-
+    # Print a marker so success is checked, not assumed (Issue #32).
+    bastion_run "$DB_VM1_ID" "mongosh --quiet --eval 'try {
+            const r = rs.initiate({
+                _id: \"$REPLICA_SET_NAME\",
+                members: [
+                    { _id: 0, host: \"$DB_VM1_IP:27017\", priority: 2, votes: 1 },
+                    { _id: 1, host: \"$DB_VM2_IP:27017\", priority: 1, votes: 1 },
+                    { _id: 2, host: \"$DB_VM3_IP:27017\", priority: 1, votes: 1 }
+                ]
+            });
+            print(\"RSINIT ok=\" + r.ok);
+        } catch (e) { print(\"RSINIT error \" + e.codeName + \": \" + e.message) }'"
+    RS_INIT_LINE=$(printf '%s\n' "$BASTION_OUT" | grep '^RSINIT ' | tail -1 || true)
+    if [ "$RS_INIT_LINE" != "RSINIT ok=1" ]; then
+        log_error "rs.initiate failed on $DB_VM1_NAME: ${RS_INIT_LINE:-no answer (exit code $BASTION_RC)}"
+        printf '%s\n' "$BASTION_OUT" | mask_secrets | tail -10 | sed 's/^/    /'
+        log_error "Check that all 3 DB VMs can reach each other on port 27017 (NSG, mongod bindIp), then re-run this script."
+        exit 1
+    fi
     log_success "Replica set initiated"
 else
     log_error "Could not read the replica set state from $DB_VM1_NAME (got: '${RS_STATE_LINE:-nothing}')."
@@ -269,30 +327,45 @@ fi
 # Wait until the set is healthy: exactly 1 PRIMARY and 2 SECONDARY.
 # (Replaces a fixed sleep: initial sync of an empty set takes ~10-30s.)
 log_info "Waiting for 1 PRIMARY + 2 SECONDARY (up to 3 minutes)..."
-RS_HEALTH=$(db_vm1_ssh "mongosh --quiet --eval 'for (let i = 0; i < 36; i++) { let p = 0, s = 0; try { rs.status().members.forEach(m => { if (m.stateStr === \"PRIMARY\") p++; if (m.stateStr === \"SECONDARY\") s++; }); } catch (e) {} if (p === 1 && s === 2) { print(\"RSHEALTH ok\"); quit(0); } sleep(5000); } print(\"RSHEALTH timeout\");'" 2>/dev/null \
-    | tr -d '\r' | grep '^RSHEALTH ' | tail -1 || true)
+bastion_run "$DB_VM1_ID" "mongosh --quiet --eval 'for (let i = 0; i < 36; i++) { let p = 0, s = 0; try { rs.status().members.forEach(m => { if (m.stateStr === \"PRIMARY\") p++; if (m.stateStr === \"SECONDARY\") s++; }); } catch (e) {} if (p === 1 && s === 2) { print(\"RSHEALTH ok\"); quit(0); } sleep(5000); } print(\"RSHEALTH timeout\"); rs.status().members.forEach(m => print(\"  \" + m.name + \" \" + m.stateStr + \" health=\" + m.health));'"
+RS_HEALTH=$(printf '%s\n' "$BASTION_OUT" | grep '^RSHEALTH ' | tail -1 || true)
 if [ "$RS_HEALTH" = "RSHEALTH ok" ]; then
     log_success "Replica set healthy: 1 PRIMARY + 2 SECONDARY"
 else
-    log_warning "Replica set did not reach 1 PRIMARY + 2 SECONDARY in time (${RS_HEALTH:-no answer}). See Step 6 output and troubleshooting runbook 7."
+    # Users cannot be created without a PRIMARY, so stop here (Issue #32).
+    log_error "Replica set did not reach 1 PRIMARY + 2 SECONDARY within 3 minutes (${RS_HEALTH:-no answer, exit code $BASTION_RC})."
+    printf '%s\n' "$BASTION_OUT" | grep '^  ' | mask_secrets
+    log_error "See troubleshooting runbook section 7, then re-run this script (it is safe to re-run)."
+    exit 1
 fi
 
 # -----------------------------------------------------------------------------
 # Step 4: Create MongoDB Admin User
 # -----------------------------------------------------------------------------
 log_info "Step 4: Creating MongoDB admin user..."
+
+# Check the USER marker printed by the createUser commands in Steps 4-5.
+check_user_result() {
+    local label="$1" line
+    line=$(printf '%s\n' "$BASTION_OUT" | grep '^USER ' | tail -1 || true)
+    case "$line" in
+        "USER created") log_success "MongoDB $label created" ;;
+        "USER exists")  log_success "MongoDB $label already exists (kept as is)" ;;
+        *)
+            log_error "Could not create MongoDB $label: ${line:-no answer (exit code $BASTION_RC)}"
+            printf '%s\n' "$BASTION_OUT" | mask_secrets | tail -10 | sed 's/^/    /'
+            log_error "Fix the error above, then re-run this script (it is safe to re-run)."
+            exit 1
+            ;;
+    esac
+}
 # Connect with the replica set URI so the write goes to the current PRIMARY
 # (createUser uses w:"majority" by default on a replica set).
 
-az network bastion ssh \
-    --name "$BASTION_NAME" \
-    -g "$RESOURCE_GROUP" \
-    --target-resource-id "$DB_VM1_ID" \
-    --auth-type "ssh-key" \
-    --username "$USERNAME" \
-    --ssh-key "$SSH_KEY" \
-    -- -o StrictHostKeyChecking=no -t \
-    "mongosh --quiet \"$RS_URI\" --eval '
+# Prints "USER created|exists" or "USER error ..." so the result is checked
+# instead of assumed; any other failure stops the script (Issue #32).
+bastion_run "$DB_VM1_ID" "mongosh --quiet \"$RS_URI\" --eval '
+    try {
         db = db.getSiblingDB(\"admin\");
         if (db.getUser(\"$ADMIN_USER\") === null) {
             db.createUser({
@@ -302,28 +375,21 @@ az network bastion ssh \
                     { role: \"root\", db: \"admin\" }
                 ]
             });
-            print(\"Admin user created\");
+            print(\"USER created\");
         } else {
-            print(\"Admin user already exists\");
+            print(\"USER exists\");
         }
-    '" 2>/dev/null || log_warning "Admin user may already exist"
-
-log_success "MongoDB admin user ready"
+    } catch (e) { print(\"USER error \" + e.codeName + \": \" + e.message) }
+'"
+check_user_result "admin user $ADMIN_USER"
 
 # -----------------------------------------------------------------------------
 # Step 5: Create MongoDB Application User
 # -----------------------------------------------------------------------------
 log_info "Step 5: Creating MongoDB application user..."
 
-az network bastion ssh \
-    --name "$BASTION_NAME" \
-    -g "$RESOURCE_GROUP" \
-    --target-resource-id "$DB_VM1_ID" \
-    --auth-type "ssh-key" \
-    --username "$USERNAME" \
-    --ssh-key "$SSH_KEY" \
-    -- -o StrictHostKeyChecking=no -t \
-    "mongosh --quiet \"$RS_URI\" --eval '
+bastion_run "$DB_VM1_ID" "mongosh --quiet \"$RS_URI\" --eval '
+    try {
         db = db.getSiblingDB(\"blogapp\");
         if (db.getUser(\"$APP_USER\") === null) {
             db.createUser({
@@ -333,13 +399,13 @@ az network bastion ssh \
                     { role: \"readWrite\", db: \"blogapp\" }
                 ]
             });
-            print(\"Application user created\");
+            print(\"USER created\");
         } else {
-            print(\"Application user already exists\");
+            print(\"USER exists\");
         }
-    '" 2>/dev/null || log_warning "Application user may already exist"
-
-log_success "MongoDB application user ready"
+    } catch (e) { print(\"USER error \" + e.codeName + \": \" + e.message) }
+'"
+check_user_result "application user $APP_USER"
 
 # -----------------------------------------------------------------------------
 # Step 6: Verify Configuration
@@ -348,15 +414,7 @@ log_info "Step 6: Verifying configuration..."
 
 # Verify replica set status
 log_info "Checking replica set status..."
-az network bastion ssh \
-    --name "$BASTION_NAME" \
-    -g "$RESOURCE_GROUP" \
-    --target-resource-id "$DB_VM1_ID" \
-    --auth-type "ssh-key" \
-    --username "$USERNAME" \
-    --ssh-key "$SSH_KEY" \
-    -- -o StrictHostKeyChecking=no -t \
-    "mongosh --quiet --eval 'rs.status().members.forEach(m => print(m.name + \": \" + m.stateStr + \" (health=\" + m.health + \")\"))'"
+bastion_show "$DB_VM1_ID" "mongosh --quiet --eval 'rs.status().members.forEach(m => print(m.name + \": \" + m.stateStr + \" (health=\" + m.health + \")\"))'"
 log_info "Expected: 3 members = 1 PRIMARY + 2 SECONDARY (10.0.3.4 is normally PRIMARY)."
 
 # -----------------------------------------------------------------------------
@@ -368,15 +426,8 @@ APP_VM1_ID=$(az vm show -g "$RESOURCE_GROUP" -n "$APP_VM1_NAME" --query id -o ts
 
 if [ -n "$APP_VM1_ID" ]; then
     log_info "Checking /etc/environment on App VM..."
-    az network bastion ssh \
-        --name "$BASTION_NAME" \
-        -g "$RESOURCE_GROUP" \
-        --target-resource-id "$APP_VM1_ID" \
-        --auth-type "ssh-key" \
-        --username "$USERNAME" \
-        --ssh-key "$SSH_KEY" \
-        -- -o StrictHostKeyChecking=no -t \
-        "cat /etc/environment | grep -E 'NODE_ENV|MONGODB_URI|ENTRA' || echo 'Environment variables not found (CustomScript may still be running)'"
+    # MONGODB_URI contains the app password; bastion_show masks it.
+    bastion_show "$APP_VM1_ID" "grep -E 'NODE_ENV|MONGODB_URI|ENTRA' /etc/environment || echo 'Environment variables not found (CustomScript may still be running)'"
 fi
 
 # -----------------------------------------------------------------------------
@@ -388,15 +439,7 @@ WEB_VM1_ID=$(az vm show -g "$RESOURCE_GROUP" -n "$WEB_VM1_NAME" --query id -o ts
 
 if [ -n "$WEB_VM1_ID" ]; then
     log_info "Checking /var/www/html/config.json on Web VM..."
-    az network bastion ssh \
-        --name "$BASTION_NAME" \
-        -g "$RESOURCE_GROUP" \
-        --target-resource-id "$WEB_VM1_ID" \
-        --auth-type "ssh-key" \
-        --username "$USERNAME" \
-        --ssh-key "$SSH_KEY" \
-        -- -o StrictHostKeyChecking=no -t \
-        "cat /var/www/html/config.json 2>/dev/null || echo 'config.json not found (CustomScript may still be running)'"
+    bastion_show "$WEB_VM1_ID" "cat /var/www/html/config.json 2>/dev/null || echo 'config.json not found (CustomScript may still be running)'"
 fi
 
 # -----------------------------------------------------------------------------
@@ -416,6 +459,6 @@ echo "  1. Deploy backend application code to App VMs"
 echo "  2. Build and deploy frontend to Web VMs"
 echo "  3. Update NGINX configuration for API proxy"
 echo ""
-log_info "Connection string for backend:"
-echo "  mongodb://$APP_USER:$APP_PASSWORD@$RS_HOSTS/blogapp?replicaSet=$REPLICA_SET_NAME&authSource=blogapp&w=majority"
+log_info "Connection string for backend (password masked; Bicep already wrote the real value to MONGODB_URI on the App VMs):"
+echo "  mongodb://$APP_USER:***@$RS_HOSTS/blogapp?replicaSet=$REPLICA_SET_NAME&authSource=blogapp&w=majority"
 echo ""
