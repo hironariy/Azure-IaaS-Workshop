@@ -272,8 +272,9 @@ replication:
   replSetName: blogapp-rs0       # Replica set name
   oplogSizeMB: 2048              # 2GB oplog (sufficient for workshop)
 
-# Security settings
+# Security settings (Issue #36)
 security:
+  keyFile: /etc/mongodb/keyfile  # Internal (member-to-member) authentication; mode 0400, owner mongodb
   authorization: enabled         # Require authentication
   
 # Operation profiling (for workshop learning)
@@ -1468,6 +1469,13 @@ npm run seed
 - **`/design/RepositoryWideDesignRules.md` Section 3**: Error Handling (security considerations)
 
 ### Authentication and Authorization
+
+#### Implementation (Issue #36)
+
+- **Internal authentication**: every replica set member uses the same keyFile (`/etc/mongodb/keyfile`). The key comes from the `@secure()` Bicep parameter `mongoDbReplicaSetKey` (6-1024 base64 characters, e.g. `openssl rand -base64 756 | tr -d '\n'`). The DB CustomScript is passed through `protectedSettings`, so the key is encrypted and not visible in the extension's instance view.
+- **Client authentication**: `security.authorization: enabled`. The first user (`blogadmin`) is created by `scripts/post-deployment-setup.*` on the PRIMARY through the **localhost exception**, right after `rs.initiate()`. All later commands log in as `blogadmin`; the app connects as `blogapp` (`authSource=blogapp`).
+- **Rerun safety**: on an existing member that has data but no keyFile (deployed before Issue #36), the install script only stages `/etc/mongod.conf.pending-auth`. Enabling access control on such an environment is a rolling `transitionToAuth` change (troubleshooting runbook 7.3).
+- **AWS comparison**: Amazon DocumentDB always requires authentication; self-managed MongoDB on VMs (as on EC2) starts with access control off unless you enable it.
 
 #### User Roles
 

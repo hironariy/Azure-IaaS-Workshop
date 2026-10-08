@@ -122,12 +122,15 @@ code main.local.bicepparam
 | `sslCertificateData` | `cert-base64.txt` の内容 | `cat ../../cert-base64.txt` |
 | `sslCertificatePassword` | PFX パスワード | 既定値 `Workshop2024!` |
 | `mongoDbAppPassword` | MongoDB アプリユーザーのパスワード | 自分で決める強い値。Step 9 の `<YOUR_MONGODB_APP_PASSWORD>` と完全一致させる。<u>**必ず下記の IMPORTANT の内容も読むこと。**</u> |
+| `mongoDbReplicaSetKey` | MongoDB レプリカセットの共有キー（keyFile） | `openssl rand -base64 756 \| tr -d '\n'` の出力を 1 行で貼り付ける。再デプロイでも同じ値を使う |
 | `appGatewayDnsLabel` | 一意な DNS ラベル | 例: `blogapp-team1-0106`。<u>**アルファベットの大文字や@などの特殊記号は利用しないこと。**</u>基本的には小文字、数字、ハイフンを利用する。 |
 
 > [!IMPORTANT]
 > `mongoDbAppPassword` は、Step 9 の `post-deployment-setup.local.sh` に設定する `<YOUR_MONGODB_APP_PASSWORD>` と **1 文字も違わず一致**させます。不一致の場合、Bicep が作成する App VM の `MONGODB_URI` と MongoDB 上のユーザー password がずれ、Backend API が DB に接続できません。
 >
-> MongoDB connection string では `@` が予約文字です。この教材では Bicep が password を connection string に埋め込むため、`mongoDbAppPassword` には `@` を使わないでください。迷った場合は、英数字と `!`、`-`、`_`、`.` の範囲で作成します。
+> MongoDB connection string では `@` が予約文字です。この教材では Bicep が password を connection string に埋め込むため、`mongoDbAppPassword` には `@` を使わないでください。迷った場合は、英数字と `!`、`-`、`_`、`.` の範囲で作成します。post-deployment script は空白、引用符、`$`、`\`、`@`、`:`、`/`、`%` を含む password を受け付けません（例: `openssl rand -hex 16`）。
+>
+> `mongoDbReplicaSetKey` は 3 台の DB VM が互いを認証するための共有キーです（Issue #36）。MongoDB は keyFile と `authorization: enabled` で起動し、ユーザー名とパスワードなしでは読み書きできません。キーは CustomScript の `protectedSettings`（暗号化）で渡されるため、ポータルや `az vm extension show` には表示されません。AWS の Amazon DocumentDB は常に認証必須ですが、VM 上の MongoDB（EC2 でも Azure VM でも）は自分で有効にする必要があります。
 
 複数グループの場合は `groupId` も設定します。
 
@@ -255,7 +258,7 @@ az network bastion ssh \
 uname -r                                   # 6.8.0-xxxx-azure
 sudo systemctl status mongod --no-pager    # active (running)
 sudo ss -lntp '( sport = :27017 )'         # mongod が待ち受けている
-mongosh --quiet --eval 'db.hello()'        # ok: 1（Step 3 の後は setName blogapp-rs0）
+mongosh --quiet --eval 'db.hello()'        # ok: 1（Step 3 の後は setName blogapp-rs0）。db.hello() は認証不要
 sudo blogapp-kernel-track status           # running kernel ... OK (6.8 LTS track)
 ```
 
@@ -265,11 +268,12 @@ sudo blogapp-kernel-track status           # running kernel ... OK (6.8 LTS trac
 
 ### 9.2 レプリカセットが 3 メンバーであることを確認する
 
-DB tier は 3 台のデータ保持メンバー（Primary 1 台 + Secondary 2 台、アービターなし）で構成します（Issue #30）。`vm-db-az1-prod` に接続して次を実行します。
+DB tier は 3 台のデータ保持メンバー（Primary 1 台 + Secondary 2 台、アービターなし）で構成します（Issue #30）。`vm-db-az1-prod` に接続して次を実行します。MongoDB は認証が有効なため（Issue #36）、管理ユーザー `blogadmin` でログインします。`-p` に値を付けないとパスワードを聞かれるので、Step 9 の `<YOUR_MONGODB_ADMIN_PASSWORD>` を入力します（コマンド履歴に残りません）。
 
 ```bash
-mongosh --quiet --eval 'rs.status().members.forEach(m => print(m.name, m.stateStr, "health=" + m.health))'
-mongosh --quiet --eval 'rs.conf().members.forEach(m => print(m.host, "priority=" + m.priority, "votes=" + m.votes))'
+mongosh -u blogadmin -p --authenticationDatabase admin --quiet --eval '
+  rs.status().members.forEach(m => print(m.name, m.stateStr, "health=" + m.health));
+  rs.conf().members.forEach(m => print(m.host, "priority=" + m.priority, "votes=" + m.votes))'
 ```
 
 **期待結果:**
@@ -284,6 +288,14 @@ mongosh --quiet --eval 'rs.conf().members.forEach(m => print(m.host, "priority="
 ```
 
 **チェックポイント:** メンバーが 2 つしかない場合は、2 台構成の旧環境です。[トラブルシューティングランブック 7.2](../operations/troubleshooting-runbook.ja.md#72-既存の-2-ノード環境を-3-ノードへ移行する-issue-30) の手順で 3 台目を追加します。`10.0.3.4` の priority 2 は、最初の Primary を決めて手順を分かりやすくするためだけの設定です。どのメンバーも Primary に選出されます。
+
+続けて、認証なしでは読み取れないことを確認します（Issue #36）。
+
+```bash
+mongosh --quiet --eval 'db.getSiblingDB("blogapp").posts.findOne()'
+```
+
+**期待結果:** `MongoServerError: Command find requires authentication` のように拒否されます。データが表示された場合はアクセス制御が無効です。[トラブルシューティングランブック 7.3](../operations/troubleshooting-runbook.ja.md#73-既存環境で-mongodb-のアクセス制御を有効にする-issue-36) を確認します。
 
 > **AWS との比較:** 3 つの AZ に 1 台ずつ EC2 を置いて MongoDB を自己管理する構成と同じです。Amazon DocumentDB では、レプリカの昇格はサービスが行います。ここではレプリカセットの構成と選挙を利用者が管理します。
 

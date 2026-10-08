@@ -94,9 +94,19 @@ param sslCertificatePassword = ''  // REQUIRED: Add certificate password here
 // =============================================================================
 
 // MongoDB application user password
-// Use a strong password with at least 12 characters
-// Example: Generate with: openssl rand -base64 16
+// Use a strong password with at least 12 characters.
+// Letters, digits and - _ . ! # * + = only: the password is embedded in the
+// MongoDB connection string, so @ : / % and quotes are not allowed.
+// Example: Generate with: openssl rand -hex 16
 param mongoDbAppPassword = ''  // REQUIRED: Add MongoDB app password here
+
+// MongoDB replica set key (Issue #36): shared secret written to
+// /etc/mongodb/keyfile on all 3 DB VMs so members authenticate each other;
+// mongod also enforces user authentication (authorization: enabled).
+// Generate once and keep it for every redeployment of this environment:
+//   openssl rand -base64 756 | tr -d '\n'
+// Do not commit the real value (use main.local.bicepparam).
+param mongoDbReplicaSetKey = ''  // REQUIRED: Add replica set key here
 
 // DNS label prefix for Application Gateway public IP
 // Results in FQDN: <label>.<region>.cloudapp.azure.com

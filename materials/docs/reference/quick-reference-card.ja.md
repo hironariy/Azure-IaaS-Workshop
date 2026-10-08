@@ -67,6 +67,7 @@ FQDN=$(az network public-ip show \
 | `sslCertificateData` | Base64 encoded PFX | `cat cert-base64.txt` |
 | `sslCertificatePassword` | PFX password | 既定 `Workshop2024!` |
 | `mongoDbAppPassword` | MongoDB app user password | Step 9 の post-deployment setup と同じ値。`@` は使わない |
+| `mongoDbReplicaSetKey` | MongoDB replica set key (keyFile) | `openssl rand -base64 756 \| tr -d '\n'`。再デプロイでも同じ値 |
 | `appGatewayDnsLabel` | Application Gateway FQDN の DNS label | 例: `blogapp-team1-0106` |
 
 ## よく使う Cloud Shell コマンド
@@ -97,13 +98,14 @@ az vm start --resource-group "$RESOURCE_GROUP" --name vm-web-az1-prod
 ### MongoDB レプリカセット状態
 
 ```bash
+read -rsp 'MongoDB admin password: ' MONGO_ADMIN_PASSWORD; echo
 az vm run-command invoke -g "$RESOURCE_GROUP" -n vm-db-az1-prod \
   --command-id RunShellScript \
-  --scripts "mongosh --quiet --eval 'rs.status().members.map(m => m.name + \" \" + m.stateStr)'" \
+  --scripts "mongosh -u blogadmin -p '$MONGO_ADMIN_PASSWORD' --authenticationDatabase admin --quiet --eval 'rs.status().members.map(m => m.name + \" \" + m.stateStr)'" \
   --query "value[0].message" -o tsv
 ```
 
-正常時は PRIMARY 1 台と SECONDARY 2 台です。1 台停止までは自動選出で書き込みが継続しますが、2 台停止すると過半数を失い書き込みできません。
+MongoDB は認証が有効なため（Issue #36）、管理ユーザー `blogadmin` のパスワードを最初に入力します。正常時は PRIMARY 1 台と SECONDARY 2 台です。1 台停止までは自動選出で書き込みが継続しますが、2 台停止すると過半数を失い書き込みできません。
 
 ### Application Gateway FQDN
 

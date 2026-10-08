@@ -56,6 +56,9 @@ param entraFrontendClientId = ''  // REQUIRED: Add your frontend SPA client ID h
 
 param mongoDbAppPassword = ''  // Add MongoDB app password (must match post-deployment script)
 
+// MongoDB replica set key (Issue #36). Generate once: openssl rand -base64 756 | tr -d '\n'
+param mongoDbReplicaSetKey = ''  // Add replica set key (keep the same value on redeployments)
+
 // =============================================================================
 // Cost Optimization - Disable expensive resources
 // =============================================================================

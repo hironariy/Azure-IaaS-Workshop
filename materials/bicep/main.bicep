@@ -184,6 +184,14 @@ param appGatewayDnsLabel string = ''
 @secure()
 param mongoDbAppPassword string
 
+// Issue #36: MongoDB access control. Every DB VM gets the same key in
+// /etc/mongodb/keyfile (replica set members authenticate each other with it),
+// and mongod runs with authorization enabled. The key travels only in the
+// CustomScript protectedSettings (encrypted).
+@description('Shared MongoDB replica set key (internal authentication between the 3 DB VMs). 6-1024 base64 characters. Generate with: openssl rand -base64 756 | tr -d \'\\n\'. Keep the same value on every redeployment.')
+@secure()
+param mongoDbReplicaSetKey string  // Length (6-1024) is validated by modules/compute/db-tier.bicep
+
 // =============================================================================
 // Variables
 // =============================================================================
@@ -515,6 +523,7 @@ module dbTier 'modules/compute/db-tier.bicep' = {
     subnetId: vnet.outputs.dbSubnetId
     adminUsername: adminUsername
     sshPublicKey: sshPublicKey
+    mongoDbReplicaSetKey: mongoDbReplicaSetKey  // Issue #36: keyFile, sent via protectedSettings
     vmSize: dbVmSize
     dataDiskSizeGB: dbDataDiskSizeGB
     enableMonitoring: deployMonitoring
