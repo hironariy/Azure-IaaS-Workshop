@@ -47,6 +47,9 @@ jobs:
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=low
 
+      - name: Lint
+        run: npm run lint
+
       - name: Build
         run: npm run build
 
@@ -72,6 +75,9 @@ jobs:
 
       - name: Audit all dependencies
         run: npm audit --audit-level=low
+
+      - name: Lint
+        run: npm run lint
 
       - name: Type check
         run: npm run type-check

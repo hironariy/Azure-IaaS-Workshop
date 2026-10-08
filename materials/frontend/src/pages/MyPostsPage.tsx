@@ -3,40 +3,61 @@
  * Displays list of current user's posts (including drafts)
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useIsAuthenticated } from '@azure/msal-react';
 import { getMyPosts, deletePost, Post } from '../services/api';
+
+type StatusFilter = 'all' | 'draft' | 'published';
 
 function MyPostsPage() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [statusFilter, setStatusFilter] = useState<'all' | 'draft' | 'published'>('all');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [deletingSlug, setDeletingSlug] = useState<string | null>(null);
   const isAuthenticated = useIsAuthenticated();
 
-  const fetchPosts = useCallback(async () => {
+  // Fetch inside the effect and only call setState from the async callbacks.
+  // The `ignore` flag drops responses from a superseded request (e.g. the user
+  // switched the filter before the previous request finished).
+  // See https://react.dev/learn/synchronizing-with-effects#fetching-data
+  useEffect(() => {
     if (!isAuthenticated) {
-      setLoading(false);
       return;
     }
 
-    try {
-      setLoading(true);
-      const data = await getMyPosts(1, 50, statusFilter);
-      setPosts(data.posts);
-    } catch (err) {
-      setError('Failed to load your posts');
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
+    let ignore = false;
+    getMyPosts(1, 50, statusFilter)
+      .then((data) => {
+        if (!ignore) {
+          setPosts(data.posts);
+        }
+      })
+      .catch((err: unknown) => {
+        if (!ignore) {
+          setError('Failed to load your posts');
+          console.error(err);
+        }
+      })
+      .finally(() => {
+        if (!ignore) {
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      ignore = true;
+    };
   }, [isAuthenticated, statusFilter]);
 
-  useEffect(() => {
-    fetchPosts();
-  }, [fetchPosts]);
+  // Show the spinner from the event handler instead of the effect body.
+  const changeStatusFilter = (filter: StatusFilter): void => {
+    if (filter !== statusFilter) {
+      setLoading(true);
+      setStatusFilter(filter);
+    }
+  };
 
   const handleDelete = async (slug: string, title: string) => {
     if (!confirm(`Are you sure you want to delete "${title}"? This action cannot be undone.`)) {
@@ -93,7 +114,7 @@ function MyPostsPage() {
       {/* Status Filter */}
       <div className="mb-6 flex gap-2">
         <button
-          onClick={() => setStatusFilter('all')}
+          onClick={() => changeStatusFilter('all')}
           className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
             statusFilter === 'all'
               ? 'bg-azure-600 text-white'
@@ -103,7 +124,7 @@ function MyPostsPage() {
           All
         </button>
         <button
-          onClick={() => setStatusFilter('draft')}
+          onClick={() => changeStatusFilter('draft')}
           className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
             statusFilter === 'draft'
               ? 'bg-azure-600 text-white'
@@ -113,7 +134,7 @@ function MyPostsPage() {
           Drafts
         </button>
         <button
-          onClick={() => setStatusFilter('published')}
+          onClick={() => changeStatusFilter('published')}
           className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
             statusFilter === 'published'
               ? 'bg-azure-600 text-white'
