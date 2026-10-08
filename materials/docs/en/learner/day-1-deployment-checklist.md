@@ -108,6 +108,7 @@ Set at least these values.
 | `sslCertificatePassword` | PFX password | Default `Workshop2024!` |
 | `mongoDbAppPassword` | MongoDB app user password | Must exactly match Step 9's `<YOUR_MONGODB_APP_PASSWORD>` |
 | `mongoDbReplicaSetKey` | MongoDB replica set shared key (keyFile) | Paste the one-line output of `openssl rand -base64 756 \| tr -d '\n'`. Keep the same value on redeployments |
+| `assignKeyVaultRoles` | `true` (default). **Set `false` only if you have just the Contributor role** | Your role from Day 0 Step 3.1. With `false`, no Key Vault roles are assigned |
 | `appGatewayDnsLabel` | Unique DNS label | Example: `blogapp-team1-0106` |
 
 > [!IMPORTANT]

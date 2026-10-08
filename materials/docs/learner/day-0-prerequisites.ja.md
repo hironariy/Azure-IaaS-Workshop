@@ -12,7 +12,7 @@ title: "Day 0: 事前準備"
 |---|---|
 | 対象者 | 2 日版ワークショップの受講者 |
 | 所要時間 | 30-45 分 |
-| 前提 | Azure サブスクリプション、GitHub アカウント、ブラウザ |
+| 前提 | Azure サブスクリプション（所有者ロールを推奨。Step 3.1 参照）、GitHub アカウント、ブラウザ |
 | 完了条件 | Day 1 の Cloud Shell デプロイに必要な値と権限が揃っていること |
 
 ## ワークショップで構築するアーキテクチャ
@@ -65,6 +65,35 @@ az account show --query "{subscription:name, subscriptionId:id, tenantId:tenantI
 ```bash
 az account set --subscription "<SUBSCRIPTION_ID_OR_NAME>"
 ```
+
+### 3.1 サブスクリプションの Azure ロールを確認する
+
+このワークショップでは、ワークショップ用サブスクリプションで次のいずれかのロールを持つことを**推奨**します。
+
+| ロール | できること |
+|---|---|
+| **所有者（Owner）**（推奨） | リソースの作成とロールの割り当ての両方ができます。 |
+| **共同作成者（Contributor）+ ユーザー アクセス管理者（User Access Administrator）** | 共同作成者でリソースを作成し、ユーザー アクセス管理者でロールを割り当てます。ユーザー アクセス管理者だけではリソースを作成できません。 |
+
+Day 1 の Bicep は、Key Vault のロール（自分と 7 台の VM のマネージド ID）を割り当てます。ロールの割り当て（`Microsoft.Authorization/roleAssignments/write`）は、**共同作成者（Contributor）だけでは実行できません**。
+
+```bash
+az role assignment list --assignee "$(az ad signed-in-user show --query id -o tsv)" \
+  --all --include-inherited --include-groups \
+  --query "[].{Role:roleDefinitionName, Scope:scope}" -o table
+```
+
+**期待結果:** ワークショップ用サブスクリプション（またはリソースグループ）のスコープに `Owner`、または `Contributor` と `User Access Administrator` の両方が表示されます。
+
+**共同作成者（Contributor）しか付与できない場合:** 次の 2 点を変更すれば、ワークショップを最後まで実施できます。
+
+1. Day 1 Step 4 の `main.local.bicepparam` で `param assignKeyVaultRoles = false` を設定します。Key Vault は作成されますが、ロールは割り当てません。アプリは実行時に Key Vault を使わないため、動作に影響はありません。ただし、ポータルで Key Vault のシークレットを表示・作成することはできません。
+2. Day 2 Step 11 の ASR レプリケーション有効化で、拡張機能の更新設定を「Site Recovery に管理を許可する」ではなく**手動で管理**にします。自動更新用の Automation アカウントにはロールの割り当てが必要なためです。
+
+> [!NOTE]
+> 組織のポリシーで Storage アカウントの**共有キー アクセスが無効化**されている場合、ASR はキャッシュ用 Storage アカウントへ Recovery Services vault のマネージド ID でアクセスします。このとき vault のマネージド ID へのロールの割り当て（キャッシュ Storage アカウントに対する共同作成者と Storage BLOB データ共同作成者）が必要になり、共同作成者だけでは実施できません。この場合、Day 2 Step 11 は講師にロールの割り当てを依頼するか、講師デモで確認します（[トラブルシューティングランブック §10](../operations/troubleshooting-runbook.ja.md#10-day-2-の-backup--asr-が進まない)）。
+
+> **AWS との比較:** 共同作成者は「EC2 などのリソースは作れるが、IAM ポリシーのアタッチ（`iam:AttachRolePolicy` など）は許可されていない IAM ユーザー」に近い権限です。Azure ではロールの割り当て自体が `Microsoft.Authorization` の操作として権限管理されます。
 
 このワークショップでは Dsv6 シリーズ VM を 7 台使います（DB は Zone 1/2/3 に 1 台ずつの 3 台構成の MongoDB レプリカセット、Issue #30）。
 
@@ -232,7 +261,7 @@ az ad signed-in-user show \
 
 **期待結果:** 自分の Entra ID object ID を取得できます。
 
-**チェックポイント:** `az account show` で表示される Tenant ID と、アプリ登録を作成したテナントが一致していることを確認します。コマンドが権限やテナント設定で失敗する場合は、講師に相談してください。
+**チェックポイント:** `az account show` で表示される Tenant ID と、アプリ登録を作成したテナントが一致していることを確認します。コマンドが権限やテナント設定で失敗する場合は、講師に相談してください。`assignKeyVaultRoles = false`（共同作成者のみの場合、Step 3.1）でも `adminObjectId` は必須パラメータなので、同じ値を設定します。
 
 ## 11. Day 1 で使う値を控える
 

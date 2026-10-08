@@ -127,6 +127,11 @@ param deployMonitoring = true
 // Deploy Key Vault for secrets management
 param deployKeyVault = true
 
+// Create Key Vault role assignments (needs Owner or User Access Administrator).
+// If you only have the Contributor role, set this to false; otherwise the
+// deployment fails with AuthorizationFailed (roleAssignments/write).
+param assignKeyVaultRoles = true
+
 // Deploy Storage Account for static assets
 param deployStorage = true
 

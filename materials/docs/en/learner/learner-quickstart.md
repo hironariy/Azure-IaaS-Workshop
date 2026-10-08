@@ -38,7 +38,7 @@ Confirm how to move through the 2-day Azure IaaS Workshop and which pages to ope
 
 ## What Learners Need
 
-- Azure subscription access, or access to a subscription assigned by the instructor
+- Azure subscription access, or access to a subscription assigned by the instructor (Owner role recommended; with Contributor only, see Day 0 Step 3.1)
 - Permission to create Microsoft Entra ID app registrations, or app registration values provided by the instructor
 - GitHub account
 - Browser

@@ -67,6 +67,7 @@ VM names do not change per group; always specify `--resource-group`.
 | `sslCertificateData` | Base64 encoded PFX | `cat cert-base64.txt` |
 | `sslCertificatePassword` | PFX password | Default `Workshop2024!` |
 | `mongoDbAppPassword` | MongoDB app user password | Same as post-deployment setup. Do not use `@` |
+| `assignKeyVaultRoles` | Whether to assign Key Vault roles | Default `true`. Set `false` with the Contributor role only (Day 0 Step 3.1) |
 | `mongoDbReplicaSetKey` | MongoDB replica set key (keyFile) | `openssl rand -base64 756 \| tr -d '\n'`. Keep the same value on redeployments |
 | `appGatewayDnsLabel` | Application Gateway FQDN DNS label | Example: `blogapp-team1-0106` |
 

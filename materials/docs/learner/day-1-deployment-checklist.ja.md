@@ -123,6 +123,7 @@ code main.local.bicepparam
 | `sslCertificatePassword` | PFX パスワード | 既定値 `Workshop2024!` |
 | `mongoDbAppPassword` | MongoDB アプリユーザーのパスワード | 自分で決める強い値。Step 9 の `<YOUR_MONGODB_APP_PASSWORD>` と完全一致させる。<u>**必ず下記の IMPORTANT の内容も読むこと。**</u> |
 | `mongoDbReplicaSetKey` | MongoDB レプリカセットの共有キー（keyFile） | `openssl rand -base64 756 \| tr -d '\n'` の出力を 1 行で貼り付ける。再デプロイでも同じ値を使う |
+| `assignKeyVaultRoles` | `true`（既定）。**共同作成者（Contributor）ロールしかない場合のみ `false`** | Day 0 Step 3.1 で確認したロール。`false` では Key Vault のロールを割り当てません |
 | `appGatewayDnsLabel` | 一意な DNS ラベル | 例: `blogapp-team1-0106`。<u>**アルファベットの大文字や@などの特殊記号は利用しないこと。**</u>基本的には小文字、数字、ハイフンを利用する。 |
 
 > [!IMPORTANT]

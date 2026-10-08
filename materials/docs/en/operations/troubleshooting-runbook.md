@@ -52,6 +52,7 @@ Common actions:
 - `DnsRecordInUse`: add a random suffix to `appGatewayDnsLabel`.
 - `InvalidTemplate` / `InvalidParameter`: check quotes, empty values, and pasted certificate data.
 - `SkuNotAvailable`: use an instructor-approved alternative VM size.
+- `AuthorizationFailed` (`Microsoft.Authorization/roleAssignments/write`): the Contributor role cannot create role assignments. Ask the instructor for Owner or User Access Administrator, or set `param assignKeyVaultRoles = false` in `main.local.bicepparam` and redeploy (Day 0 Step 3.1). The VMs and other resources already exist, so the redeploy only applies the difference.
 
 ## 2. VM Quota Is Insufficient
 
@@ -514,6 +515,7 @@ Heartbeat
 | Backup item missing | Vault and VM selection | Recheck Backup enablement |
 | Backup job slow | Initial backup | Use only representative VMs if instructor says so |
 | ASR initial replication slow | Replication health and progress | Switch to instructor demo or design walkthrough |
+| Enabling ASR fails with `does not allow key based authentication and it does not have vault Managed System Identity configured` (28176) | Whether organization policy disables shared key access on the cache Storage account | Turn on the vault's system-assigned managed identity (vault > Identity), then assign it Contributor and Storage Blob Data Contributor on the cache Storage account. With Contributor only, ask the instructor to create the assignments (Day 0 Step 3.1). [Microsoft Learn](https://learn.microsoft.com/azure/site-recovery/asr-turn-off-key-authentication-cache) |
 | Test failover resources remain | Cleanup test failover | Run cleanup from Recovery Services vault |
 
 ## Next
