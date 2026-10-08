@@ -59,7 +59,8 @@ Click the button below to deploy the infrastructure directly to your Azure subsc
 ### Azure Requirements
 
 - Active Azure subscription
-- Contributor role on the subscription or resource group
+- **Owner** (recommended), or **Contributor + User Access Administrator**, on the subscription or resource group. The Key Vault module creates role assignments (`Microsoft.Authorization/roleAssignments/write`), which Contributor alone cannot do.
+- Contributor only: set `assignKeyVaultRoles = false` (Key Vault is created without role assignments; the app does not read Key Vault at runtime). In ASR, manage extension updates manually.
 - Sufficient quota for:
   - 7 VMs (20 Dsv6-family and total regional vCPUs; the DB size must be available in zones 1, 2 and 3)
   - 10 managed disks (7 OS disks + 3 MongoDB data disks)
@@ -256,6 +257,7 @@ echo "blogapp-$(openssl rand -hex 2)"  # e.g., blogapp-a3f2
 | `deployBastion` | `true` | Deploy Azure Bastion |
 | `deployMonitoring` | `true` | Deploy Log Analytics & DCR |
 | `deployKeyVault` | `true` | Deploy Key Vault |
+| `assignKeyVaultRoles` | `true` | Create Key Vault role assignments; `false` for Contributor-only users |
 | `deployStorage` | `true` | Deploy Storage Account |
 | `webVmSize` | `Standard_D2s_v6` | Web tier VM size |
 | `appVmSize` | `Standard_D2s_v6` | App tier VM size |

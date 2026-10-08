@@ -73,6 +73,9 @@ param deployMonitoring = true
 // Keep Key Vault (minimal cost)
 param deployKeyVault = true
 
+// Set to false if you only have the Contributor role (no role assignments)
+param assignKeyVaultRoles = true
+
 // Keep Storage (minimal cost)
 param deployStorage = true
 

@@ -52,6 +52,7 @@ FQDN=$(az network public-ip show \
 - `DnsRecordInUse`: `appGatewayDnsLabel` にランダムな suffix を追加します。
 - `InvalidTemplate` / `InvalidParameter`: `main.local.bicepparam` の引用符、空値、貼り付けた証明書データを確認します。
 - `SkuNotAvailable`: `webVmSize`、`appVmSize`、`dbVmSize` を利用可能な代替 SKU に変更します。
+- `AuthorizationFailed`（`Microsoft.Authorization/roleAssignments/write`）: 共同作成者（Contributor）ロールではロールを割り当てられません。所有者（Owner）またはユーザー アクセス管理者ロールの付与を講師に依頼するか、`main.local.bicepparam` で `param assignKeyVaultRoles = false` を設定して再デプロイします（Day 0 Step 3.1）。VM などのリソースは作成済みのため、再デプロイは差分のみです。
 
 > [!TODO] スクリーンショットを挿入
 > - Image path: `assets/screenshots/troubleshooting-deployment-failure.png`

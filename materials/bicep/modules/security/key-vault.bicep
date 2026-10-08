@@ -40,6 +40,9 @@ param tenantId string = subscription().tenantId
 @description('Principal IDs of VMs that need secret access')
 param vmPrincipalIds array = []
 
+@description('Create RBAC role assignments. Requires Owner, User Access Administrator or Role Based Access Control Administrator; set to false with Contributor only.')
+param assignRoles bool = true
+
 @description('Enable soft delete (recommended for production)')
 param enableSoftDelete bool = true
 
@@ -112,10 +115,11 @@ var keyVaultAdminRoleId = subscriptionResourceId('Microsoft.Authorization/roleDe
 // Filter out empty or invalid principal IDs (defensive programming)
 // This prevents InvalidPrincipalId errors if some VMs fail to deploy
 // A valid GUID is 36 characters (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)
-var validVmPrincipalIds = filter(vmPrincipalIds, id => !empty(id) && length(id) >= 36)
+// With assignRoles = false (Contributor only) no role assignment is created.
+var validVmPrincipalIds = assignRoles ? filter(vmPrincipalIds, id => !empty(id) && length(id) >= 36) : []
 
 // Validate adminObjectId - must be a valid GUID
-var isAdminObjectIdValid = !empty(adminObjectId) && length(adminObjectId) >= 36
+var isAdminObjectIdValid = assignRoles && !empty(adminObjectId) && length(adminObjectId) >= 36
 
 // Grant admin full access to Key Vault (only if valid admin ID provided)
 resource adminRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (isAdminObjectIdValid) {

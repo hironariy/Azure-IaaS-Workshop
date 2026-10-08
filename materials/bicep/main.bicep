@@ -76,6 +76,15 @@ param deployMonitoring bool = true
 @description('Deploy Key Vault for secrets management')
 param deployKeyVault bool = true
 
+// Creating role assignments needs Microsoft.Authorization/roleAssignments/write
+// (Owner, User Access Administrator or Role Based Access Control Administrator).
+// The Contributor role cannot do this, so a Contributor-only learner sets this
+// to false. The app does not read Key Vault at runtime, so nothing breaks.
+// AWS comparison: like an IAM user who may create EC2 instances but has no
+// iam:AttachRolePolicy right, so it cannot grant permissions to the instances.
+@description('Create Key Vault RBAC role assignments (admin + VM managed identities). Set to false when you only have the Contributor role.')
+param assignKeyVaultRoles bool = true
+
 @description('Deploy Storage Account for static assets')
 param deployStorage bool = true
 
@@ -555,6 +564,7 @@ module keyVault 'modules/security/key-vault.bicep' = if (deployKeyVault) {
     environment: environment
     workloadName: workloadName
     adminObjectId: adminObjectId
+    assignRoles: assignKeyVaultRoles
     // Implicit dependencies: Key Vault waits for all VM tiers to complete
     // because we reference their outputs (principalIds) below
     vmPrincipalIds: concat(

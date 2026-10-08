@@ -52,6 +52,7 @@ Common actions:
 - `DnsRecordInUse`: add a random suffix to `appGatewayDnsLabel`.
 - `InvalidTemplate` / `InvalidParameter`: check quotes, empty values, and pasted certificate data.
 - `SkuNotAvailable`: use an instructor-approved alternative VM size.
+- `AuthorizationFailed` (`Microsoft.Authorization/roleAssignments/write`): the Contributor role cannot create role assignments. Ask the instructor for Owner or User Access Administrator, or set `param assignKeyVaultRoles = false` in `main.local.bicepparam` and redeploy (Day 0 Step 3.1). The VMs and other resources already exist, so the redeploy only applies the difference.
 
 ## 2. VM Quota Is Insufficient
 

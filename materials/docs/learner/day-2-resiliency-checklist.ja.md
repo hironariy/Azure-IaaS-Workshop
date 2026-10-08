@@ -379,7 +379,8 @@ ASR は時間がかかるため、講師デモまたは代表 VM での演習に
 5. Target region は講師指定のリージョンを選びます。
 6. ターゲット VNet / subnet のマッピングを確認します。
 7. 代表 VM または講師指定の VM を選択します。
-8. Enable replication を実行します。
+8. 詳細設定（Advanced settings）の拡張機能の更新設定を確認します。所有者（Owner）またはユーザー アクセス管理者ロールがあれば「Site Recovery に管理を許可する」のままで構いません。**共同作成者（Contributor）しかない場合は「手動で管理」**を選びます（自動更新用 Automation アカウントへのロールの割り当てが失敗するため。Day 0 Step 3.1）。
+9. Enable replication を実行します。
 
 **期待結果:** Replicated item が作成され、initial replication が開始または完了します。
 
