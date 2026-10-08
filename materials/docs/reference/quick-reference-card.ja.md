@@ -39,8 +39,8 @@ FQDN=$(az network public-ip show \
 | Bastion | `bastion-blogapp-prod` |
 | Web VM | `vm-web-az1-prod`, `vm-web-az2-prod` |
 | App VM | `vm-app-az1-prod`, `vm-app-az2-prod` |
-| DB VM | `vm-db-az1-prod`, `vm-db-az2-prod` |
-| MongoDB replica set | `blogapp-rs0` |
+| DB VM | `vm-db-az1-prod`（10.0.3.4、Zone 1）, `vm-db-az2-prod`（10.0.3.5、Zone 2）, `vm-db-az3-prod`（10.0.3.6、Zone 3）|
+| MongoDB replica set | `blogapp-rs0`（3 データ保持メンバー、PSS、アービターなし）|
 | VM admin user | `azureuser` |
 
 `groupId` は推奨リソースグループ名にだけ使われます。VM 名はグループごとに変わらないため、必ず `--resource-group` を指定します。
@@ -93,6 +93,17 @@ az vm start --resource-group "$RESOURCE_GROUP" --name vm-web-az1-prod
 ```
 
 `az vm stop` はゲスト OS 停止を模擬します。`az vm deallocate` は割り当て解除まで行うため、演習では講師の指示がない限り使いません。
+
+### MongoDB レプリカセット状態
+
+```bash
+az vm run-command invoke -g "$RESOURCE_GROUP" -n vm-db-az1-prod \
+  --command-id RunShellScript \
+  --scripts "mongosh --quiet --eval 'rs.status().members.map(m => m.name + \" \" + m.stateStr)'" \
+  --query "value[0].message" -o tsv
+```
+
+正常時は PRIMARY 1 台と SECONDARY 2 台です。1 台停止までは自動選出で書き込みが継続しますが、2 台停止すると過半数を失い書き込みできません。
 
 ### Application Gateway FQDN
 

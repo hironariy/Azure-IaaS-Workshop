@@ -61,7 +61,7 @@ az vm list-usage --location japanwest \
   -o table
 ```
 
-This workshop needs 16 Dsv6-family vCPUs. Check both family and regional quota headroom (`Limit - Current`); quota does not guarantee zonal capacity. See the Day 0 quota check for details, and share the quota name and current value with the instructor.
+This workshop needs 20 Dsv6-family vCPUs (including three DB VMs). The DB VMs are placed one per Zone 1/2/3, so the DB SKU must be available in all three zones. Check both family and regional quota headroom (`Limit - Current`); quota does not guarantee zonal capacity. See the Day 0 quota check for details, and share the quota name and current value with the instructor.
 
 ## 3. Entra ID App Registration Cannot Be Created
 
@@ -121,7 +121,7 @@ az vm list --resource-group "$RESOURCE_GROUP" --show-details \
   --query "[?contains(name, 'vm-db')].{name:name,powerState:powerState}" -o table
 ```
 
-Check DB VM power state, MongoDB replica set primary, App subnet to DB subnet TCP/27017, and post-deployment setup completion. If the API log shows `ECONNREFUSED` / `ReplicaSetNoPrimary`, see 7.1.
+Check that all three DB VMs (`vm-db-az1/az2/az3-prod`) are running (if two or more stop, the replica set loses its majority and has no PRIMARY), that `rs.status()` shows one PRIMARY and two SECONDARY members, App subnet to DB subnet TCP/27017, and post-deployment setup completion. If the API log shows `ECONNREFUSED` / `ReplicaSetNoPrimary`, see 7.1. If the environment was deployed before Issue #30 with two DB nodes and post-deployment setup reports that `vm-db-az3-prod` is missing or that the set has fewer than 3 members, see 7.2.
 
 ### 7.1 MongoDB Does Not Start: Linux Kernel 6.19 Or Newer (Issue #26)
 
@@ -132,7 +132,7 @@ Check DB VM power state, MongoDB replica set primary, App subnet to DB subnet TC
   ```text
   MongooseServerSelectionError: connect ECONNREFUSED 10.0.3.4:27017
   ReplicaSetNoPrimary
-  servers: 10.0.3.4:27017 = Unknown, 10.0.3.5:27017 = Unknown
+  servers: 10.0.3.4:27017 = Unknown, 10.0.3.5:27017 = Unknown, 10.0.3.6:27017 = Unknown
   ```
 
 - On the DB VM, `mongod.service` is `failed` and nothing listens on 27017.
@@ -161,7 +161,7 @@ If `uname -r` is not 6.8.x but `blogapp-kernel-track status` shows `finalize : p
 
 **Fix: migrate an existing DB VM to the LTS kernel track (recommended)**
 
-Do this one DB VM at a time, **DB2 first**. Run from Cloud Shell in the repository root. The helper installs `linux-azure-lts-24.04`, removes the rolling kernel metapackages, writes an apt pin, selects the 6.8 kernel in GRUB, and reboots the VM 1 minute later. After the reboot, it removes the non-LTS kernels. MongoDB data and the replica set configuration are not changed.
+Do this one DB VM at a time, in the order **`vm-db-az3-prod` → `vm-db-az2-prod` → `vm-db-az1-prod` (usually the PRIMARY)**. Skip az3 in a 2-node environment. Run from Cloud Shell in the repository root. The helper installs `linux-azure-lts-24.04`, removes the rolling kernel metapackages, writes an apt pin, selects the 6.8 kernel in GRUB, and reboots the VM 1 minute later. After the reboot, it removes the non-LTS kernels. MongoDB data and the replica set configuration are not changed.
 
 ```bash
 cd ~/Azure-IaaS-Workshop
@@ -176,7 +176,7 @@ az vm run-command invoke -g "$RESOURCE_GROUP" -n vm-db-az2-prod \
 - If a VM was migrated with the earlier helper (repository before 2026-10) and mongod fails with `this subcommand must run as root`, rerun the same `migrate` from the latest repository and then run `sudo systemctl restart mongod` (Issue #31). On such a VM the installed helper always runs `migrate`, so do not use `sudo blogapp-kernel-track status` there; just rerun the migration.
 - If Run Command does not return for a long time (10+ minutes), it may be waiting for another extension (for example `MDE.Linux` deployed by Azure Policy). Check with `az vm extension list -g "$RESOURCE_GROUP" --vm-name <vm-name> -o table`, then copy the helper to the VM over Bastion SSH and run `sudo bash mongodb-kernel-track.sh migrate`.
 
-Wait about 3-5 minutes, then check DB2 (through Bastion SSH):
+Wait about 3-5 minutes, then check the target DB VM (through Bastion SSH):
 
 ```bash
 uname -r                                        # 6.8.x
@@ -186,9 +186,11 @@ mongosh --quiet --eval 'db.hello().isWritablePrimary + " " + db.hello().secondar
 sudo blogapp-kernel-track status                # finalize : done/not-needed
 ```
 
-Also check replica set health: `mongosh --quiet --eval 'rs.status().members.map(m => m.name + " " + m.stateStr)'`. Then repeat the same steps for `vm-db-az1-prod`.
+Also check replica set health: `mongosh --quiet --eval 'rs.status().members.map(m => m.name + " " + m.stateStr)'`. After the target is back as `SECONDARY`, repeat the steps for the next VM. Do the PRIMARY (usually `vm-db-az1-prod`) last; for a planned switchover, run `rs.stepDown(300)` as described in the note below.
 
-> **2-node replica set caution:** while one of the two DB VMs reboots, the other cannot keep a majority, so there is **no primary for a few minutes** and API writes fail. This is expected and a good illustration of why production uses 3 data-bearing members. On two nodes, `rs.stepDown()` does not shorten the outage, so skip it.
+> **Impact with 3 nodes:** as long as you reboot one VM at a time, the other two keep a majority (2 of 3 votes) and the API keeps working. For the PRIMARY VM, run `rs.stepDown(300)` on the PRIMARY right after Run Command returns (about 1 minute before the reboot). The default 60 seconds expires before the reboot, and az1 (priority 2) takes PRIMARY back. On a clean shutdown mongod hands over PRIMARY itself, so the election usually finishes within a few seconds. **Do not reboot two DB VMs at the same time** (the set loses its majority and has no PRIMARY).
+>
+> **Legacy 2-node caution:** in a 2-node environment from before Issue #30, while one DB VM reboots the other cannot keep a majority, so there is **no primary for a few minutes** and API writes fail. `rs.stepDown()` does not shorten the outage, so skip it. Migrating to 3 nodes with 7.2 is recommended.
 
 If you previously used the temporary GRUB workaround below, the helper's `/etc/default/grub.d/99-blogapp-kernel-track.cfg` overrides it. After the migration, set `GRUB_DEFAULT=0` back in `/etc/default/grub` and run `sudo update-grub` to keep the configuration clean.
 
@@ -216,9 +218,138 @@ sudo grub-script-check /boot/grub/grub.cfg && echo OK
 sudo reboot
 ```
 
-Recover DB2 first, then DB1. Never edit `/boot/grub/grub.cfg` directly. Do not reformat data, downgrade MongoDB, or rerun `rs.initiate()`. Do not bypass MongoDB's startup check. If `/data/mongodb` is not mounted, do not start mongod manually.
+Recover the SECONDARY members (az3, az2) first, then the PRIMARY (usually az1). Never edit `/boot/grub/grub.cfg` directly. Do not reformat data, downgrade MongoDB, or rerun `rs.initiate()`. Do not bypass MongoDB's startup check. If `/data/mongodb` is not mounted, do not start mongod manually.
 
 **When MongoDB supports Linux 6.19 or newer:** remove the pin only after that combination has been validated. Delete `/etc/apt/preferences.d/blogapp-mongodb-kernel-track` and the guard `/etc/systemd/system/mongod.service.d/10-blogapp-kernel-guard.conf`, run `sudo systemctl daemon-reload`, install `linux-azure`, and reboot one DB VM at a time.
+
+### 7.2 Migrate An Existing 2-Node Environment To 3 Nodes (Issue #30)
+
+**Applies to:** environments deployed before Issue #30 whose MongoDB replica set has only `vm-db-az1-prod` and `vm-db-az2-prod`.
+
+**Why migrate:** with two nodes, if either one stops, the survivor has only 1 of 2 votes and is not a majority. It cannot elect a PRIMARY automatically, and recovery needed a manual forced reconfiguration. With three data-bearing members (PSS), any single node can stop: the other two elect a PRIMARY automatically and `w=majority` writes continue.
+
+> **AWS comparison:** this is the same work as adding an instance in a third AZ to a self-managed 2-AZ MongoDB deployment on EC2. With Amazon DocumentDB you just add a replica instance; here you add the member, wait for initial sync, and update the connection string yourself.
+
+**Approach:** add one member online with `rs.add()`. Do **not** use `rs.reconfig({force: true})`, recreate the replica set, or reinitialize existing data.
+
+**Cost and quota:** per learner, one more `Standard_D4s_v6` (+4 vCPU), one 128 GB Premium SSD data disk, and one OS disk.
+
+#### Step 1: Take A Backup
+
+Do one of the following:
+
+- If Azure Backup is configured: run **Backup now** for `vm-db-az1-prod` and `vm-db-az2-prod` and wait for completion.
+- Otherwise: snapshot the data disk of both DB VMs.
+
+```bash
+for vm in vm-db-az1-prod vm-db-az2-prod; do
+  DISK_ID=$(az vm show -g "$RESOURCE_GROUP" -n $vm --query "storageProfile.dataDisks[0].managedDisk.id" -o tsv)
+  az snapshot create -g "$RESOURCE_GROUP" -n "snap-${vm}-pre-issue30" --source "$DISK_ID" --incremental true
+done
+```
+
+Optionally, also take a logical backup on the PRIMARY with `mongodump --db blogapp --out /tmp/pre-issue30`.
+
+#### Step 2: Check Quota And Zones
+
+```bash
+LOCATION="japanwest"   # match your deployment region
+az vm list-usage --location "$LOCATION" \
+  --query "[?contains(name.value, 'DSv6') || name.value=='cores'].{Name:name.localizedValue, Current:currentValue, Limit:limit}" -o table
+az vm list-skus --location "$LOCATION" --size Standard_D4s_v6 \
+  --query "[].locationInfo[].zones" -o tsv
+```
+
+**Decision:** continue if headroom (`Limit - Current`) is at least 4 vCPU and the zone list includes `3`. If Zone 3 is not available, talk to the instructor. `dbVmAz3Zone` can place the VM in another zone, but two members in one zone can lose the majority in a zone failure.
+
+#### Step 3: Redeploy Bicep To Create Only `vm-db-az3-prod`
+
+Keep the existing VMs and create only the third one. `skipVmCreationDbAz3` defaults to the value of `skipVmCreationDb`, so set it to `false` explicitly.
+
+```bash
+cd ~/Azure-IaaS-Workshop
+git pull   # get the version that includes Issue #30
+az deployment group create \
+  --resource-group "$RESOURCE_GROUP" \
+  --template-file materials/bicep/main.bicep \
+  --parameters materials/bicep/main.local.bicepparam \
+  --parameters skipVmCreationWeb=true skipVmCreationApp=true skipVmCreationDb=true skipVmCreationDbAz3=false
+```
+
+**Expected Result:** `provisioningState` is `Succeeded`, and `vm-db-az3-prod` (10.0.3.6, Zone 3) is created.
+
+**Side effects:**
+
+- The CustomScript on the existing DB VMs does not re-run, because its content is unchanged.
+- The CustomScript on the App VMs **does re-run**, because `MONGODB_URI` now has three hosts (this includes package updates). It updates `/opt/blogapp/.env` and `/etc/environment` with the new URI, but it does not change the running API or `/opt/blogapp/dist/.env` (Step 7 applies the change).
+- If the inline `--parameters` overrides are rejected, put the same four values in `main.local.bicepparam` and run the command again.
+
+#### Step 4: Wait Until The New DB VM Is Ready
+
+On first boot, a new DB VM switches to the LTS kernel (6.8) and reboots once (see 7.1). Wait 3-5 minutes, then check `vm-db-az3-prod` through Bastion SSH:
+
+```bash
+uname -r                                  # 6.8.x
+sudo blogapp-kernel-track status          # finalize : done/not-needed
+findmnt --mountpoint /data/mongodb
+sudo systemctl is-active mongod           # active
+mongosh --quiet --eval 'db.hello().isWritablePrimary'   # false (not a member yet)
+```
+
+#### Step 5: Run `rs.add()` On The PRIMARY
+
+Connect to the PRIMARY (usually `vm-db-az1-prod`) through Bastion SSH.
+
+```bash
+mongosh --quiet --eval 'db.hello().isWritablePrimary'   # must be true
+mongosh --quiet --eval 'rs.add({ host: "10.0.3.6:27017", priority: 1, votes: 1 })'
+```
+
+**Expected Result:** `{ ok: 1 }`. If you get `Found two member configurations with same host field`, the member was already added; continue with Step 6.
+
+> **Why `priority: 1, votes: 1`:** this matches a fresh deployment (az1 = priority 2, az2/az3 = priority 1, one vote each). A member that is still in initial sync does not stand for election and does not count toward the majority, so adding it before the sync finishes is safe.
+
+#### Step 6: Wait For Initial Sync To Finish
+
+```bash
+mongosh --quiet --eval '
+const s = rs.status();
+const p = s.members.find(m => m.stateStr === "PRIMARY");
+s.members.forEach(m => print(m.name, m.stateStr, "lagSec=" + ((p.optimeDate - m.optimeDate) / 1000)));
+'
+```
+
+Repeat every minute until `10.0.3.6:27017` moves from `STARTUP2` (initial sync) to `SECONDARY` and shows `lagSec=0` (or a few seconds). With workshop data volumes, this usually takes a few minutes.
+
+#### Step 7: Update The App Connection String And Restart The API One VM At A Time
+
+The driver discovers the new member from the existing two hosts, but keep all three hosts in the seed list. Then the API can still start later even if az1 and az2 are down. On each App VM (`vm-app-az1-prod`, then `vm-app-az2-prod`), through Bastion SSH:
+
+```bash
+grep '^MONGODB_URI' /opt/blogapp/.env | sed -E 's#//[^@]*@#//***@#'   # confirm 3 hosts (10.0.3.4/5/6) and replicaSet=blogapp-rs0
+cp /opt/blogapp/.env /opt/blogapp/dist/.env
+chmod 600 /opt/blogapp/dist/.env
+pm2 restart blogapp-api --update-env
+sleep 5
+curl -s http://localhost:3000/health
+```
+
+**Expected Result:** `healthy`. Move to the second App VM only after the first is healthy. The internal load balancer sends traffic to the other App VM, so the API stays available.
+
+If you did not redeploy the App tier in Step 3, edit the host list in `MONGODB_URI` in both `/opt/blogapp/.env` and `/opt/blogapp/dist/.env` to `10.0.3.4:27017,10.0.3.5:27017,10.0.3.6:27017` before restarting.
+
+#### Step 8: Verify
+
+```bash
+mongosh --quiet --eval 'rs.status().members.map(m => m.name + " " + m.stateStr + " votes=" + rs.conf().members.find(c => c.host === m.name).votes)'
+```
+
+- One PRIMARY and two SECONDARY members, all with `votes=1`.
+- Creating and editing posts in the browser works.
+- Re-running post-deployment setup prints `Replica set already initialized (3 members)` and does not reinitialize anything.
+- The Day 2 DB failover exercise (automatic election when the PRIMARY stops) can be run.
+
+**Rollback:** if something goes wrong, run `rs.remove("10.0.3.6:27017")` on the PRIMARY to return to two members (the driver ignores the third seed host). Delete `vm-db-az3-prod` and its disks if no longer needed, and delete the Step 1 snapshots after you confirm everything is healthy.
 
 ## 8. Cloud Shell Disconnected
 

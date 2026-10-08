@@ -10,7 +10,7 @@ This guide describes a practical approach to **Business Continuity and Disaster 
 This application includes:
 - Web tier VM(s) (NGINX)
 - App tier VM(s) (Node.js)
-- DB tier VM(s) (MongoDB replica set)
+- DB tier VMs (3-member MongoDB replica set across Zones 1/2/3)
 
 Failing over the DB tier is more nuanced than stateless tiers. This guide focuses on **workshop-appropriate DR exercises** and highlights where you must make design decisions.
 
@@ -118,7 +118,7 @@ For the workshop environment, switching usually means updating:
 MongoDB replica sets are designed for node-level failure and zonal resiliency, but **regional DR** requires a plan.
 
 Workshop-friendly guidance:
-- If you replicate DB VMs with ASR, ensure the recovery plan starts DB first.
+- If you replicate DB VMs with ASR, replicate all three members together and ensure the recovery plan starts DB first (a single failed-over member has 1 of 3 votes and cannot elect a PRIMARY).
 - After failover, validate replica set health and primary election.
 - If your design assumes a single-region replica set, treat cross-region as an **advanced extension**.
 

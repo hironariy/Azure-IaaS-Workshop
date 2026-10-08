@@ -12,7 +12,7 @@ These templates deploy a highly available, 3-tier blog application infrastructur
 |------|-----------|---------|-------------|
 | **Web** | 2 × NGINX reverse proxy VMs | Standard_D2s_v6 | Zone 1 & 2 |
 | **App** | 2 × Node.js/Express VMs | Standard_D2s_v6 | Zone 1 & 2 |
-| **DB** | 2 × MongoDB VMs | Standard_D4s_v6 | Zone 1 & 2 |
+| **DB** | 3 × MongoDB VMs (replica set, no arbiter) | Standard_D4s_v6 | Zone 1, 2 & 3 |
 
 ### Architecture Highlights
 
@@ -61,8 +61,8 @@ Click the button below to deploy the infrastructure directly to your Azure subsc
 - Active Azure subscription
 - Contributor role on the subscription or resource group
 - Sufficient quota for:
-  - 6 VMs (16 Dsv6-family and total regional vCPUs)
-  - 6 managed disks
+  - 7 VMs (20 Dsv6-family and total regional vCPUs; the DB size must be available in zones 1, 2 and 3)
+  - 10 managed disks (7 OS disks + 3 MongoDB data disks)
   - 1 public IP address
   - 1 Application Gateway v2
   - 1 Internal Load Balancer
@@ -197,7 +197,7 @@ materials/bicep/
     │   ├── vm.bicep            # Reusable VM module
     │   ├── web-tier.bicep      # 2 NGINX VMs
     │   ├── app-tier.bicep      # 2 Express/Node.js VMs
-    │   └── db-tier.bicep       # 2 MongoDB VMs with data disks
+    │   └── db-tier.bicep       # 3 MongoDB VMs (Zones 1-3) with data disks
     ├── monitoring/
     │   ├── log-analytics.bicep # Log Analytics workspace
     │   └── data-collection-rule.bicep # DCR for VM telemetry
@@ -261,12 +261,14 @@ echo "blogapp-$(openssl rand -hex 2)"  # e.g., blogapp-a3f2
 | `appVmSize` | `Standard_D2s_v6` | App tier VM size |
 | `dbVmSize` | `Standard_D4s_v6` | DB tier VM size |
 | `dbDataDiskSizeGB` | `128` | MongoDB data disk size |
+| `skipVmCreationDb` | `false` | Reuse existing `vm-db-az1`/`vm-db-az2` (update extensions only) |
+| `skipVmCreationDbAz3` | `skipVmCreationDb` | Reuse existing `vm-db-az3`. Set `skipVmCreationDb=true` + `skipVmCreationDbAz3=false` to add only the 3rd DB VM to an existing 2-node environment (Issue #30) |
 
 ## 💰 Cost Estimation
 
 ### Production Configuration
 
-Estimate the cost of four `Standard_D2s_v6` and two `Standard_D4s_v6` VMs in Japan West, plus disks, Application Gateway, Bastion, monitoring, and networking, with the [Azure Pricing Calculator](https://azure.microsoft.com/pricing/calculator/) before running the workshop. The previous Basv2-based daily estimate does not apply to Dsv6. Check both regional and Dsv6-family vCPU quotas using the [Day 0 prerequisites](../docs/learner/day-0-prerequisites.ja.md); quota does not guarantee capacity in each zone.
+Estimate the cost of four `Standard_D2s_v6` and three `Standard_D4s_v6` VMs (the 3rd DB VM adds one D4s_v6 plus one 128 GB Premium SSD data disk per environment, Issue #30) in Japan West, plus disks, Application Gateway, Bastion, monitoring, and networking, with the [Azure Pricing Calculator](https://azure.microsoft.com/pricing/calculator/) before running the workshop. The previous Basv2-based daily estimate does not apply to Dsv6. Check both regional and Dsv6-family vCPU quotas using the [Day 0 prerequisites](../docs/learner/day-0-prerequisites.ja.md); quota does not guarantee capacity in each zone.
 
 ### Development Configuration
 
@@ -305,17 +307,21 @@ az network bastion ssh \
 
 ### 3. Initialize MongoDB Replica Set
 
-Connect to the first DB VM and run:
+Normally `scripts/post-deployment-setup.*` does this. Manually, connect to the first DB VM and run:
 
 ```bash
-# Get DB VM IPs from deployment output
+# 3 data-bearing, voting members (no arbiter). priority 2 only makes the
+# initial PRIMARY deterministic; any member can be elected.
 mongosh --eval "rs.initiate({
   _id: 'blogapp-rs0',
   members: [
-    { _id: 0, host: '<DB_VM_1_IP>:27017', priority: 2 },
-    { _id: 1, host: '<DB_VM_2_IP>:27017', priority: 1 }
+    { _id: 0, host: '10.0.3.4:27017', priority: 2, votes: 1 },
+    { _id: 1, host: '10.0.3.5:27017', priority: 1, votes: 1 },
+    { _id: 2, host: '10.0.3.6:27017', priority: 1, votes: 1 }
   ]
 })"
+# Expect 1 PRIMARY + 2 SECONDARY
+mongosh --quiet --eval "rs.status().members.forEach(m => print(m.name, m.stateStr))"
 ```
 
 ### 4. Add Secrets to Key Vault
@@ -324,7 +330,7 @@ mongosh --eval "rs.initiate({
 az keyvault secret set \
   --vault-name kv-blogapp-prod-<unique> \
   --name "MongoDbConnectionString" \
-  --value "mongodb://<DB_VM_1_IP>:27017,<DB_VM_2_IP>:27017/blogapp?replicaSet=blogapp-rs0"
+  --value "mongodb://10.0.3.4:27017,10.0.3.5:27017,10.0.3.6:27017/blogapp?replicaSet=blogapp-rs0&w=majority"
 ```
 
 ### 5. Deploy Application Code

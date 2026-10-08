@@ -217,7 +217,7 @@ code post-deployment-setup.local.sh
 ./post-deployment-setup.local.sh "$RESOURCE_GROUP"
 ```
 
-**期待結果:** MongoDB レプリカセットとユーザー作成が成功し、検証メッセージが表示されます。
+**期待結果:** 3 メンバーの MongoDB レプリカセットとユーザーの作成が成功し、Step 6 の検証で `PRIMARY` 1 つと `SECONDARY` 2 つが表示されます。スクリプトは再実行しても安全です（初期化済みのレプリカセットを再初期化しません）。
 
 **チェックポイント:** `MONGODB_APP_PASSWORD` と `mongoDbAppPassword` が一致しない場合、バックエンド API は MongoDB に接続できません。`@` を含む password も MongoDB connection string を壊すため使わないでください。
 
@@ -232,7 +232,7 @@ MongoDB 8.0 は Linux カーネル 6.19 以上では起動しません。その�
 
 デプロイ後スクリプトの Step 2 はこの完了を自動で待ちます（DB VM ごとに最大 15 分）。
 
-手動で確認する場合は、`vm-db-az1-prod`、続いて `vm-db-az2-prod` に接続します。
+手動で確認する場合は、`vm-db-az1-prod`、`vm-db-az2-prod`、`vm-db-az3-prod` に順に接続します。
 
 ```bash
 az network bastion ssh \
@@ -255,6 +255,30 @@ sudo blogapp-kernel-track status           # running kernel ... OK (6.8 LTS trac
 **チェックポイント:** `uname -r` が 6.19 以上（例: `7.0.x`）の場合や、mongod が `failed` の場合は、[トラブルシューティングランブック 7.1](../operations/troubleshooting-runbook.ja.md#71-mongodb-が起動しない-linux-カーネル-619-以上-issue-26) を確認します。
 
 > **AWS との比較:** Amazon DocumentDB では、ホストのカーネルの選択とパッチ適用を AWS が行います。IaaS VM 上の MongoDB では、EC2 の DB ホストでカーネル系列を固定するのと同じように、カーネルトラックを利用者が選択します。
+
+### 9.2 レプリカセットが 3 メンバーであることを確認する
+
+DB tier は 3 台のデータ保持メンバー（Primary 1 台 + Secondary 2 台、アービターなし）で構成します（Issue #30）。`vm-db-az1-prod` に接続して次を実行します。
+
+```bash
+mongosh --quiet --eval 'rs.status().members.forEach(m => print(m.name, m.stateStr, "health=" + m.health))'
+mongosh --quiet --eval 'rs.conf().members.forEach(m => print(m.host, "priority=" + m.priority, "votes=" + m.votes))'
+```
+
+**期待結果:**
+
+```text
+10.0.3.4:27017 PRIMARY health=1
+10.0.3.5:27017 SECONDARY health=1
+10.0.3.6:27017 SECONDARY health=1
+10.0.3.4:27017 priority=2 votes=1
+10.0.3.5:27017 priority=1 votes=1
+10.0.3.6:27017 priority=1 votes=1
+```
+
+**チェックポイント:** メンバーが 2 つしかない場合は、2 台構成の旧環境です。[トラブルシューティングランブック 7.2](../operations/troubleshooting-runbook.ja.md#72-既存の-2-ノード環境を-3-ノードへ移行する-issue-30) の手順で 3 台目を追加します。`10.0.3.4` の priority 2 は、最初の Primary を決めて手順を分かりやすくするためだけの設定です。どのメンバーも Primary に選出されます。
+
+> **AWS との比較:** 3 つの AZ に 1 台ずつ EC2 を置いて MongoDB を自己管理する構成と同じです。Amazon DocumentDB では、レプリカの昇格はサービスが行います。ここではレプリカセットの構成と選挙を利用者が管理します。
 
 ## 10. Data Collection Rule を構成する
 
@@ -319,7 +343,8 @@ Azure Portal でフロントエンド SPA のアプリ登録を開きます。
 - `main.local.bicepparam` を作成し、必要値を設定できた。
 - Bicep deployment が `Succeeded` になった。
 - Azure CLI の Bastion extension を準備できた。
-- 両 DB VM が 6.8.x カーネルで起動し、mongod が active になっている。
+- 3 台の DB VM が 6.8.x カーネルで起動し、mongod が active になっている。
+- `rs.status()` で 3 メンバー（`PRIMARY` 1 つ + `SECONDARY` 2 つ）を確認できた。
 - デプロイ後セットアップが完了した。
 - Data Collection Rule を構成できた。
 - Application Gateway の FQDN を取得できた。

@@ -128,6 +128,8 @@ param deployStorage = true
 // SKU availability varies by region and Availability Zone. Check both sizes:
 //   az vm list-skus --location japanwest --size Standard_D2s_v6 --zone -o table
 //   az vm list-skus --location japanwest --size Standard_D4s_v6 --zone -o table
+// The DB tier needs Standard_D4s_v6 in Zones 1, 2 AND 3 (3-node replica set,
+// Issue #30): 3 x 4 = 12 Dsv6-family vCPUs for the DB tier alone.
 // Listed SKUs do not guarantee available capacity at deployment time.
 // =============================================================================
 

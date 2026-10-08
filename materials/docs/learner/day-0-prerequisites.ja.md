@@ -66,14 +66,16 @@ az account show --query "{subscription:name, subscriptionId:id, tenantId:tenantI
 az account set --subscription "<SUBSCRIPTION_ID_OR_NAME>"
 ```
 
-このワークショップでは Dsv6 シリーズ VM を 6 台使います。
+このワークショップでは Dsv6 シリーズ VM を 7 台使います（DB は Zone 1/2/3 に 1 台ずつの 3 台構成の MongoDB レプリカセット、Issue #30）。
 
 | VM サイズ | 台数 | 各 vCPU | 合計 |
 |---|---:|---:|---:|
 | Standard_D2s_v6 (Web) | 2 | 2 | 4 |
 | Standard_D2s_v6 (App) | 2 | 2 | 4 |
-| Standard_D4s_v6 (DB) | 2 | 4 | 8 |
-| **合計** | **6** |  | **16 vCPU** |
+| Standard_D4s_v6 (DB) | 3 | 4 | 12 |
+| **合計** | **7** |  | **20 vCPU** |
+
+> **コストについて:** DB を 3 台構成にしたため（Issue #30）、2 台構成と比べて受講者 1 人あたり `Standard_D4s_v6` 1 台、128 GB Premium SSD のデータディスク 1 本、OS ディスク 1 本の料金が増えます。VM は停止（割り当て解除）してもディスク料金がかかるため、ワークショップ終了後はリソースグループごと削除してください。
 
 ```bash
 az extension add --name quota
@@ -87,9 +89,9 @@ az quota usage list --scope "$COMPUTE_SCOPE" \
   -o table
 ```
 
-**期待結果:** `Standard DSv6 Family vCPUs` と `Total Regional vCPUs` の両方で、`Limit - Current` が **16 vCPU 以上**です。行が表示されない場合は `az quota list --scope "$COMPUTE_SCOPE" -o table` と `az quota usage list --scope "$COMPUTE_SCOPE" -o table` で実際の quota 名を確認してください。
+**期待結果:** `Standard DSv6 Family vCPUs` と `Total Regional vCPUs` の両方で、`Limit - Current` が **20 vCPU 以上**です。行が表示されない場合は `az quota list --scope "$COMPUTE_SCOPE" -o table` と `az quota usage list --scope "$COMPUTE_SCOPE" -o table` で実際の quota 名を確認してください。
 
-**チェックポイント:** クォータが足りても、指定ゾーンでの VM キャパシティは保証されません。`az vm list-skus --location japanwest --size Standard_D2s_v6 --zone -o table` と `az vm list-skus --location japanwest --size Standard_D4s_v6 --zone -o table` でゾーン 1・2 の SKU 制限を確認してください。実際の容量不足やクォータ不足の場合は講師に相談し、別の SKU / リージョンやクォータ増加を検討します。
+**チェックポイント:** クォータが足りても、指定ゾーンでの VM キャパシティは保証されません。`az vm list-skus --location japanwest --size Standard_D2s_v6 --zone -o table` と `az vm list-skus --location japanwest --size Standard_D4s_v6 --zone -o table` で SKU 制限を確認してください。Web/App はゾーン 1・2、**DB（Standard_D4s_v6）はゾーン 1・2・3 のすべて**で利用できる必要があります。実際の容量不足やクォータ不足の場合は講師に相談し、別の SKU / リージョンやクォータ増加を検討します。
 
 ## 4. リソースプロバイダーを確認する
 

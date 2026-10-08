@@ -38,7 +38,7 @@ echo "https://$FQDN"
 az vm list --resource-group "$RESOURCE_GROUP" -o table
 ```
 
-**Expected Result:** `vm-web-az1-prod`, `vm-web-az2-prod`, `vm-app-az1-prod`, `vm-app-az2-prod`, `vm-db-az1-prod`, and `vm-db-az2-prod` are listed.
+**Expected Result:** `vm-web-az1-prod`, `vm-web-az2-prod`, `vm-app-az1-prod`, `vm-app-az2-prod`, `vm-db-az1-prod`, `vm-db-az2-prod`, and `vm-db-az3-prod` (7 VMs) are listed.
 
 **Checkpoint:** In multiple-group setups, VM names stay the same; only the resource group changes. Always pass `--resource-group "$RESOURCE_GROUP"`.
 
@@ -159,19 +159,139 @@ az vm start --resource-group "$RESOURCE_GROUP" --name vm-app-az1-prod
 
 **Expected Result:** The API continues through the other App VM or recovers shortly.
 
-## 9. Validate DB VM Failure Behavior
+## 9. Validate Automatic Failover Of The DB Replica Set
+
+The DB tier is a MongoDB replica set with three data-bearing members (`vm-db-az1` / `az2` / `az3` in Zones 1/2/3, no arbiter; Issue #30). Elections and `w=majority` writes need a majority of the three votes, which is **2**. Therefore, **any single node** can stop and the remaining two automatically elect a PRIMARY and keep accepting writes.
+
+This exercise checks three things:
+
+1. Stopping the PRIMARY (mongod stop and VM stop) triggers an automatic election. Record the **election time** and the **application recovery time**.
+2. Stopping each SECONDARY one at a time does not interrupt reads or writes.
+3. A stopped node rejoins and its data matches.
+
+> **AWS comparison:** This behaves like a self-managed MongoDB replica set on three EC2 instances in three AZs. With Amazon DocumentDB the service promotes a replica for you; here you observe the election mechanism yourself.
+
+### 9.1 Prepare: Status Command And API Probe
+
+In Cloud Shell, define a helper that prints replica set state. Run it against a DB VM that is not stopped.
 
 ```bash
-az vm stop --resource-group "$RESOURCE_GROUP" --name vm-db-az1-prod
-
-curl -k "https://$FQDN/api/posts"
-
-az vm start --resource-group "$RESOURCE_GROUP" --name vm-db-az1-prod
+RS_STATUS='mongosh --quiet --eval "rs.status().members.forEach(m => print(m.name, m.stateStr, \"health=\" + m.health, m.electionDate ? \"elected=\" + m.electionDate.toISOString() : \"\"))"'
+db_status() {
+  az vm run-command invoke -g "$RESOURCE_GROUP" -n "$1" \
+    --command-id RunShellScript --scripts "$RS_STATUS" \
+    --query "value[0].message" -o tsv
+}
+db_status vm-db-az2-prod
 ```
 
-**Expected Result:** MongoDB replica set behavior can be observed, including primary election and recovery after the VM starts again.
+**Expected Result:** One line shows `10.0.3.4:27017 PRIMARY`, and two lines show `SECONDARY` (`10.0.3.5`, `10.0.3.6`).
 
-**Checkpoint:** DB failure has higher impact than Web/App failure and may cause short write failures. Confirm both DB VMs are running after the exercise.
+Start a background probe that calls the API every 2 seconds and logs the result (it stops by itself after about 15 minutes).
+
+```bash
+( for i in $(seq 1 450); do
+    echo "$(date -u +%H:%M:%S) $(curl -k -s -o /dev/null -w '%{http_code}' --max-time 8 "https://$FQDN/api/posts")"
+    sleep 2
+  done ) > ~/db-failover-probe.log 2>&1 &
+PROBE_PID=$!
+```
+
+### 9.2 Stop mongod On The PRIMARY
+
+```bash
+date -u +%H:%M:%S    # note this as T0
+az vm run-command invoke -g "$RESOURCE_GROUP" -n vm-db-az1-prod \
+  --command-id RunShellScript --scripts "sudo systemctl stop mongod"
+db_status vm-db-az2-prod
+```
+
+**Expected Result:** `10.0.3.5` or `10.0.3.6` becomes `PRIMARY` and shows the election time in `elected=`. `10.0.3.4` is `(not reachable/healthy)`.
+
+In the browser, create a post and edit an existing post. Both succeed, with no app restart and no manual replica set reconfiguration.
+
+```bash
+grep -v ' 200$' ~/db-failover-probe.log | tail -20   # time range of failed calls
+```
+
+Record:
+
+- **Election time** = `elected=` time − T0 (typically about 10-15 seconds; the default `electionTimeoutMillis` is 10 seconds)
+- **App recovery time** = first `200` after the last non-200 in the probe log − T0 (typically election time plus a few seconds)
+
+Start mongod again.
+
+```bash
+az vm run-command invoke -g "$RESOURCE_GROUP" -n vm-db-az1-prod \
+  --command-id RunShellScript --scripts "sudo systemctl start mongod"
+sleep 30
+db_status vm-db-az2-prod
+```
+
+**Expected Result:** `10.0.3.4` rejoins as `SECONDARY` and catches up from the oplog. After it catches up, `10.0.3.4` (priority 2) becomes `PRIMARY` again through a **short second election (priority takeover)**. The app also recovers within seconds of that election.
+
+### 9.3 Stop The PRIMARY VM
+
+This simulates a whole-host failure.
+
+```bash
+date -u +%H:%M:%S    # T0
+az vm stop --resource-group "$RESOURCE_GROUP" --name vm-db-az1-prod
+db_status vm-db-az2-prod
+```
+
+**Expected Result:** As in 9.2, one of the remaining two nodes becomes `PRIMARY`. Creating and editing posts in the browser succeeds. Record election time and app recovery time the same way as in 9.2. `az vm stop` waits for the guest OS to shut down, so you can use the first failed probe time as T0 instead of the command start time.
+
+```bash
+az vm start --resource-group "$RESOURCE_GROUP" --name vm-db-az1-prod
+sleep 60
+db_status vm-db-az2-prod
+```
+
+### 9.4 Stop Each SECONDARY One At A Time
+
+```bash
+az vm stop --resource-group "$RESOURCE_GROUP" --name vm-db-az2-prod
+db_status vm-db-az1-prod
+# create and edit a post in the browser
+az vm start --resource-group "$RESOURCE_GROUP" --name vm-db-az2-prod
+sleep 60
+db_status vm-db-az1-prod
+
+az vm stop --resource-group "$RESOURCE_GROUP" --name vm-db-az3-prod
+db_status vm-db-az1-prod
+# create and edit a post in the browser
+az vm start --resource-group "$RESOURCE_GROUP" --name vm-db-az3-prod
+sleep 60
+db_status vm-db-az1-prod
+```
+
+**Expected Result:** Stopping a SECONDARY does not trigger an election; `10.0.3.4` stays PRIMARY. Creating and editing posts succeeds (PRIMARY + remaining SECONDARY = 2 votes, a majority). After starting, the stopped node returns as `SECONDARY` with `health=1`.
+
+### 9.5 Confirm Data Matches After Rejoin
+
+```bash
+COUNT='mongosh --quiet --eval "db.getMongo().setReadPref(\"secondaryPreferred\"); print(db.getSiblingDB(\"blogapp\").posts.countDocuments())"'
+for vm in vm-db-az1-prod vm-db-az2-prod vm-db-az3-prod; do
+  echo "$vm: $(az vm run-command invoke -g "$RESOURCE_GROUP" -n $vm --command-id RunShellScript --scripts "$COUNT" --query "value[0].message" -o tsv | grep -E '^[0-9]+$')"
+done
+kill "$PROBE_PID" 2>/dev/null
+```
+
+**Expected Result:** All three nodes return the same count, including posts created during the exercise.
+
+### 9.6 Losing Two Nodes Loses The Majority (Discussion Only)
+
+> **Important:** If **two** of the three nodes stop, the remaining node holds only 1 of 3 votes and **cannot elect a PRIMARY**. It stays `SECONDARY`, and API writes fail (reads may also fail depending on read preference). This is correct MongoDB behavior: it prevents a minority side from accepting writes that would later be rolled back (split brain). The set recovers automatically when a second node returns. Do not use `rs.reconfig({force: true})` in normal operations; it is a last-resort DR step (see the [disaster recovery guide](../operations/disaster-recovery-guide.md)). Show this state only as an instructor demo; learners should not stop two DB nodes at the same time.
+
+**Why no arbiter:** PRIMARY + SECONDARY + ARBITER (PSA) also has three votes. But when one data-bearing node stops, only one node still holds data. A `w=majority` write needs acknowledgment from two data-bearing members, so writes stall. With three data-bearing members (PSS), a single failure stops neither elections nor writes.
+
+| Exercise | T0 | New PRIMARY | Election time stamp | Election time | App recovery time |
+|---|---|---|---|---|---|
+| 9.2 mongod stop |  |  |  |  |  |
+| 9.3 VM stop |  |  |  |  |  |
+
+**Checkpoint:** After the exercise, confirm all three DB VMs are running and `db_status` shows one `PRIMARY` and two `SECONDARY` members.
 
 ## 10. Confirm All VMs Are Running
 
@@ -223,10 +343,12 @@ Test failover uses an isolated network to avoid production impact.
 - Backup is enabled for target VMs and restore points are visible.
 - Web VM failure behavior is observed and the VM is started again.
 - App VM failure behavior is observed and the VM is started again.
-- DB VM failure impact and recovery behavior are discussed, and DB VMs are running again.
+- Stopping the DB PRIMARY triggers an automatic election, and election time and app recovery time are recorded.
+- Stopping each SECONDARY one at a time keeps reads and writes working, and data matches after rejoin.
+- You can explain why losing two nodes at once loses the majority and stops writes.
 - ASR replication health and test failover concepts are explained.
 - Test failover cleanup is complete if test failover was run.
-- All 6 VMs are `VM running`.
+- All 7 VMs are `VM running`.
 
 ## When Stuck
 

@@ -111,9 +111,19 @@ server.listen(PORT, () => {
 EOF
 
 # Start health check server with PM2 (temporary until app is deployed)
+# Re-run safety: when this CustomScript re-runs on an existing VM (for example
+# forceUpdateTagApp, or a redeploy that changes MONGODB_URI such as the 3-node
+# MongoDB migration in Issue #30), the real API "blogapp-api" already owns
+# port 3000. Starting the placeholder then would only crash-loop in PM2.
 cd /opt/blogapp
-sudo -u azureuser pm2 start health-server.js --name blogapp-health
-sudo -u azureuser pm2 save
+if sudo -u azureuser pm2 describe blogapp-api >/dev/null 2>&1; then
+  echo "blogapp-api is already managed by PM2, skipping the placeholder health server"
+elif sudo -u azureuser pm2 describe blogapp-health >/dev/null 2>&1; then
+  echo "Placeholder health server already running"
+else
+  sudo -u azureuser pm2 start health-server.js --name blogapp-health
+  sudo -u azureuser pm2 save
+fi
 
 # ==========================================================
 # Inject Production Environment Variables
@@ -124,6 +134,17 @@ sudo -u azureuser pm2 save
 # ==========================================================
 
 echo "Configuring production environment variables..."
+
+# Re-run safety: remove the block written by a previous run before appending,
+# so a re-run replaces values (for example the 3-host MONGODB_URI, Issue #30)
+# instead of leaving duplicate keys in /etc/environment.
+sed -i -E \
+  -e '/^(NODE_ENV|PORT|LOG_LEVEL|MONGODB_URI|ENTRA_TENANT_ID|ENTRA_CLIENT_ID)=/d' \
+  -e '/^# =+$/d' \
+  -e '/^# Backend Application Environment Variables$/d' \
+  -e '/^# Injected by Bicep CustomScript Extension$/d' \
+  -e '/^# DO NOT EDIT MANUALLY - regenerated on VM provisioning$/d' \
+  /etc/environment
 
 cat >> /etc/environment << ENVEOF
 # ==========================================================

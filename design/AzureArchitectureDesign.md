@@ -27,7 +27,7 @@ This document defines the technical architecture requirements for the Azure IaaS
   - **Application Gateway subnet**: 10.0.0.0/24 (dedicated subnet for App Gateway, minimum /26)
   - Web tier subnet: 10.0.1.0/24 (2 VMs in different AZs)
   - App tier subnet: 10.0.2.0/24 (2 VMs in different AZs)
-  - DB tier subnet: 10.0.3.0/24 (2 VMs in different AZs)
+  - DB tier subnet: 10.0.3.0/24 (3 VMs in Zones 1/2/3: 10.0.3.4, .5, .6)
   - Azure Bastion subnet: 10.0.255.0/26 (AzureBastionSubnet - required name)
 
 #### Network Security Groups (NSGs)
@@ -75,14 +75,16 @@ This document defines the technical architecture requirements for the Azure IaaS
 - **Rationale**: Dsv6 offers 8 GiB for Node.js, Express, and the OS without relying on burst credits.
 - **Environment Configuration**: Bicep CustomScript injects production environment variables
   - `NODE_ENV=production`
-  - `MONGODB_URI=mongodb://blogapp:<password>@10.0.3.4:27017,10.0.3.5:27017/blogapp?replicaSet=blogapp-rs0&authSource=blogapp`
+  - `MONGODB_URI=mongodb://blogapp:<password>@10.0.3.4:27017,10.0.3.5:27017,10.0.3.6:27017/blogapp?replicaSet=blogapp-rs0&authSource=blogapp&w=majority`
   - `PORT=3000`
   - See [BackendApplicationDesign.md](BackendApplicationDesign.md#environment-aware-configuration) for details
 
-**DB Tier VMs (2 instances):**
+**DB Tier VMs (3 instances, Issue #30):**
 - VM SKU: Standard_D4s_v6 (4 vCPU, 16 GiB RAM)
 - OS: Ubuntu 24.04 LTS, **Azure long-term kernel track `linux-azure-lts-24.04` (6.8.x)**, not the rolling `linux-azure` track (see "DB Tier OS Kernel Track" below)
-- Availability: Spread across AZ 1 and AZ 2
+- Availability: one VM per AZ: `vm-db-az1` (Zone 1, 10.0.3.4), `vm-db-az2` (Zone 2, 10.0.3.5), `vm-db-az3` (Zone 3, 10.0.3.6)
+- Replica set: 3 data-bearing, voting members (PSS, no arbiter). Any single VM or zone can fail and the other 2 still form a majority, so a PRIMARY is elected automatically and `w=majority` writes continue. Losing 2 members makes the set read-only. See [DatabaseDesign.md](DatabaseDesign.md#replica-set-configuration).
+- Zone requirement: the region and Standard_D4s_v6 must be available in Zones 1, 2 and 3. If a region offers fewer zones, `dbVmAz3Zone` can move the 3rd member into Zone 1 or 2. That keeps automatic failover for single-VM failures, but the doubled zone's outage then loses the majority.
 - Managed Disk: 
   - OS: Standard SSD (30 GB)
   - Data: Premium SSD (128 GB or 256 GB)
@@ -121,7 +123,7 @@ Bicep uses Custom Script Extension to configure production environment on each V
 # Set system-wide environment variables for Node.js application
 cat <<EOF >> /etc/environment
 NODE_ENV=production
-MONGODB_URI=mongodb://blogapp:<password>@10.0.3.4:27017,10.0.3.5:27017/blogapp?replicaSet=blogapp-rs0&authSource=blogapp
+MONGODB_URI=mongodb://blogapp:<password>@10.0.3.4:27017,10.0.3.5:27017,10.0.3.6:27017/blogapp?replicaSet=blogapp-rs0&authSource=blogapp&w=majority
 PORT=3000
 LOG_LEVEL=info
 ENTRA_TENANT_ID=<tenant-id>
@@ -207,10 +209,10 @@ main.bicepparam (Student edits)
 
 #### Architecture Decision Record: VM Series Selection (Dsv6)
 
-**Decision**: Use four Standard_D2s_v6 VMs and two Standard_D4s_v6 VMs for the Japan West workshop.
+**Decision**: Use four Standard_D2s_v6 VMs and three Standard_D4s_v6 VMs for the Japan West workshop.
 
 **Context**:
-- The workshop uses two Availability Zones and needs 16 Dsv6-family and 16 total regional vCPUs for a new deployment.
+- Web and App tiers use two Availability Zones; the DB tier uses three (Issue #30). A new deployment needs 20 Dsv6-family and 20 total regional vCPUs (8 for Web/App + 12 for DB).
 - Basv2 and Dsv5 sizes were capacity-constrained during workshop deployment; quotas and SKU listings alone do not guarantee zonal capacity.
 - Dsv6 supplies consistent CPU performance and Premium SSD support. Its NVMe interface requires the DB setup script to identify the managed data disk by Azure LUN instead of a Linux device name.
 
@@ -547,9 +549,11 @@ Required tags for all resources:
 - Stateless design
 
 **DB Tier**:
-- 2 VMs in different Availability Zones
-- MongoDB Replica Set (Primary + Secondary)
-- Automatic failover within cluster
+- 3 VMs, one per Availability Zone (Zones 1, 2, 3)
+- MongoDB Replica Set: Primary + 2 Secondaries, all data-bearing and voting (no arbiter)
+- Automatic election after any single VM/zone failure (2 of 3 votes remain); `w=majority` writes continue
+- Limitation: losing 2 of 3 members loses the majority (read-only until one returns)
+- AWS comparison: like self-managed MongoDB on 3 EC2 instances in 3 AZs; Amazon DocumentDB automates this layer
 
 #### Failure Scenarios to Handle
 - Single VM failure per tier
@@ -561,7 +565,7 @@ Required tags for all resources:
 #### VM Sizing Strategy
 - Right-size for workshop duration (2 days)
 - Use Dsv6-series general-purpose VMs for the two-day workshop in Japan West.
-- Check Dsv6-family and total regional quota (16 vCPUs each) and both zones' SKU restrictions before deploying.
+- Check Dsv6-family and total regional quota (20 vCPUs each) and SKU restrictions in Zones 1, 2 and 3 before deploying.
 - Review cost for 20-30 concurrent student deployments; Dsv6 is not covered by the former Basv2 estimate.
 
 #### Resource Lifecycle
@@ -571,7 +575,7 @@ Required tags for all resources:
 
 #### Cost Estimation (per student, 2-day workshop)
 
-Use the [Azure Pricing Calculator](https://azure.microsoft.com/pricing/calculator/) for current Japan West rates for four D2s_v6 and two D4s_v6 VMs (48 hours), six Standard SSD OS disks, two 128-GiB Premium SSD data disks, Application Gateway, Bastion, networking, monitoring, and any optional backup/replication resources. The former East US Basv2-based dollar figures do not apply.
+Use the [Azure Pricing Calculator](https://azure.microsoft.com/pricing/calculator/) for current Japan West rates for four D2s_v6 and three D4s_v6 VMs (48 hours), seven OS disks, three 128-GiB Premium SSD data disks (the 3rd DB VM and its data disk were added by Issue #30), Application Gateway, Bastion, networking, monitoring, and any optional backup/replication resources. The former East US Basv2-based dollar figures do not apply.
 
 Application Gateway provides:
 - SSL/TLS termination (no NGINX HTTPS config needed)

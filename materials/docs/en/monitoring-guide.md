@@ -80,6 +80,7 @@ Repeat for the web/app/db VMs.
 - App Gateway access logs: look at request time and backend response time
 - VM CPU (web/app) and disk latency (db)
 - MongoDB performance counters (if you export them)
+- MongoDB replica set health: all 3 members up (1 PRIMARY + 2 SECONDARY) and replication lag; alert if fewer than 3 are healthy, because losing one more member loses the majority
 
 ### 4.3 “What failed?”
 

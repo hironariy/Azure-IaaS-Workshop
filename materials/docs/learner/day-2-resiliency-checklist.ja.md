@@ -40,7 +40,7 @@ echo "https://$FQDN"
 az vm list --resource-group "$RESOURCE_GROUP" -o table
 ```
 
-**期待結果:** `vm-web-az1-prod`、`vm-web-az2-prod`、`vm-app-az1-prod`、`vm-app-az2-prod`、`vm-db-az1-prod`、`vm-db-az2-prod` が表示されます。
+**期待結果:** `vm-web-az1-prod`、`vm-web-az2-prod`、`vm-app-az1-prod`、`vm-app-az2-prod`、`vm-db-az1-prod`、`vm-db-az2-prod`、`vm-db-az3-prod` の 7 台が表示されます。
 
 **チェックポイント:** 複数グループ構成の場合も VM 名は同じで、リソースグループ名だけが異なります。すべてのコマンドで `--resource-group "$RESOURCE_GROUP"` を指定してください。
 
@@ -180,22 +180,139 @@ az vm start --resource-group "$RESOURCE_GROUP" --name vm-app-az1-prod
 
 **チェックポイント:** API 応答が不安定な場合は、数分待ってから再試行し、Application Gateway backend health と App VM の起動状態を確認します。
 
-## 9. DB VM 障害を検証する
+## 9. DB レプリカセットの自動フェイルオーバーを検証する
 
-DB tier は MongoDB レプリカセットです。片方の DB VM を停止し、primary 再選出とアプリの影響を観察します。
+DB tier は 3 台のデータ保持メンバー（`vm-db-az1` / `az2` / `az3`、Zone 1/2/3、アービターなし）で構成した MongoDB レプリカセットです（Issue #30）。選出と `w=majority` の書き込みには、3 票のうち過半数の **2 票** が必要です。そのため、**どの 1 台が止まっても** 残り 2 台で Primary を自動選出し、書き込みを続けられます。
+
+この演習では、次の 3 つを確認します。
+
+1. Primary の停止（mongod 停止と VM 停止）で自動選出が起きることを確認し、**選出時間** と **アプリの復旧時間** を記録する。
+2. Secondary を 1 台ずつ停止しても、読み書きが続くことを確認する。
+3. 停止したノードが再参加し、データが一致することを確認する。
+
+> **AWS との比較:** 3 つの AZ にある 3 台の EC2 に MongoDB を自己管理で構成した場合と同じ動きです。Amazon DocumentDB ではレプリカの昇格をサービスが行いますが、ここでは選出の仕組みを自分で観察します。
+
+### 9.1 準備: 状態確認コマンドと API プローブ
+
+Cloud Shell で、DB の状態を表示するコマンドを変数に入れます。停止していない DB VM に対して実行します。
 
 ```bash
-az vm stop --resource-group "$RESOURCE_GROUP" --name vm-db-az1-prod
-sleep 120
-
-curl -k "https://$FQDN/api/posts"
-
-az vm start --resource-group "$RESOURCE_GROUP" --name vm-db-az1-prod
+RS_STATUS='mongosh --quiet --eval "rs.status().members.forEach(m => print(m.name, m.stateStr, \"health=\" + m.health, m.electionDate ? \"elected=\" + m.electionDate.toISOString() : \"\"))"'
+db_status() {
+  az vm run-command invoke -g "$RESOURCE_GROUP" -n "$1" \
+    --command-id RunShellScript --scripts "$RS_STATUS" \
+    --query "value[0].message" -o tsv
+}
+db_status vm-db-az2-prod
 ```
 
-**期待結果:** レプリカセットの primary が切り替わり、復旧後にアプリケーションが再び安定します。
+**期待結果:** `10.0.3.4:27017 PRIMARY` が 1 行、`SECONDARY` が 2 行（`10.0.3.5`、`10.0.3.6`）表示されます。
 
-**チェックポイント:** DB VM 障害は Web/App より影響が大きく、短時間の書き込み失敗が発生する可能性があります。演習後は必ず両方の DB VM が running になっていることを確認してください。
+API を 2 秒ごとに呼び出し、結果をファイルに記録するプローブをバックグラウンドで開始します（約 15 分で自動停止します）。
+
+```bash
+( for i in $(seq 1 450); do
+    echo "$(date -u +%H:%M:%S) $(curl -k -s -o /dev/null -w '%{http_code}' --max-time 8 "https://$FQDN/api/posts")"
+    sleep 2
+  done ) > ~/db-failover-probe.log 2>&1 &
+PROBE_PID=$!
+```
+
+### 9.2 Primary の mongod を停止する
+
+```bash
+date -u +%H:%M:%S    # 停止開始時刻 (T0) としてメモ
+az vm run-command invoke -g "$RESOURCE_GROUP" -n vm-db-az1-prod \
+  --command-id RunShellScript --scripts "sudo systemctl stop mongod"
+db_status vm-db-az2-prod
+```
+
+**期待結果:** `10.0.3.5` または `10.0.3.6` が `PRIMARY` になり、`elected=` に選出時刻が表示されます。`10.0.3.4` は `(not reachable/healthy)` です。
+
+ブラウザで投稿を 1 件作成し、既存の投稿を 1 件編集します。どちらも成功します（アプリの再起動も、レプリカセットの手動再構成も不要です）。
+
+```bash
+grep -v ' 200$' ~/db-failover-probe.log | tail -20   # 失敗した時刻の範囲
+```
+
+記録します。
+
+- **選出時間** = `elected=` の時刻 − T0（目安: 約 10-15 秒。既定の `electionTimeoutMillis` は 10 秒）
+- **アプリ復旧時間** = プローブで 200 以外が最後に出た時刻の次の `200` − T0（目安: 選出時間 + 数秒）
+
+mongod を起動して戻します。
+
+```bash
+az vm run-command invoke -g "$RESOURCE_GROUP" -n vm-db-az1-prod \
+  --command-id RunShellScript --scripts "sudo systemctl start mongod"
+sleep 30
+db_status vm-db-az2-prod
+```
+
+**期待結果:** `10.0.3.4` が `SECONDARY` として再参加し、oplog で追いつきます。追いついた後、priority 2 の `10.0.3.4` は **短い 2 回目の選出（priority takeover）** で `PRIMARY` に戻ります。このときもアプリは数秒以内に復旧します。
+
+### 9.3 Primary の VM を停止する
+
+ホスト全体の障害を模擬します。
+
+```bash
+date -u +%H:%M:%S    # T0
+az vm stop --resource-group "$RESOURCE_GROUP" --name vm-db-az1-prod
+db_status vm-db-az2-prod
+```
+
+**期待結果:** 9.2 と同様に、残り 2 台の一方が `PRIMARY` になります。ブラウザで投稿の作成と編集が成功します。選出時間とアプリ復旧時間を 9.2 と同じ方法で記録します（`az vm stop` はゲスト OS の停止を待つため、T0 は「コマンド開始」ではなく、プローブで最初に失敗した時刻を目安にしても構いません）。
+
+```bash
+az vm start --resource-group "$RESOURCE_GROUP" --name vm-db-az1-prod
+sleep 60
+db_status vm-db-az2-prod
+```
+
+### 9.4 Secondary を 1 台ずつ停止する
+
+```bash
+az vm stop --resource-group "$RESOURCE_GROUP" --name vm-db-az2-prod
+db_status vm-db-az1-prod
+# ブラウザで投稿を作成・編集する
+az vm start --resource-group "$RESOURCE_GROUP" --name vm-db-az2-prod
+sleep 60
+db_status vm-db-az1-prod
+
+az vm stop --resource-group "$RESOURCE_GROUP" --name vm-db-az3-prod
+db_status vm-db-az1-prod
+# ブラウザで投稿を作成・編集する
+az vm start --resource-group "$RESOURCE_GROUP" --name vm-db-az3-prod
+sleep 60
+db_status vm-db-az1-prod
+```
+
+**期待結果:** Secondary を停止しても選出は起きず、Primary は `10.0.3.4` のままです。投稿の作成と編集は成功します（Primary + 残りの Secondary = 2 票で過半数）。起動後、停止したノードは `SECONDARY`（`health=1`）に戻ります。
+
+### 9.5 再参加したノードのデータ一致を確認する
+
+```bash
+COUNT='mongosh --quiet --eval "db.getMongo().setReadPref(\"secondaryPreferred\"); print(db.getSiblingDB(\"blogapp\").posts.countDocuments())"'
+for vm in vm-db-az1-prod vm-db-az2-prod vm-db-az3-prod; do
+  echo "$vm: $(az vm run-command invoke -g "$RESOURCE_GROUP" -n $vm --command-id RunShellScript --scripts "$COUNT" --query "value[0].message" -o tsv | grep -E '^[0-9]+$')"
+done
+kill "$PROBE_PID" 2>/dev/null
+```
+
+**期待結果:** 3 台とも同じ件数です（演習中に作成した投稿を含みます）。
+
+### 9.6 2 台を同時に失うと過半数を失う（説明のみ）
+
+> **重要:** 3 台のうち **2 台** が停止すると、残り 1 台は 3 票中 1 票しか持たないため、**Primary を選出できません**。残ったノードは `SECONDARY` のままとなり、API の書き込みも（読み取り設定によっては読み取りも）失敗します。これは、過半数を持たない側が書き込みを受け付けて後でロールバックされる事態（スプリットブレイン）を防ぐための、MongoDB の正しい動作です。2 台目が戻れば自動で回復します。`rs.reconfig({force: true})` は通常運用では使いません（DR の最終手段です。[災害復旧ガイド](../operations/disaster-recovery-guide.ja.md) を参照）。この状態は講師デモでのみ確認し、受講者環境では 2 台を同時に停止しないでください。
+
+**なぜアービターを使わないのか:** Primary + Secondary + アービター（PSA）でも票数は 3 です。しかし、データ保持ノードが 1 台止まると、データを持つのは 1 台だけになります。`w=majority` の書き込みには、データを持つメンバー 2 台の確認が必要なため、書き込みが止まります。3 台ともデータを持つ構成（PSS）なら、1 台の障害で選出も書き込みも止まりません。
+
+| 演習 | T0 | 新 Primary | 選出時刻 | 選出時間 | アプリ復旧時間 |
+|---|---|---|---|---|---|
+| 9.2 mongod 停止 |  |  |  |  |  |
+| 9.3 VM 停止 |  |  |  |  |  |
+
+**チェックポイント:** 演習後は 3 台の DB VM がすべて running で、`db_status` に `PRIMARY` 1 台と `SECONDARY` 2 台が表示されることを確認してください。
 
 ## 10. VM がすべて running に戻ったことを確認する
 
@@ -207,7 +324,7 @@ az vm list \
   -o table
 ```
 
-**期待結果:** 6 台すべてが `VM running` です。
+**期待結果:** 7 台すべてが `VM running` です。
 
 **チェックポイント:** 停止した VM がある場合は、次のコマンドで起動します。
 
@@ -253,10 +370,12 @@ Test failover は本番側に影響しない分離ネットワークで行いま
 - 対象 VM の Backup を有効化し、復元ポイントを確認できた。
 - Web VM 停止時の HA 挙動を確認し、VM を起動状態へ戻した。
 - App VM 停止時の HA 挙動を確認し、VM を起動状態へ戻した。
-- DB VM 停止時の影響と復旧の考え方を確認し、DB VM を起動状態へ戻した。
+- DB の Primary 停止で自動選出が起きることを確認し、選出時間とアプリ復旧時間を記録した。
+- Secondary を 1 台ずつ停止しても読み書きが続き、再参加後にデータが一致することを確認した。
+- 2 台を同時に失うと過半数を失い、書き込みができなくなる理由を説明できた。
 - ASR の replication health と test failover の考え方を説明できた。
 - Test failover を実施した場合は、cleanup が完了している。
-- 6 台の VM がすべて `VM running` である。
+- 7 台の VM がすべて `VM running` である。
 
 ## 迷ったとき
 

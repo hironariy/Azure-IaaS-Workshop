@@ -548,6 +548,7 @@ var keyVaultName = 'kv-blogapp-${storageAccountSuffix}'  // kv-blogapp-jh7k2m
 // Resource-specific names (not globally unique)
 var vmNameDb1 = 'vm-db-az1'
 var vmNameDb2 = 'vm-db-az2'
+var vmNameDb3 = 'vm-db-az3'  // 3rd data-bearing replica set member (Issue #30)
 ```
 
 **Output for Scripts**:
@@ -566,21 +567,21 @@ output dbVm1PrivateIp string = dbVm1Nic.properties.ipConfigurations[0].propertie
 
 **Format**:
 ```
-mongodb://blogapp_api_user:<password>@<db-primary-ip>:27017,<db-secondary-ip>:27017/blogapp?replicaSet=blogapp-rs0
+mongodb://blogapp_api_user:<password>@<db-az1-ip>:27017,<db-az2-ip>:27017,<db-az3-ip>:27017/blogapp?replicaSet=blogapp-rs0&w=majority
 ```
 
 **Placeholders**:
 - `<password>`: Retrieved from Azure Key Vault secret `mongodb-api-password`
-- `<db-primary-ip>`: DB VM primary private IP (from Bicep output `dbVm1PrivateIp`)
-- `<db-secondary-ip>`: DB VM secondary private IP (from Bicep output `dbVm2PrivateIp`)
+- `<db-az1-ip>`, `<db-az2-ip>`, `<db-az3-ip>`: DB VM private IPs (10.0.3.4/5/6; from the Bicep output `dbTierPrivateIps`). List all three as seeds: any member may be PRIMARY after an election, and the driver discovers the current PRIMARY from any reachable seed.
 
 **Example** (actual deployment):
 ```bash
 # Retrieve values from Bicep deployment
-DB_PRIMARY_IP=$(az deployment group show \
+DB_HOSTS=$(az deployment group show \
   --resource-group rg-blogapp-student01 \
   --name main-deployment \
-  --query properties.outputs.dbVm1PrivateIp.value -o tsv)
+  --query "join(',', properties.outputs.dbTierPrivateIps.value)" -o tsv \
+  | sed -E 's/,/:27017,/g; s/$/:27017/')   # 10.0.3.4:27017,10.0.3.5:27017,10.0.3.6:27017
 
 DB_PASSWORD=$(az keyvault secret show \
   --vault-name kv-blogapp-jh7k2m \
@@ -588,7 +589,7 @@ DB_PASSWORD=$(az keyvault secret show \
   --query value -o tsv)
 
 # Construct connection string
-export MONGODB_URI="mongodb://blogapp_api_user:${DB_PASSWORD}@${DB_PRIMARY_IP}:27017,${DB_SECONDARY_IP}:27017/blogapp?replicaSet=blogapp-rs0"
+export MONGODB_URI="mongodb://blogapp_api_user:${DB_PASSWORD}@${DB_HOSTS}/blogapp?replicaSet=blogapp-rs0&w=majority"
 ```
 ```
 
@@ -829,12 +830,22 @@ resource vmDb2 'Microsoft.Compute/virtualMachines@2023-03-01' = {
     // ... configuration
   }
 }
+
+resource vmDb3 'Microsoft.Compute/virtualMachines@2023-03-01' = {
+  name: 'vm-db-az3'
+  location: location
+  zones: ['3']  // Availability Zone 3 - 3rd vote keeps a majority after any single failure
+  properties: {
+    // ... configuration
+  }
+}
 ```
 
 **Educational Note**: 
 - 1 zone: No HA (single point of failure)
 - 2 zones: Basic HA (survives 1 zone failure)
 - 3 zones: Production HA (survives 1 zone failure with quorum)
+- Stateless tiers (Web/App) use 2 zones behind a load balancer. Quorum-based tiers (the MongoDB replica set) use 3 data-bearing members in 3 zones, so any single zone/node failure leaves a majority (2 of 3) for automatic election and `w=majority` writes (Issue #30).
 
 ### 7.2 Load Balancer Health Probes
 
