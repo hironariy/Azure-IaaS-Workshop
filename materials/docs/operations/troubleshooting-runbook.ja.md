@@ -479,6 +479,8 @@ Primary では、再起動の **前に** Primary を譲ります。
 mongosh -u blogadmin -p --authenticationDatabase admin --quiet --eval 'rs.stepDown(300)'
 ```
 
+> **元 Primary の確認結果:** mongod を再起動すると `rs.stepDown(300)` の待機期間はリセットされます。そのため、priority 2 の `vm-db-az1-prod` は追いつき次第 Primary に戻り、`db.hello().secondary` が `false` になることがあります。これは想定どおりの動作です。下記の `rs.status()` で PRIMARY 1 台 + SECONDARY 2 台であれば問題ありません。
+
 1 台ごとに、レプリカセットが PRIMARY 1 台 + SECONDARY 2 台に戻ったことを確認してから次に進みます。
 
 ```bash
@@ -494,7 +496,7 @@ sudo mv /etc/mongod.conf.pending-auth /etc/mongod.conf
 sudo systemctl restart mongod
 sleep 15
 sudo systemctl is-active mongod           # active
-mongosh --quiet --eval 'db.hello().secondary'   # true
+mongosh --quiet --eval 'db.hello().secondary'   # true（元 Primary は false でも可。上記参照）
 ```
 
 #### 手順 4: 動作を確認する

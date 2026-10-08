@@ -402,6 +402,8 @@ On the PRIMARY, hand over the PRIMARY role **before** the restart:
 mongosh -u blogadmin -p --authenticationDatabase admin --quiet --eval 'rs.stepDown(300)'
 ```
 
+> **Result on the former PRIMARY:** restarting mongod clears the `rs.stepDown(300)` wait period. `vm-db-az1-prod` (priority 2) therefore takes PRIMARY back as soon as it catches up, so `db.hello().secondary` may print `false`. This is expected. Everything is fine if `rs.status()` below shows 1 PRIMARY + 2 SECONDARY.
+
 After each member, check that the set is back to 1 PRIMARY + 2 SECONDARY before moving on:
 
 ```bash
@@ -417,7 +419,7 @@ sudo mv /etc/mongod.conf.pending-auth /etc/mongod.conf
 sudo systemctl restart mongod
 sleep 15
 sudo systemctl is-active mongod           # active
-mongosh --quiet --eval 'db.hello().secondary'   # true
+mongosh --quiet --eval 'db.hello().secondary'   # true (former PRIMARY: may be false, see above)
 ```
 
 #### Step 4: Verify
