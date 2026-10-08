@@ -165,7 +165,7 @@ The DB tier is a MongoDB replica set with three data-bearing members (`vm-db-az1
 
 This exercise checks three things:
 
-1. Stopping the PRIMARY (mongod stop and VM stop) triggers an automatic election. Record the **election time** and the **application recovery time**.
+1. A new PRIMARY takes over in two ways: a **planned handover** (graceful mongod stop) and a **failure-driven election** (forced VM stop). Compare the **election time** and the **application recovery time**.
 2. Stopping each SECONDARY one at a time does not interrupt reads or writes.
 3. A stopped node rejoins and its data matches.
 
@@ -187,22 +187,47 @@ db_status vm-db-az2-prod
 
 **Expected Result:** One line shows `10.0.3.4:27017 PRIMARY`, and two lines show `SECONDARY` (`10.0.3.5`, `10.0.3.6`).
 
-Start a background probe that calls the API every 2 seconds and logs the result (it stops by itself after about 15 minutes).
+Start a background probe that calls the API every 5 seconds and logs the HTTP status (it stops by itself after about 15 minutes).
 
 ```bash
-( for i in $(seq 1 450); do
+( for i in $(seq 1 180); do
     echo "$(date -u +%H:%M:%S) $(curl -k -s -o /dev/null -w '%{http_code}' --max-time 8 "https://$FQDN/api/posts")"
-    sleep 2
+    sleep 5
   done ) > ~/db-failover-probe.log 2>&1 &
 PROBE_PID=$!
+
+# Helpers that classify the probe results
+probe_failures() {
+  grep -E ' (5[0-9][0-9]|000)$' ~/db-failover-probe.log | tail -20   # candidate DB/app failures
+}
+probe_summary() {
+  awk '{print $2}' ~/db-failover-probe.log | sort | uniq -c           # count per status
+}
 ```
 
-### 9.2 Stop mongod On The PRIMARY
+**How to read the probe log:**
+
+| Status | Meaning | Count as failure? |
+|---|---|---|
+| `200` | OK | — |
+| `5xx` (`500`, `502`, `503`, `504`) | The API cannot read/write the DB, or no App VM answers | **Yes** |
+| `000` | Timeout or connection failure | **Yes** |
+| `429` | Backend rate limit (Too Many Requests) | **No** |
+
+> **Why `429` is excluded:** the backend limits `/api` to **100 requests per 15 minutes per App VM** (`express-rate-limit` in `materials/backend/src/app.ts`, limit `RATE_LIMIT_MAX_REQUESTS`). The probe and your browser share that limit, so a shorter interval returns `429` even while the DB is healthy. A `429` is not a DB failure, so leave it out of the recovery-time calculation. In AWS terms, this is like telling API Gateway throttling (`429`) apart from ALB target failures (`502`/`503`).
+>
+> **Why not probe `/health`:** `https://$FQDN/health` is answered directly by NGINX on the Web VM for the Application Gateway probe and never reaches the App VMs or MongoDB. To observe a DB failover, probe `/api/posts`, which reads from the DB.
+
+### 9.2 Planned Handover: Stop mongod On The PRIMARY Gracefully
+
+`systemctl stop mongod` performs a **graceful shutdown**. Before it stops, the PRIMARY steps down by itself and hands over to a caught-up SECONDARY. Nothing has to *detect* a failure, so the election finishes almost immediately (under a second to a few seconds). This is the same operation you use to move the PRIMARY before maintenance or OS updates.
 
 ```bash
-date -u +%H:%M:%S    # note this as T0
+# T0 is when mongod stops inside the VM. Print the VM-side time so the
+# Run Command delivery delay (about 10-20 seconds) is not counted in T0.
 az vm run-command invoke -g "$RESOURCE_GROUP" -n vm-db-az1-prod \
-  --command-id RunShellScript --scripts "sudo systemctl stop mongod"
+  --command-id RunShellScript --scripts 'echo "T0=$(date -u +%H:%M:%S)"; sudo systemctl stop mongod' \
+  --query "value[0].message" -o tsv
 db_status vm-db-az2-prod
 ```
 
@@ -211,13 +236,16 @@ db_status vm-db-az2-prod
 In the browser, create a post and edit an existing post. Both succeed, with no app restart and no manual replica set reconfiguration.
 
 ```bash
-grep -v ' 200$' ~/db-failover-probe.log | tail -20   # time range of failed calls
+probe_failures
+probe_summary
 ```
 
 Record:
 
-- **Election time** = `elected=` time − T0 (typically about 10-15 seconds; the default `electionTimeoutMillis` is 10 seconds)
-- **App recovery time** = first `200` after the last non-200 in the probe log − T0 (typically election time plus a few seconds)
+- **Election time** = `elected=` time − T0 (typically **about 0 to a few seconds**: with a graceful stop the PRIMARY hands over by itself, so there is no `electionTimeoutMillis` wait)
+- **App recovery time** = first `200` after the last `5xx`/`000` − T0. Often there is no `5xx`/`000` at all (no app impact); record that as "0 seconds (no errors)".
+
+> **Common pitfall:** if you note T0 with `date` and then run `az vm run-command invoke`, `elected=` can look about 15 seconds later. That is the Run Command delivery delay, not the election. Use the `T0=` value printed inside the VM, as above.
 
 Start mongod again.
 
@@ -230,17 +258,24 @@ db_status vm-db-az2-prod
 
 **Expected Result:** `10.0.3.4` rejoins as `SECONDARY` and catches up from the oplog. After it catches up, `10.0.3.4` (priority 2) becomes `PRIMARY` again through a **short second election (priority takeover)**. The app also recovers within seconds of that election.
 
-### 9.3 Stop The PRIMARY VM
+### 9.3 Failure-Driven Election: Force-Stop The PRIMARY VM
 
-This simulates a whole-host failure.
+This simulates a sudden whole-host failure (power loss). `--skip-shutdown` powers the VM off immediately without shutting down the guest OS. mongod cannot step down, so the remaining two nodes elect a new PRIMARY only after they **detect the missing heartbeats**. Without `--skip-shutdown`, the OS shuts down cleanly and you get the same planned handover as in 9.2.
 
 ```bash
-date -u +%H:%M:%S    # T0
-az vm stop --resource-group "$RESOURCE_GROUP" --name vm-db-az1-prod
+az vm stop --resource-group "$RESOURCE_GROUP" --name vm-db-az1-prod --skip-shutdown
 db_status vm-db-az2-prod
 ```
 
-**Expected Result:** As in 9.2, one of the remaining two nodes becomes `PRIMARY`. Creating and editing posts in the browser succeeds. Record election time and app recovery time the same way as in 9.2. `az vm stop` waits for the guest OS to shut down, so you can use the first failed probe time as T0 instead of the command start time.
+**Expected Result:** One of the remaining two nodes becomes `PRIMARY`. Creating and editing posts in the browser succeeds.
+
+Record:
+
+- **T0** = time of the first `5xx`/`000` in the probe log (close to the power-off time; do not use the `az vm stop` start time, which includes Azure-side processing)
+- **Election time** = `elected=` time − T0 (typically **about 10-15 seconds**: a SECONDARY starts an election after it gets no heartbeat from the PRIMARY for the default `electionTimeoutMillis` of 10 seconds)
+- **App recovery time** = first `200` after the last `5xx`/`000` − T0 (typically election time plus a few seconds while the driver discovers the new PRIMARY)
+
+**Comparing 9.2 and 9.3:** a planned handover (9.2) is almost zero-downtime, while a failure-driven election (9.3) stops writes for the detection wait (`electionTimeoutMillis`). That is the practical RTO of automatic failover. In AWS terms, it is the difference between an RDS Multi-AZ reboot with failover and an automatic failover after an AZ outage.
 
 ```bash
 az vm start --resource-group "$RESOURCE_GROUP" --name vm-db-az1-prod
@@ -288,8 +323,8 @@ kill "$PROBE_PID" 2>/dev/null
 
 | Exercise | T0 | New PRIMARY | Election time stamp | Election time | App recovery time |
 |---|---|---|---|---|---|
-| 9.2 mongod stop |  |  |  |  |  |
-| 9.3 VM stop |  |  |  |  |  |
+| 9.2 graceful mongod stop (planned handover) |  |  |  |  |  |
+| 9.3 forced VM stop (failure-driven election) |  |  |  |  |  |
 
 **Checkpoint:** After the exercise, confirm all three DB VMs are running and `db_status` shows one `PRIMARY` and two `SECONDARY` members.
 
