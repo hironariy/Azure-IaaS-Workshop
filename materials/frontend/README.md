@@ -103,13 +103,17 @@ See: `/design/RepositoryWideDesignRules.md` - Section 1.3
 
 ## Styling
 
-This project uses TailwindCSS 3+ with custom Azure-inspired colors.
+This project uses Tailwind CSS 4 with the official Vite plugin and custom Azure-inspired colors.
 
 Custom CSS classes defined in `index.css`:
 - `.btn`, `.btn-primary`, `.btn-secondary`, `.btn-danger` - Button styles
 - `.card` - Card container
 - `.input` - Form input styling
 - `.link` - Link styling
+
+### Maintainer note: `source-map-js` override
+
+`package.json` temporarily overrides `source-map-js` to `0.6.2`. The current `source-map-js` 1.x line is used only by development/build tooling (`@tailwindcss/vite` and Vite's PostCSS path), and `1.2.1` is affected by GHSA-68fv-2mgg-jv7q. The advisory is fixed in `1.2.2`, but that version is not published yet. Remove this override and re-run both full and `--omit=dev` audits after `source-map-js >=1.2.2` is available.
 
 ## API Integration
 

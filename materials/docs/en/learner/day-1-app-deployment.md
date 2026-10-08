@@ -244,6 +244,7 @@ npm --version
 cd temp/materials/frontend
 npm ci
 npm audit --audit-level=low
+npm audit --omit=dev --audit-level=low
 npm run build
 ```
 

@@ -38,7 +38,7 @@ function Layout({ children }: LayoutProps) {
   return (
     <div className="flex min-h-screen flex-col">
       {/* Header */}
-      <header className="border-b border-gray-200 bg-white shadow-sm">
+      <header className="border-b border-gray-200 bg-white shadow-xs">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4">
           {/* Logo */}
           <Link to="/" className="text-2xl font-bold text-azure-600">
@@ -79,7 +79,7 @@ function Layout({ children }: LayoutProps) {
       </header>
 
       {/* Main Content */}
-      <main className="mx-auto w-full max-w-7xl flex-grow px-4 py-8">{children}</main>
+      <main className="mx-auto w-full max-w-7xl grow px-4 py-8">{children}</main>
 
       {/* Footer */}
       <footer className="border-t border-gray-200 bg-gray-50">
