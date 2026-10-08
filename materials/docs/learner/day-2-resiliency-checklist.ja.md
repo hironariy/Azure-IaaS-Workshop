@@ -186,7 +186,7 @@ DB tier は 3 台のデータ保持メンバー（`vm-db-az1` / `az2` / `az3`、
 
 この演習では、次の 3 つを確認します。
 
-1. Primary の停止（mongod 停止と VM 停止）で自動選出が起きることを確認し、**選出時間** と **アプリの復旧時間** を記録する。
+1. Primary の停止で新しい Primary が決まることを、**計画的な引き渡し**（mongod の正常停止）と **障害検知による選出**（VM の強制停止）の 2 通りで確認し、**選出時間** と **アプリの復旧時間** を比べる。
 2. Secondary を 1 台ずつ停止しても、読み書きが続くことを確認する。
 3. 停止したノードが再参加し、データが一致することを確認する。
 
@@ -208,22 +208,46 @@ db_status vm-db-az2-prod
 
 **期待結果:** `10.0.3.4:27017 PRIMARY` が 1 行、`SECONDARY` が 2 行（`10.0.3.5`、`10.0.3.6`）表示されます。
 
-API を 2 秒ごとに呼び出し、結果をファイルに記録するプローブをバックグラウンドで開始します（約 15 分で自動停止します）。
+API を 5 秒ごとに呼び出し、HTTP ステータスをファイルに記録するプローブをバックグラウンドで開始します（約 15 分で自動停止します）。
 
 ```bash
-( for i in $(seq 1 450); do
+( for i in $(seq 1 180); do
     echo "$(date -u +%H:%M:%S) $(curl -k -s -o /dev/null -w '%{http_code}' --max-time 8 "https://$FQDN/api/posts")"
-    sleep 2
+    sleep 5
   done ) > ~/db-failover-probe.log 2>&1 &
 PROBE_PID=$!
+
+# プローブ結果を分類して表示する関数
+probe_failures() {
+  grep -E ' (5[0-9][0-9]|000)$' ~/db-failover-probe.log | tail -20   # DB/アプリ障害の候補
+}
+probe_summary() {
+  awk '{print $2}' ~/db-failover-probe.log | sort | uniq -c           # ステータス別の件数
+}
 ```
 
-### 9.2 Primary の mongod を停止する
+**プローブ結果の読み方:**
+
+| ステータス | 意味 | 障害として数えるか |
+|---|---|---|
+| `200` | 正常 | — |
+| `5xx`（`500`、`502`、`503`、`504`） | API が DB に書き込めない／読めない、または App VM が応答しない | **数える** |
+| `000` | タイムアウトまたは接続失敗 | **数える** |
+| `429` | バックエンドのレート制限（Too Many Requests） | **数えない** |
+
+> **なぜ `429` を除外するのか:** バックエンドは `/api` 配下を **App VM ごとに 15 分あたり 100 リクエスト** に制限しています（`materials/backend/src/app.ts` の `express-rate-limit`、上限は `RATE_LIMIT_MAX_REQUESTS`）。プローブとブラウザ操作が同じ上限を使うため、間隔を短くすると DB が正常でも `429` が返ります。`429` は DB 障害ではないので、復旧時間の計算から外します。AWS でいえば、API Gateway のスロットリング（`429`）と ALB のターゲット障害（`502`/`503`）を区別するのと同じです。
+>
+> **`/health` をプローブに使わない理由:** `https://$FQDN/health` は Web VM の NGINX が直接 `200` を返す Application Gateway 用のエンドポイントで、App VM や MongoDB を経由しません。DB のフェイルオーバーを観察するには、DB を読む `/api/posts` を使います。
+
+### 9.2 計画的な引き渡し: Primary の mongod を正常停止する
+
+`systemctl stop mongod` は mongod を **正常停止（graceful shutdown）** します。Primary は停止する前に自分から降格（step down）し、追いついている Secondary に Primary を引き渡します。障害を「検知」する必要がないため、選出はほぼ即座（1 秒未満〜数秒）に終わります。メンテナンスや OS 更新のときに Primary を切り替える操作と同じです。
 
 ```bash
-date -u +%H:%M:%S    # 停止開始時刻 (T0) としてメモ
+# T0 は VM 内で mongod を止めた時刻です。Run Command 自体の待ち時間（10-20 秒程度）を T0 に含めないよう、VM 上の時刻を表示します。
 az vm run-command invoke -g "$RESOURCE_GROUP" -n vm-db-az1-prod \
-  --command-id RunShellScript --scripts "sudo systemctl stop mongod"
+  --command-id RunShellScript --scripts 'echo "T0=$(date -u +%H:%M:%S)"; sudo systemctl stop mongod' \
+  --query "value[0].message" -o tsv
 db_status vm-db-az2-prod
 ```
 
@@ -232,13 +256,16 @@ db_status vm-db-az2-prod
 ブラウザで投稿を 1 件作成し、既存の投稿を 1 件編集します。どちらも成功します（アプリの再起動も、レプリカセットの手動再構成も不要です）。
 
 ```bash
-grep -v ' 200$' ~/db-failover-probe.log | tail -20   # 失敗した時刻の範囲
+probe_failures
+probe_summary
 ```
 
 記録します。
 
-- **選出時間** = `elected=` の時刻 − T0（目安: 約 10-15 秒。既定の `electionTimeoutMillis` は 10 秒）
-- **アプリ復旧時間** = プローブで 200 以外が最後に出た時刻の次の `200` − T0（目安: 選出時間 + 数秒）
+- **選出時間** = `elected=` の時刻 − T0（目安: **ほぼ 0 秒〜数秒**。正常停止では Primary が自分から引き渡すため、`electionTimeoutMillis` の待ちは発生しません）
+- **アプリ復旧時間** = 最後の `5xx`/`000` の次の `200` − T0。`5xx`/`000` が 1 件も出ない（アプリへの影響がない）ことも多く、その場合は「0 秒（エラーなし）」と記録します。
+
+> **よくある誤解:** `date` で T0 をメモしてから `az vm run-command invoke` を実行すると、`elected=` までが 15 秒程度に見えることがあります。これは選出時間ではなく、Run Command がコマンドを VM に届けるまでの遅延です。上の手順では VM 内で出力した `T0=` を使います。
 
 mongod を起動して戻します。
 
@@ -251,17 +278,24 @@ db_status vm-db-az2-prod
 
 **期待結果:** `10.0.3.4` が `SECONDARY` として再参加し、oplog で追いつきます。追いついた後、priority 2 の `10.0.3.4` は **短い 2 回目の選出（priority takeover）** で `PRIMARY` に戻ります。このときもアプリは数秒以内に復旧します。
 
-### 9.3 Primary の VM を停止する
+### 9.3 障害検知による選出: Primary の VM を強制停止する
 
-ホスト全体の障害を模擬します。
+ホスト全体の突然の障害（電源断）を模擬します。`--skip-shutdown` を付けると、ゲスト OS をシャットダウンせずに即座に電源を切ります。mongod は降格できないため、残りの 2 台が **ハートビートの途絶を検知** してから選出します。付けない場合は OS が正常にシャットダウンし、9.2 と同じ「計画的な引き渡し」になってしまいます。
 
 ```bash
-date -u +%H:%M:%S    # T0
-az vm stop --resource-group "$RESOURCE_GROUP" --name vm-db-az1-prod
+az vm stop --resource-group "$RESOURCE_GROUP" --name vm-db-az1-prod --skip-shutdown
 db_status vm-db-az2-prod
 ```
 
-**期待結果:** 9.2 と同様に、残り 2 台の一方が `PRIMARY` になります。ブラウザで投稿の作成と編集が成功します。選出時間とアプリ復旧時間を 9.2 と同じ方法で記録します（`az vm stop` はゲスト OS の停止を待つため、T0 は「コマンド開始」ではなく、プローブで最初に失敗した時刻を目安にしても構いません）。
+**期待結果:** 残り 2 台の一方が `PRIMARY` になります。ブラウザで投稿の作成と編集が成功します。
+
+記録します。
+
+- **T0** = プローブで最初に `5xx`/`000` が出た時刻（電源断の時刻に近い値です。`az vm stop` のコマンド開始時刻は、Azure 側の処理待ちを含むため使いません）
+- **選出時間** = `elected=` の時刻 − T0（目安: **約 10-15 秒**。Secondary は既定の `electionTimeoutMillis`（10 秒）の間 Primary からのハートビートがないと障害と判断し、選出を始めます）
+- **アプリ復旧時間** = 最後の `5xx`/`000` の次の `200` − T0（目安: 選出時間 + 数秒。ドライバーが新しい Primary を見つけるまでの時間が加わります）
+
+**9.2 と 9.3 の比較:** 計画的な引き渡し（9.2）はほぼ無停止ですが、障害検知による選出（9.3）は「検知の待ち時間（`electionTimeoutMillis`）」の分だけ書き込みが止まります。これが自動フェイルオーバーの RTO の目安です。AWS でいえば、RDS Multi-AZ の手動フェイルオーバー（reboot with failover）と、AZ 障害による自動フェイルオーバーの違いに相当します。
 
 ```bash
 az vm start --resource-group "$RESOURCE_GROUP" --name vm-db-az1-prod
@@ -309,8 +343,8 @@ kill "$PROBE_PID" 2>/dev/null
 
 | 演習 | T0 | 新 Primary | 選出時刻 | 選出時間 | アプリ復旧時間 |
 |---|---|---|---|---|---|
-| 9.2 mongod 停止 |  |  |  |  |  |
-| 9.3 VM 停止 |  |  |  |  |  |
+| 9.2 mongod 正常停止（計画的な引き渡し） |  |  |  |  |  |
+| 9.3 VM 強制停止（障害検知による選出） |  |  |  |  |  |
 
 **チェックポイント:** 演習後は 3 台の DB VM がすべて running で、`db_status` に `PRIMARY` 1 台と `SECONDARY` 2 台が表示されることを確認してください。
 
