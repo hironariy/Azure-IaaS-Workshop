@@ -647,7 +647,7 @@ DB tier として、MongoDB VM を 3 台作ります。
 
 一般的な Azure 設定:
 
-- Zone 1、Zone 2、Zone 3 に VM を 1 台ずつ分けます（`dbVmAz3Zone` で 3 台目のゾーンを指定。3 ゾーン未満のリージョンで同じゾーンに 2 台置くと、そのゾーンの障害で過半数を失う点に注意）。
+- Zone 1、Zone 2、Zone 3 に VM を 1 台ずつ分けます（3 台目のゾーンは `main.bicep` のパラメータ `dbVmAz3Zone` で指定でき、既定値は `'3'` です。Zone 3 で SKU を使えないリージョンでだけ `'1'` または `'2'` にします。その場合、同じゾーンに 2 台入るため、そのゾーンの障害で過半数を失う点に注意）。
 - DB 用 data disk を追加します。
 - static private IP を使い、DB 接続先と replica set の構成を安定させます。
 - DB tier は App tier からのみ接続される前提にします。

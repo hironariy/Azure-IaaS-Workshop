@@ -91,6 +91,11 @@ param dbVmSize string = 'Standard_D4s_v6'
 @description('MongoDB data disk size in GB')
 param dbDataDiskSizeGB int = 128
 
+// Issue #35: exposed so learners can work around regions/SKUs without Zone 3.
+@description('Availability Zone for the 3rd DB VM (vm-db-az3). Keep \'3\' so each replica set member is in its own zone. Use \'1\' or \'2\' only when Standard_D4s_v6 is not offered in Zone 3: automatic failover still survives any single VM failure, but an outage of the zone that hosts 2 members loses the majority (no PRIMARY, writes stop).')
+@allowed(['1', '2', '3'])
+param dbVmAz3Zone string = '3'
+
 @description('Tags to apply to all resources')
 param tags object = {}
 
@@ -521,6 +526,7 @@ module dbTier 'modules/compute/db-tier.bicep' = {
     dbVmAz1PrivateIp: dbVmPrivateIps[0]
     dbVmAz2PrivateIp: dbVmPrivateIps[1]
     dbVmAz3PrivateIp: dbVmPrivateIps[2]
+    dbVmAz3Zone: dbVmAz3Zone
     tags: allTags
   }
 }

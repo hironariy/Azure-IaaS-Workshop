@@ -145,6 +145,12 @@ param dbVmSize = 'Standard_D4s_v6'
 // MongoDB data disk size
 param dbDataDiskSizeGB = 128
 
+// Zone of the 3rd DB VM (vm-db-az3). Keep '3' (one member per zone).
+// Only if Standard_D4s_v6 is NOT offered in Zone 3 of your region, set '1' or
+// '2' (agree with the instructor first). Trade-off: a single VM failure is
+// still tolerated, but losing the zone that hosts 2 members loses the majority.
+param dbVmAz3Zone = '3'
+
 // =============================================================================
 // Optional Parameters - Tags
 // =============================================================================

@@ -335,7 +335,7 @@ az vm list-skus --location "$LOCATION" --size Standard_D4s_v6 \
   --query "[].locationInfo[].zones" -o tsv
 ```
 
-**判断:** 残量（Limit - Current）が 4 vCPU 以上あり、ゾーン一覧に `3` が含まれていれば続行します。Zone 3 がない場合は、講師と相談してください（`dbVmAz3Zone` で別ゾーンに置けますが、2 台が同じゾーンに入るとゾーン障害時に過半数を失う可能性があります）。
+**判断:** 残量（Limit - Current）が 4 vCPU 以上あり、ゾーン一覧に `3` が含まれていれば続行します。Zone 3 がない場合は、講師と相談してください。手順 3 のコマンドに `--parameters dbVmAz3Zone=1`（または `2`）を追加すると、3 台目を別のゾーンに置けます（`main.local.bicepparam` に `param dbVmAz3Zone = '1'` と書いても同じです）。ただし、2 台が同じゾーンに入るため、そのゾーンの障害では過半数を失い、Primary を選出できなくなります（VM 1 台の障害には引き続き耐えられます）。
 
 #### 手順 3: Bicep を再デプロイして `vm-db-az3-prod` だけを作成する
 

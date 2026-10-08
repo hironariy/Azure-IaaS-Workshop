@@ -260,7 +260,7 @@ az vm list-skus --location "$LOCATION" --size Standard_D4s_v6 \
   --query "[].locationInfo[].zones" -o tsv
 ```
 
-**Decision:** continue if headroom (`Limit - Current`) is at least 4 vCPU and the zone list includes `3`. If Zone 3 is not available, talk to the instructor. `dbVmAz3Zone` can place the VM in another zone, but two members in one zone can lose the majority in a zone failure.
+**Decision:** continue if headroom (`Limit - Current`) is at least 4 vCPU and the zone list includes `3`. If Zone 3 is not available, talk to the instructor. Adding `--parameters dbVmAz3Zone=1` (or `2`) to the step 3 command places the third VM in another zone (`param dbVmAz3Zone = '1'` in `main.local.bicepparam` works too). Two members then share one zone, so an outage of that zone loses the majority and no PRIMARY can be elected (a single VM failure is still tolerated).
 
 #### Step 3: Redeploy Bicep To Create Only `vm-db-az3-prod`
 
