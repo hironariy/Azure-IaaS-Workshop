@@ -233,7 +233,7 @@ export async function getMyPosts(
  * Auth: Optional - works without auth for published posts, requires auth for drafts
  */
 export async function getPost(slug: string): Promise<Post> {
-  const response = await api.get<Post>(`/api/posts/${slug}`, {
+  const response = await api.get<Post>(`/api/posts/${encodeURIComponent(slug)}`, {
     authMode: 'optional',
   });
   return response.data;
@@ -255,7 +255,7 @@ export async function createPost(data: CreatePostData): Promise<Post> {
  * Auth: Required - must be authenticated and post author
  */
 export async function updatePost(slug: string, data: Partial<CreatePostData>): Promise<Post> {
-  const response = await api.put<Post>(`/api/posts/${slug}`, data, {
+  const response = await api.put<Post>(`/api/posts/${encodeURIComponent(slug)}`, data, {
     authMode: 'required',
   });
   return response.data;
@@ -266,7 +266,7 @@ export async function updatePost(slug: string, data: Partial<CreatePostData>): P
  * Auth: Required - must be authenticated and post author
  */
 export async function deletePost(slug: string): Promise<void> {
-  await api.delete(`/api/posts/${slug}`, {
+  await api.delete(`/api/posts/${encodeURIComponent(slug)}`, {
     authMode: 'required',
   });
 }

@@ -582,7 +582,7 @@ interface Comment {
 |-------|------|----------|------------|-------------|
 | `_id` | ObjectId | Yes (auto) | - | MongoDB primary key |
 | `title` | String | Yes | 5-200 chars | Post title |
-| `slug` | String | Yes | Unique, URL-safe | URL slug (e.g., "my-first-post") |
+| `slug` | String | Yes | Unique, URL-safe Unicode slug | URL slug (e.g., "my-first-post", "日本語の記事タイトル") |
 | `content` | String | Yes | Min 50 chars | Post content (Markdown/HTML) |
 | `excerpt` | String | Yes | Max 300 chars | Short excerpt (first 150 chars) |
 | `authorId` | ObjectId | Yes | Ref to users._id | Post author reference |
@@ -626,8 +626,8 @@ db.createCollection("posts", {
         },
         slug: {
           bsonType: "string",
-          pattern: "^[a-z0-9-]+$",
-          description: "URL-friendly slug"
+          minLength: 1,
+          description: "URL-friendly Unicode slug. Generated slugs preserve Unicode letters, marks, and numbers; collapse whitespace/underscore/hyphen runs to '-'; drop URL-reserved punctuation; and fall back to post-<id> for emoji-only or punctuation-only titles."
         },
         content: {
           bsonType: "string",
