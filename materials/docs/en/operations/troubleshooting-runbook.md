@@ -57,9 +57,11 @@ Common actions:
 
 ```bash
 az vm list-usage --location japanwest \
-  --query "[?contains(name.value, 'DSv6') || name.value=='cores'].{Name:name.localizedValue, Current:currentValue, Limit:limit}" \
+  --query "[?name.value=='StandardDsv6Family' || name.value=='standardDSv6Family' || name.value=='cores'].{Name:name.localizedValue, Current:currentValue, Limit:limit}" \
   -o table
 ```
+
+JMESPath `contains()` is case-sensitive and the quota name varies (`StandardDsv6Family` / `standardDSv6Family`), so the query matches both spellings exactly.
 
 This workshop needs 20 Dsv6-family vCPUs (including three DB VMs). The DB VMs are placed one per Zone 1/2/3, so the DB SKU must be available in all three zones. Check both family and regional quota headroom (`Limit - Current`); quota does not guarantee zonal capacity. See the Day 0 quota check for details, and share the quota name and current value with the instructor.
 
@@ -255,7 +257,7 @@ Optionally, also take a logical backup on the PRIMARY with `mongodump --db bloga
 ```bash
 LOCATION="japanwest"   # match your deployment region
 az vm list-usage --location "$LOCATION" \
-  --query "[?contains(name.value, 'DSv6') || name.value=='cores'].{Name:name.localizedValue, Current:currentValue, Limit:limit}" -o table
+  --query "[?name.value=='StandardDsv6Family' || name.value=='standardDSv6Family' || name.value=='cores'].{Name:name.localizedValue, Current:currentValue, Limit:limit}" -o table
 az vm list-skus --location "$LOCATION" --size Standard_D4s_v6 \
   --query "[].locationInfo[].zones" -o tsv
 ```
@@ -286,7 +288,7 @@ az deployment group create \
 
 #### Step 4: Wait Until The New DB VM Is Ready
 
-On first boot, a new DB VM switches to the LTS kernel (6.8) and reboots once (see 7.1). Wait 3-5 minutes, then check `vm-db-az3-prod` through Bastion SSH:
+On first boot, a new DB VM switches to the LTS kernel (6.8) and reboots once (see 7.1). Wait 3-5 minutes **after the Step 3 deployment completes**, then check `vm-db-az3-prod` through Bastion SSH (the deployment itself takes 6-7 minutes including the az3 CustomScript, so this is about 9-10 minutes after VM creation starts):
 
 ```bash
 uname -r                                  # 6.8.x
@@ -306,6 +308,8 @@ mongosh --quiet --eval 'rs.add({ host: "10.0.3.6:27017", priority: 1, votes: 1 }
 ```
 
 **Expected Result:** `{ ok: 1 }`. If you get `Found two member configurations with same host field`, the member was already added; continue with Step 6.
+
+`rs.conf().version` increases by two for one `rs.add()` (for example 1 -> 3). The new member is first added with a `newlyAdded` flag, and MongoDB updates the config once more when it removes that flag automatically. This is expected.
 
 > **Why `priority: 1, votes: 1`:** this matches a fresh deployment (az1 = priority 2, az2/az3 = priority 1, one vote each). A member that is still in initial sync does not stand for election and does not count toward the majority, so adding it before the sync finishes is safe.
 

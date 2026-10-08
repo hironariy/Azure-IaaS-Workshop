@@ -65,9 +65,11 @@ FQDN=$(az network public-ip show \
 
 ```bash
 az vm list-usage --location japanwest \
-  --query "[?contains(name.value, 'DSv6') || name.value=='cores'].{Name:name.localizedValue, Current:currentValue, Limit:limit}" \
+  --query "[?name.value=='StandardDsv6Family' || name.value=='standardDSv6Family' || name.value=='cores'].{Name:name.localizedValue, Current:currentValue, Limit:limit}" \
   -o table
 ```
+
+JMESPath の `contains()` は大文字小文字を区別し、クォータ名は `StandardDsv6Family` / `standardDSv6Family` のように表記が揺れるため、両方を完全一致で指定しています。
 
 **判断:** このワークショップでは Dsv6 シリーズで合計 20 vCPU（DB VM 3 台分を含む）が必要です。DB VM は Zone 1/2/3 に 1 台ずつ配置するため、DB の SKU が 3 つのゾーンすべてで利用できる必要があります。ファミリーとリージョン全体の両方の残量（Limit - Current）を確認します。クォータが足りても実際のゾーン内キャパシティが不足する場合があります。詳細は Day 0 のクォータ確認を参照してください。
 
@@ -330,7 +332,7 @@ done
 ```bash
 LOCATION="japanwest"   # デプロイしたリージョンに合わせます
 az vm list-usage --location "$LOCATION" \
-  --query "[?contains(name.value, 'DSv6') || name.value=='cores'].{Name:name.localizedValue, Current:currentValue, Limit:limit}" -o table
+  --query "[?name.value=='StandardDsv6Family' || name.value=='standardDSv6Family' || name.value=='cores'].{Name:name.localizedValue, Current:currentValue, Limit:limit}" -o table
 az vm list-skus --location "$LOCATION" --size Standard_D4s_v6 \
   --query "[].locationInfo[].zones" -o tsv
 ```
@@ -356,12 +358,12 @@ az deployment group create \
 **影響:**
 
 - 既存の DB VM の Custom Script は内容が同じため再実行されません。
-- App VM の Custom Script は `MONGODB_URI` が 3 ホストに変わるため **再実行されます**（パッケージ更新を含みます）。`/opt/blogapp/.env` と `/etc/environment` は新しい URI に更新されますが、実行中の API と `/opt/blogapp/dist/.env` は変わりません（手順 6 で反映します）。
+- App VM の Custom Script は `MONGODB_URI` が 3 ホストに変わるため **再実行されます**（パッケージ更新を含みます）。`/opt/blogapp/.env` と `/etc/environment` は新しい URI に更新されますが、実行中の API と `/opt/blogapp/dist/.env` は変わりません（手順 7 で反映します）。
 - `--parameters` の上書き指定がエラーになる場合は、`main.local.bicepparam` に同じ 4 つの値を書いてから実行します。
 
 #### 手順 4: 新しい DB VM の準備完了を待つ
 
-新規 DB VM は初回起動時に LTS カーネル（6.8）へ切り替えるため、1 回再起動します（7.1 参照）。3〜5 分待ってから、Bastion SSH で `vm-db-az3-prod` を確認します。
+新規 DB VM は初回起動時に LTS カーネル（6.8）へ切り替えるため、1 回再起動します（7.1 参照）。手順 3 の**デプロイ完了後から** 3〜5 分待ってから、Bastion SSH で `vm-db-az3-prod` を確認します（デプロイ自体が az3 の Custom Script を含めて 6〜7 分かかるため、VM 作成開始からは約 9〜10 分です）。
 
 ```bash
 uname -r                                  # 6.8.x
@@ -381,6 +383,8 @@ mongosh --quiet --eval 'rs.add({ host: "10.0.3.6:27017", priority: 1, votes: 1 }
 ```
 
 **期待結果:** `{ ok: 1 }` が返ります。すでに追加済みの場合は `Found two member configurations with same host field` というエラーになります。この場合は追加済みなので、手順 6 に進みます。
+
+`rs.conf().version` は `rs.add()` の 1 回で 2 つ増えます（例: 1 → 3）。新メンバーはまず `newlyAdded` フラグ付きで追加され、MongoDB がそのフラグを自動で外すときに構成をもう 1 回更新するためです。異常ではありません。
 
 > **なぜ `priority: 1, votes: 1` か:** 新規デプロイと同じ構成（az1 = priority 2、az2/az3 = priority 1、全員 1 票）にそろえます。初期同期中のメンバーは選出に立候補せず、多数決の計算にも影響しません。そのため、同期を待たずに追加しても安全です。
 
