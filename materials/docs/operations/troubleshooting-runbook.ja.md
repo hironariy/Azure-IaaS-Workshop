@@ -236,7 +236,8 @@ az vm run-command invoke -g "$RESOURCE_GROUP" -n vm-db-az2-prod \
 
 - Run Command は VM の再起動（約 1 分後）の **前に** 戻ります。出力は約 4 KB で切り詰められるため、結果は下記の確認コマンドで判断します。
 - 対象 VM が既に 6.8.x で起動している場合、ヘルパーは再起動せずに後処理（finalize）だけを行います。このとき mongod が停止したままなら、`sudo systemctl restart mongod` で起動します。
-- 修正前のヘルパー（2026-10 以前のリポジトリ）で移行した VM で、mongod が `this subcommand must run as root` を出して起動しない場合は、最新のリポジトリで同じ `migrate` を再実行してから `sudo systemctl restart mongod` を実行します（Issue #31）。
+- 修正前のヘルパー（2026-10 以前のリポジトリ）で移行した VM で、mongod が `this subcommand must run as root` を出して起動しない場合は、最新のリポジトリで同じ `migrate` を再実行してから `sudo systemctl restart mongod` を実行します（Issue #31）この VM では、インストール済みのヘルパーが常に `migrate` を実行するため、`sudo blogapp-kernel-track status` は使わずに再実行してください。
+- Run Command が長時間（10 分以上）戻らない場合は、拡張機能（Azure Policy で配布される `MDE.Linux` など）の処理待ちの可能性があります。`az vm extension list -g "$RESOURCE_GROUP" --vm-name <VM 名> -o table` で状態を確認し、Bastion SSH でヘルパーを VM にコピーして `sudo bash mongodb-kernel-track.sh migrate` を実行します。
 
 3〜5 分待ってから、Bastion SSH で DB2 を確認します。
 

@@ -173,7 +173,8 @@ az vm run-command invoke -g "$RESOURCE_GROUP" -n vm-db-az2-prod \
 
 - Run Command returns **before** the VM reboots (about 1 minute later). Its output is truncated to about 4 KB, so judge the result with the checks below.
 - If the VM is already running a 6.8.x kernel, the helper only finalizes and does not reboot. If mongod is still stopped in that case, start it with `sudo systemctl restart mongod`.
-- If a VM was migrated with the earlier helper (repository before 2026-10) and mongod fails with `this subcommand must run as root`, rerun the same `migrate` from the latest repository and then run `sudo systemctl restart mongod` (Issue #31).
+- If a VM was migrated with the earlier helper (repository before 2026-10) and mongod fails with `this subcommand must run as root`, rerun the same `migrate` from the latest repository and then run `sudo systemctl restart mongod` (Issue #31). On such a VM the installed helper always runs `migrate`, so do not use `sudo blogapp-kernel-track status` there; just rerun the migration.
+- If Run Command does not return for a long time (10+ minutes), it may be waiting for another extension (for example `MDE.Linux` deployed by Azure Policy). Check with `az vm extension list -g "$RESOURCE_GROUP" --vm-name <vm-name> -o table`, then copy the helper to the VM over Bastion SSH and run `sudo bash mongodb-kernel-track.sh migrate`.
 
 Wait about 3-5 minutes, then check DB2 (through Bastion SSH):
 
