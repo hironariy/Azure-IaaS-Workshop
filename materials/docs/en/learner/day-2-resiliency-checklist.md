@@ -357,7 +357,7 @@ ASR can take time, so this may be an instructor demo or a representative-VM exer
 5. Select the instructor-specified target region.
 6. Review target VNet/subnet mapping.
 7. Select the representative VM or instructor-specified VMs.
-8. Check the extension update setting under advanced settings. With Owner or User Access Administrator, you can keep "Allow Site Recovery to manage". **With the Contributor role only, choose to manage updates manually** (the role assignment for the auto-update Automation account would fail; see Day 0 Step 3.1).
+8. Check the extension update setting under advanced settings. With Owner or User Access Administrator, you can keep "Allow Site Recovery to manage". **With the Contributor role only, choose to manage updates manually** (the role assignment for the auto-update Automation account would fail; see Day 0 Step 3.1). If organization policy disables shared key access on Storage, the cache Storage account also needs role assignments (error 28176, see [troubleshooting runbook §10](../operations/troubleshooting-runbook.md#10-backup-or-asr-does-not-progress)).
 9. Enable replication.
 
 **Expected Result:** A replicated item is created, and initial replication starts or completes.

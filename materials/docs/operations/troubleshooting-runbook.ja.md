@@ -610,6 +610,7 @@ Heartbeat
 | Backup item が出ない | Recovery Services vault と VM の選択 | Backup の有効化手順を再確認 |
 | Backup job が遅い | 初回バックアップかどうか | 講師の指示に従い、代表 VM のみで進める |
 | ASR initial replication が終わらない | Replication health と進捗 | Test failover は講師デモまたは設計説明に切り替える |
+| ASR の有効化が `does not allow key based authentication and it does not have vault Managed System Identity configured`（28176）で失敗する | キャッシュ Storage アカウントの共有キー アクセスが組織ポリシーで無効化されていないか | vault の Identity でシステム割り当てマネージド ID を有効にし、そのマネージド ID にキャッシュ Storage アカウントの共同作成者と Storage BLOB データ共同作成者を割り当てる。共同作成者（Contributor）のみの場合は講師に割り当てを依頼する（Day 0 Step 3.1）。[Microsoft Learn](https://learn.microsoft.com/azure/site-recovery/asr-turn-off-key-authentication-cache) |
 | Test failover リソースが残った | Cleanup test failover 実行有無 | Recovery Services vault から cleanup を実行 |
 
 ## 次に進む

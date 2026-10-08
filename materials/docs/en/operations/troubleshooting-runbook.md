@@ -515,6 +515,7 @@ Heartbeat
 | Backup item missing | Vault and VM selection | Recheck Backup enablement |
 | Backup job slow | Initial backup | Use only representative VMs if instructor says so |
 | ASR initial replication slow | Replication health and progress | Switch to instructor demo or design walkthrough |
+| Enabling ASR fails with `does not allow key based authentication and it does not have vault Managed System Identity configured` (28176) | Whether organization policy disables shared key access on the cache Storage account | Turn on the vault's system-assigned managed identity (vault > Identity), then assign it Contributor and Storage Blob Data Contributor on the cache Storage account. With Contributor only, ask the instructor to create the assignments (Day 0 Step 3.1). [Microsoft Learn](https://learn.microsoft.com/azure/site-recovery/asr-turn-off-key-authentication-cache) |
 | Test failover resources remain | Cleanup test failover | Run cleanup from Recovery Services vault |
 
 ## Next

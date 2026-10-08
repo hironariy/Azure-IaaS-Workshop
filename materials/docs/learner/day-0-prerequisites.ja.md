@@ -90,6 +90,9 @@ az role assignment list --assignee "$(az ad signed-in-user show --query id -o ts
 1. Day 1 Step 4 の `main.local.bicepparam` で `param assignKeyVaultRoles = false` を設定します。Key Vault は作成されますが、ロールは割り当てません。アプリは実行時に Key Vault を使わないため、動作に影響はありません。ただし、ポータルで Key Vault のシークレットを表示・作成することはできません。
 2. Day 2 Step 11 の ASR レプリケーション有効化で、拡張機能の更新設定を「Site Recovery に管理を許可する」ではなく**手動で管理**にします。自動更新用の Automation アカウントにはロールの割り当てが必要なためです。
 
+> [!NOTE]
+> 組織のポリシーで Storage アカウントの**共有キー アクセスが無効化**されている場合、ASR はキャッシュ用 Storage アカウントへ Recovery Services vault のマネージド ID でアクセスします。このとき vault のマネージド ID へのロールの割り当て（キャッシュ Storage アカウントに対する共同作成者と Storage BLOB データ共同作成者）が必要になり、共同作成者だけでは実施できません。この場合、Day 2 Step 11 は講師にロールの割り当てを依頼するか、講師デモで確認します（[トラブルシューティングランブック §10](../operations/troubleshooting-runbook.ja.md#10-day-2-の-backup--asr-が進まない)）。
+
 > **AWS との比較:** 共同作成者は「EC2 などのリソースは作れるが、IAM ポリシーのアタッチ（`iam:AttachRolePolicy` など）は許可されていない IAM ユーザー」に近い権限です。Azure ではロールの割り当て自体が `Microsoft.Authorization` の操作として権限管理されます。
 
 このワークショップでは Dsv6 シリーズ VM を 7 台使います（DB は Zone 1/2/3 に 1 台ずつの 3 台構成の MongoDB レプリカセット、Issue #30）。
