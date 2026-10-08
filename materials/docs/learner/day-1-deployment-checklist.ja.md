@@ -211,13 +211,20 @@ code post-deployment-setup.local.sh
 | `<YOUR_MONGODB_ADMIN_PASSWORD>` | 自分で決める管理者パスワード |
 | `<YOUR_MONGODB_APP_PASSWORD>` | Step 4 の `mongoDbAppPassword` と同じ値 |
 
+> [!IMPORTANT]
+> SSH 秘密鍵にパスフレーズを設定している場合は、実行前に ssh-agent に鍵を読み込みます。読み込まずに実行すると、スクリプトは最初に `passphrase-protected` のエラーで停止します（Bastion SSH はパスフレーズを毎回は聞き返せないため）。
+>
+> ```bash
+> eval "$(ssh-agent -s)" && ssh-add ~/.ssh/id_rsa
+> ```
+
 実行します。
 
 ```bash
 ./post-deployment-setup.local.sh "$RESOURCE_GROUP"
 ```
 
-**期待結果:** 3 メンバーの MongoDB レプリカセットとユーザーの作成が成功し、Step 6 の検証で `PRIMARY` 1 つと `SECONDARY` 2 つが表示されます。スクリプトは再実行しても安全です（初期化済みのレプリカセットを再初期化しません）。
+**期待結果:** 3 メンバーの MongoDB レプリカセットとユーザーの作成が成功し、Step 6 の検証で `PRIMARY` 1 つと `SECONDARY` 2 つが表示されます。スクリプトは再実行しても安全です（初期化済みのレプリカセットを再初期化しません）。いずれかの手順が失敗すると、スクリプトは `[ERROR]` で原因と対処を表示し、0 以外の終了コードで止まります。表示された対処を行ってから再実行します。出力中の MongoDB 接続文字列のパスワードは `***` でマスクされます。
 
 **チェックポイント:** `MONGODB_APP_PASSWORD` と `mongoDbAppPassword` が一致しない場合、バックエンド API は MongoDB に接続できません。`@` を含む password も MongoDB connection string を壊すため使わないでください。
 

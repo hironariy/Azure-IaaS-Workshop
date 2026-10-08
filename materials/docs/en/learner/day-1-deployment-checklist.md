@@ -190,13 +190,20 @@ Replace the placeholders.
 | `<YOUR_MONGODB_ADMIN_PASSWORD>` | Admin password you choose |
 | `<YOUR_MONGODB_APP_PASSWORD>` | Same value as `mongoDbAppPassword` from Step 4 |
 
+> [!IMPORTANT]
+> If your SSH private key has a passphrase, load it into ssh-agent before running the script. Otherwise the script stops at the start with a `passphrase-protected` error (Bastion SSH cannot ask for the passphrase on every connection).
+>
+> ```bash
+> eval "$(ssh-agent -s)" && ssh-add ~/.ssh/id_rsa
+> ```
+
 Run the script.
 
 ```bash
 ./post-deployment-setup.local.sh "$RESOURCE_GROUP"
 ```
 
-**Expected Result:** The 3-member MongoDB replica set and the users are created, and the Step 6 check shows 1 `PRIMARY` and 2 `SECONDARY`. The script is safe to re-run (it never re-initializes an initialized set).
+**Expected Result:** The 3-member MongoDB replica set and the users are created, and the Step 6 check shows 1 `PRIMARY` and 2 `SECONDARY`. The script is safe to re-run (it never re-initializes an initialized set). If a step fails, the script prints the cause and fix as `[ERROR]` lines and exits with a non-zero code; apply the fix and run it again. Passwords in MongoDB connection strings are masked as `***` in the output.
 
 **Checkpoint:** Password mismatch or a password containing `@` will prevent the backend from connecting to MongoDB.
 

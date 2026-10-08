@@ -86,6 +86,13 @@ function Write-LogError {
     Write-Host $Message
 }
 
+# Mask the password in MongoDB connection strings before anything is printed
+# (RepositoryWideDesignRules.md 1.4): mongodb://user:secret@host -> mongodb://user:***@host
+function ConvertTo-MaskedText {
+    param([string]$Text)
+    return [regex]::Replace($Text, '(mongodb(\+srv)?://[^:/@\s]*:)[^@\s]*@', '$1***@')
+}
+
 function Invoke-VMCommand {
     param(
         [string]$ResourceGroupName,
@@ -100,11 +107,11 @@ function Invoke-VMCommand {
         -CommandId 'RunShellScript' `
         -ScriptString $Script
     
-    # Return the output
+    # Print the output with secrets masked (Issue #32)
     if ($result.Value) {
         $result.Value | ForEach-Object {
             if ($_.Message) {
-                Write-Host $_.Message
+                Write-Host (ConvertTo-MaskedText $_.Message)
             }
         }
     }
@@ -196,6 +203,7 @@ function Wait-DbVmReady {
 
     $elapsed = 0
     $last = "kernel=? mongod=? hello=?"
+    $lastError = ""
     $probe = 'echo DBREADY kernel=$(uname -r) mongod=$(systemctl is-active mongod) hello=$(mongosh --quiet --eval ''db.hello().ok'' 2>/dev/null || echo 0)'
     Write-LogInfo "Waiting for MongoDB on $VMName (6.8 LTS kernel + mongod running, timeout ${DbReadyTimeoutSec}s)..."
     while ($elapsed -lt $DbReadyTimeoutSec) {
@@ -208,6 +216,7 @@ function Wait-DbVmReady {
         }
         catch {
             $message = ""
+            $lastError = ConvertTo-MaskedText $_.Exception.Message
         }
         $m = [regex]::Match($message, 'DBREADY kernel=(\S+) mongod=(\S+) hello=(\S+)')
         if ($m.Success) {
@@ -222,7 +231,7 @@ function Wait-DbVmReady {
             Write-LogInfo "  $VMName not ready yet: $last (${elapsed}s)"
         }
         else {
-            Write-LogInfo "  $VMName not reachable yet (rebooting into the LTS kernel?) (${elapsed}s)"
+            Write-LogInfo "  $VMName not reachable yet (rebooting into the LTS kernel?) (${elapsed}s) $lastError"
         }
         Start-Sleep -Seconds $DbReadyIntervalSec
         $elapsed += $DbReadyIntervalSec
@@ -282,18 +291,28 @@ elseif ($rsStateMatch.Success) {
     # PRIMARY deterministic for the workshop steps. Side effect to observe on
     # Day 2: after vm-db-az1 recovers and catches up, it calls a "priority
     # takeover" election and becomes PRIMARY again (a second short election).
+    # Print a marker so success is checked, not assumed (Issue #32).
     $initScript = @"
-mongosh --quiet --eval 'rs.initiate({
-    _id: "$($Config.ReplicaSetName)",
-    members: [
-        { _id: 0, host: "$($Config.DbVm1Ip):27017", priority: 2, votes: 1 },
-        { _id: 1, host: "$($Config.DbVm2Ip):27017", priority: 1, votes: 1 },
-        { _id: 2, host: "$($Config.DbVm3Ip):27017", priority: 1, votes: 1 }
-    ]
-})'
+mongosh --quiet --eval 'try {
+    const r = rs.initiate({
+        _id: "$($Config.ReplicaSetName)",
+        members: [
+            { _id: 0, host: "$($Config.DbVm1Ip):27017", priority: 2, votes: 1 },
+            { _id: 1, host: "$($Config.DbVm2Ip):27017", priority: 1, votes: 1 },
+            { _id: 2, host: "$($Config.DbVm3Ip):27017", priority: 1, votes: 1 }
+        ]
+    });
+    print("RSINIT ok=" + r.ok);
+} catch (e) { print("RSINIT error " + e.codeName + ": " + e.message) }'
 "@
 
-    Invoke-VMCommand -ResourceGroupName $ResourceGroup -VMName $Config.DbVm1Name -Script $initScript
+    $initResult = Invoke-VMCommand -ResourceGroupName $ResourceGroup -VMName $Config.DbVm1Name -Script $initScript
+    $initMatch = [regex]::Match((Get-RunCommandText $initResult), 'RSINIT .*')
+    if (-not $initMatch.Success -or $initMatch.Value.Trim() -ne "RSINIT ok=1") {
+        Write-LogError "rs.initiate failed on $($Config.DbVm1Name): $(if ($initMatch.Success) { $initMatch.Value } else { 'no answer' })"
+        Write-LogError "Check that all 3 DB VMs can reach each other on port 27017 (NSG, mongod bindIp), then re-run this script."
+        exit 1
+    }
     Write-LogSuccess "Replica set initiated"
 }
 else {
@@ -313,40 +332,57 @@ if ((Get-RunCommandText $rsHealthResult) -match 'RSHEALTH ok') {
     Write-LogSuccess "Replica set healthy: 1 PRIMARY + 2 SECONDARY"
 }
 else {
-    Write-LogWarning "Replica set did not reach 1 PRIMARY + 2 SECONDARY in time. See Step 6 output and troubleshooting runbook 7."
+    # Users cannot be created without a PRIMARY, so stop here (Issue #32).
+    Write-LogError "Replica set did not reach 1 PRIMARY + 2 SECONDARY within 3 minutes."
+    Write-LogError "See troubleshooting runbook section 7, then re-run this script (it is safe to re-run)."
+    exit 1
 }
 
 # -----------------------------------------------------------------------------
 # Step 4: Create MongoDB Admin User
 # -----------------------------------------------------------------------------
 Write-LogInfo "Step 4: Creating MongoDB admin user..."
+
+# Check the USER marker printed by the createUser commands in Steps 4-5:
+# "USER created", "USER exists", or "USER error ...". Anything else stops
+# the script instead of being reported as success (Issue #32).
+function Assert-UserResult {
+    param($Result, [string]$Label)
+    $m = [regex]::Match((Get-RunCommandText $Result), 'USER .*')
+    $line = if ($m.Success) { $m.Value.Trim() } else { "" }
+    switch ($line) {
+        "USER created" { Write-LogSuccess "MongoDB $Label created" }
+        "USER exists" { Write-LogSuccess "MongoDB $Label already exists (kept as is)" }
+        default {
+            Write-LogError "Could not create MongoDB ${Label}: $(if ($line) { ConvertTo-MaskedText $line } else { 'no answer' })"
+            Write-LogError "Fix the error above, then re-run this script (it is safe to re-run)."
+            exit 1
+        }
+    }
+}
 # Connect with the replica set URI so the write goes to the current PRIMARY
 # (createUser uses w:"majority" by default on a replica set).
 
 $adminUserScript = @"
 mongosh --quiet "$RsUri" --eval '
-    db = db.getSiblingDB("admin");
-    if (db.getUser("$($Config.AdminUser)") === null) {
-        db.createUser({
-            user: "$($Config.AdminUser)",
-            pwd: "$($Config.AdminPassword)",
-            roles: [{ role: "root", db: "admin" }]
-        });
-        print("Admin user created");
-    } else {
-        print("Admin user already exists");
-    }
+    try {
+        db = db.getSiblingDB("admin");
+        if (db.getUser("$($Config.AdminUser)") === null) {
+            db.createUser({
+                user: "$($Config.AdminUser)",
+                pwd: "$($Config.AdminPassword)",
+                roles: [{ role: "root", db: "admin" }]
+            });
+            print("USER created");
+        } else {
+            print("USER exists");
+        }
+    } catch (e) { print("USER error " + e.codeName + ": " + e.message) }
 '
 "@
 
-try {
-    Invoke-VMCommand -ResourceGroupName $ResourceGroup -VMName $Config.DbVm1Name -Script $adminUserScript
-}
-catch {
-    Write-LogWarning "Admin user may already exist"
-}
-
-Write-LogSuccess "MongoDB admin user ready"
+$adminUserResult = Invoke-VMCommand -ResourceGroupName $ResourceGroup -VMName $Config.DbVm1Name -Script $adminUserScript
+Assert-UserResult -Result $adminUserResult -Label "admin user $($Config.AdminUser)"
 
 # -----------------------------------------------------------------------------
 # Step 5: Create MongoDB Application User
@@ -355,28 +391,24 @@ Write-LogInfo "Step 5: Creating MongoDB application user..."
 
 $appUserScript = @"
 mongosh --quiet "$RsUri" --eval '
-    db = db.getSiblingDB("blogapp");
-    if (db.getUser("$($Config.AppUser)") === null) {
-        db.createUser({
-            user: "$($Config.AppUser)",
-            pwd: "$($Config.AppPassword)",
-            roles: [{ role: "readWrite", db: "blogapp" }]
-        });
-        print("Application user created");
-    } else {
-        print("Application user already exists");
-    }
+    try {
+        db = db.getSiblingDB("blogapp");
+        if (db.getUser("$($Config.AppUser)") === null) {
+            db.createUser({
+                user: "$($Config.AppUser)",
+                pwd: "$($Config.AppPassword)",
+                roles: [{ role: "readWrite", db: "blogapp" }]
+            });
+            print("USER created");
+        } else {
+            print("USER exists");
+        }
+    } catch (e) { print("USER error " + e.codeName + ": " + e.message) }
 '
 "@
 
-try {
-    Invoke-VMCommand -ResourceGroupName $ResourceGroup -VMName $Config.DbVm1Name -Script $appUserScript
-}
-catch {
-    Write-LogWarning "Application user may already exist"
-}
-
-Write-LogSuccess "MongoDB application user ready"
+$appUserResult = Invoke-VMCommand -ResourceGroupName $ResourceGroup -VMName $Config.DbVm1Name -Script $appUserScript
+Assert-UserResult -Result $appUserResult -Label "application user $($Config.AppUser)"
 
 # -----------------------------------------------------------------------------
 # Step 6: Verify Configuration
@@ -397,7 +429,8 @@ Write-LogInfo "Step 7: Verifying App tier environment variables..."
 try {
     $AppVm1 = Get-AzVM -ResourceGroupName $ResourceGroup -Name $Config.AppVm1Name -ErrorAction Stop
     Write-LogInfo "Checking /etc/environment on App VM..."
-    $envScript = "cat /etc/environment | grep -E 'NODE_ENV|MONGODB_URI|ENTRA' || echo 'Environment variables not found'"
+    # MONGODB_URI contains the app password; Invoke-VMCommand masks it.
+    $envScript = "grep -E 'NODE_ENV|MONGODB_URI|ENTRA' /etc/environment || echo 'Environment variables not found'"
     Invoke-VMCommand -ResourceGroupName $ResourceGroup -VMName $Config.AppVm1Name -Script $envScript
 }
 catch {
@@ -436,6 +469,6 @@ Write-Host "  1. Deploy backend application code to App VMs"
 Write-Host "  2. Build and deploy frontend to Web VMs"
 Write-Host "  3. Update NGINX configuration for API proxy"
 Write-Host ""
-Write-LogInfo "Connection string for backend:"
-Write-Host "  mongodb://$($Config.AppUser):$($Config.AppPassword)@$RsHosts/blogapp?replicaSet=$($Config.ReplicaSetName)&authSource=blogapp&w=majority"
+Write-LogInfo "Connection string for backend (password masked; Bicep already wrote the real value to MONGODB_URI on the App VMs):"
+Write-Host "  mongodb://$($Config.AppUser):***@$RsHosts/blogapp?replicaSet=$($Config.ReplicaSetName)&authSource=blogapp&w=majority"
 Write-Host ""
