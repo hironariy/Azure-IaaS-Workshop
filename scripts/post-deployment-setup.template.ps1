@@ -166,7 +166,61 @@ Write-LogInfo "Step 2: Waiting for VMs to be ready..."
 Write-LogInfo "Waiting 60 seconds for CustomScript extensions to complete..."
 Start-Sleep -Seconds 60
 
-Write-LogSuccess "VMs should be ready"
+# DB VMs reboot once after the CustomScript to switch to the Ubuntu 24.04 LTS
+# Azure kernel (6.8), because MongoDB 8.0 does not start on Linux >= 6.19
+# (Issue #26). mongod is only reachable after that reboot, so poll each DB VM
+# until: kernel is 6.8.x, mongod is active, and db.hello() answers.
+$DbReadyTimeoutSec = 900
+$DbReadyIntervalSec = 30
+
+function Wait-DbVmReady {
+    param([string]$VMName)
+
+    $elapsed = 0
+    $last = "kernel=? mongod=? hello=?"
+    $probe = 'echo DBREADY kernel=$(uname -r) mongod=$(systemctl is-active mongod) hello=$(mongosh --quiet --eval ''db.hello().ok'' 2>/dev/null || echo 0)'
+    Write-LogInfo "Waiting for MongoDB on $VMName (6.8 LTS kernel + mongod running, timeout ${DbReadyTimeoutSec}s)..."
+    while ($elapsed -lt $DbReadyTimeoutSec) {
+        $message = ""
+        try {
+            # Fails or times out while the VM is rebooting; that is expected, just retry.
+            $result = Invoke-AzVMRunCommand -ResourceGroupName $ResourceGroup -VMName $VMName `
+                -CommandId 'RunShellScript' -ScriptString $probe -ErrorAction Stop
+            $message = ($result.Value | ForEach-Object { $_.Message }) -join "`n"
+        }
+        catch {
+            $message = ""
+        }
+        $m = [regex]::Match($message, 'DBREADY kernel=(\S+) mongod=(\S+) hello=(\S+)')
+        if ($m.Success) {
+            $kernel = $m.Groups[1].Value
+            $state = $m.Groups[2].Value
+            $hello = $m.Groups[3].Value
+            $last = "kernel=$kernel mongod=$state hello=$hello"
+            if ($kernel -like "6.8.*" -and $state -eq "active" -and $hello -eq "1") {
+                Write-LogSuccess "$VMName ready: kernel=$kernel mongod=$state"
+                return
+            }
+            Write-LogInfo "  $VMName not ready yet: $last (${elapsed}s)"
+        }
+        else {
+            Write-LogInfo "  $VMName not reachable yet (rebooting into the LTS kernel?) (${elapsed}s)"
+        }
+        Start-Sleep -Seconds $DbReadyIntervalSec
+        $elapsed += $DbReadyIntervalSec
+    }
+    Write-LogError "${VMName}: MongoDB is not ready after ${DbReadyTimeoutSec}s (last: $last)."
+    Write-LogError "MongoDB 8.0 needs the 6.8 LTS kernel (Issue #26). On $VMName run:"
+    Write-LogError "  uname -r ; sudo blogapp-kernel-track status ; sudo journalctl -u mongod -u blogapp-kernel-track-finalize -b --no-pager | tail -50"
+    Write-LogError "Fix: troubleshooting runbook section 7.1 'MongoDB Does Not Start: Linux Kernel 6.19 Or Newer' (Issue #26)."
+    Write-LogError "Re-run this script when both DB VMs are ready (it is safe to re-run)."
+    exit 1
+}
+
+Wait-DbVmReady -VMName $Config.DbVm1Name
+Wait-DbVmReady -VMName $Config.DbVm2Name
+
+Write-LogSuccess "VMs are ready"
 
 # -----------------------------------------------------------------------------
 # Step 3: Initialize MongoDB Replica Set

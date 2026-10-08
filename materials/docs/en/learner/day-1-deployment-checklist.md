@@ -200,6 +200,34 @@ Run the script.
 
 **Checkpoint:** Password mismatch or a password containing `@` will prevent the backend from connecting to MongoDB.
 
+### 9.1 Check DB VM Readiness
+
+MongoDB 8.0 does not start on Linux kernel 6.19 or newer, so the DB VMs use Ubuntu 24.04's long-term Azure kernel `linux-azure-lts-24.04` (6.8.x) instead of the rolling `linux-azure` kernel (7.0). A new DB VM boots the image's rolling kernel first. The CustomScript then installs MongoDB, switches GRUB to 6.8, and **reboots the VM once, about 1 minute after the deployment step finishes**. mongod starts after that reboot. Step 2 of the post-deployment script waits for this automatically (up to 15 minutes per DB VM).
+
+To check manually, connect to `vm-db-az1-prod` and then `vm-db-az2-prod`:
+
+```bash
+az network bastion ssh \
+  --name bastion-blogapp-prod \
+  --resource-group "$RESOURCE_GROUP" \
+  --target-resource-id "$(az vm show -g "$RESOURCE_GROUP" -n vm-db-az1-prod --query id -o tsv)" \
+  --auth-type ssh-key \
+  --username azureuser \
+  --ssh-key ~/.ssh/id_rsa
+```
+
+```bash
+uname -r                                   # 6.8.0-xxxx-azure
+sudo systemctl status mongod --no-pager    # active (running)
+sudo ss -lntp '( sport = :27017 )'         # mongod is listening
+mongosh --quiet --eval 'db.hello()'        # ok: 1 (after Step 3: setName blogapp-rs0)
+sudo blogapp-kernel-track status           # running kernel ... OK (6.8 LTS track)
+```
+
+**Checkpoint:** If `uname -r` shows 6.19 or newer (for example `7.0.x`) or mongod is `failed`, see [Troubleshooting runbook 7.1](../operations/troubleshooting-runbook.md#71-mongodb-does-not-start-linux-kernel-619-or-newer-issue-26).
+
+> **AWS comparison:** with Amazon DocumentDB, AWS chooses and patches the host kernel for you. With MongoDB on IaaS VMs, you choose the kernel track, just as you would when pinning a kernel line on an EC2 database host.
+
 ## 10. Configure The Data Collection Rule
 
 ```bash
@@ -245,6 +273,7 @@ Open the Frontend SPA app registration in Azure Portal.
 | DNS label is already used | Choose a unique `appGatewayDnsLabel` |
 | Deployment fails | Resource group > Deployments > failed operation details |
 | MongoDB connection fails later | `mongoDbAppPassword` matches post-deployment setup and does not contain `@` |
+| Post-deployment Step 2 times out / API shows `ECONNREFUSED` `ReplicaSetNoPrimary` | DB VM kernel is 6.8.x and mongod is active (Step 9.1, [runbook 7.1](../operations/troubleshooting-runbook.md#71-mongodb-does-not-start-linux-kernel-619-or-newer-issue-26)) |
 | `az network bastion ssh` is missing | Bastion extension is installed and updated |
 | Cloud Shell reconnect breaks SSH | Restore keys from `~/clouddrive/workshop-keys` |
 | Log Analytics has no data | DCR is configured and enough time has passed |
@@ -256,6 +285,7 @@ Open the Frontend SPA app registration in Azure Portal.
 - `main.local.bicepparam` is configured.
 - Bicep deployment is `Succeeded`.
 - Bastion extension is ready.
+- Both DB VMs run a 6.8.x kernel and mongod is active.
 - Post-deployment setup is complete.
 - DCR is configured.
 - Application Gateway FQDN is collected.

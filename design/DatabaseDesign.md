@@ -24,6 +24,8 @@ This document defines the MongoDB database architecture and schema requirements 
   - Primary node: DB VM in Availability Zone 1 (10.0.3.4)
   - Secondary node: DB VM in Availability Zone 2 (10.0.3.5)
 - **Deployment Method**: Self-managed MongoDB on Ubuntu 24.04 LTS VMs
+- **OS Kernel**: Ubuntu 24.04 Azure long-term kernel track `linux-azure-lts-24.04` (6.8.x). MongoDB 8.0.x does not start on Linux 6.19 or newer ([SERVER-121912](https://jira.mongodb.org/browse/SERVER-121912)), and the rolling `linux-azure` track is now 7.0 (Issue #26). The DB install script pins the track, and the first deployment reboots each DB VM once into 6.8 before mongod starts. See [AzureArchitectureDesign.md: DB Tier OS Kernel Track](AzureArchitectureDesign.md#db-tier-os-kernel-track-issue-26).
+- **MongoDB Version**: 8.0 series only (the apt source is the `mongodb-org/8.0` repository, so no major upgrades happen through apt)
 
 **Why 2 Nodes Instead of 3?**
 - Cost optimization for workshop (20-30 students)

@@ -345,6 +345,7 @@ Azure Portal で Application Gateway を開き、Backend health を確認しま�
 | `git clone` が失敗する | `REPOSITORY_URL` がテンプレート元、private repository、または誤った URL になっている | Day 0 で作成した自分のコピーを指定しているか、VM から認証なしで clone できるか |
 | `/` が `403 Forbidden` になる | Web VM に frontend の `index.html` が配置されていない | Step 11 が 2 台の Web VM で成功したか |
 | `/api/posts` が `502` または `504` になる | App tier の `blogapp-api` が起動していない、または MongoDB に接続できない | Step 6、Step 7、Azure リソースデプロイ Step 4 / Step 9 の MongoDB password 一致 |
+| バックエンドのログに `ECONNREFUSED 10.0.3.x:27017` / `ReplicaSetNoPrimary` が出る | DB VM で mongod が起動していない。例: MongoDB 8.0 が対応していない Linux カーネル 6.19 以上で DB VM が起動した | 各 DB VM で `uname -r`（6.8.x）と `sudo systemctl status mongod`、[ランブック 7.1](../operations/troubleshooting-runbook.ja.md#71-mongodb-が起動しない-linux-カーネル-619-以上-issue-26) |
 | `npm ci` が失敗する | package lock と依存関係の取得に失敗している | VM から GitHub/npm へ outbound 接続できるか、再実行しても同じか |
 | `config.json` が見つからない | Web tier の Bicep CustomScript が未完了または失敗している | Azure Portal の VM extensions と Azure リソースデプロイ Step 7 の deployment status |
 | ログインに失敗する | SPA redirect URI と API permission が不足している | Azure リソースデプロイ Step 12 と Day 0 の API permission |

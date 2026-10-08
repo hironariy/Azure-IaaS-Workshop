@@ -221,6 +221,41 @@ code post-deployment-setup.local.sh
 
 **チェックポイント:** `MONGODB_APP_PASSWORD` と `mongoDbAppPassword` が一致しない場合、バックエンド API は MongoDB に接続できません。`@` を含む password も MongoDB connection string を壊すため使わないでください。
 
+### 9.1 DB VM の準備完了を確認する
+
+MongoDB 8.0 は Linux カーネル 6.19 以上では起動しません。そのため DB VM では、ローリングの `linux-azure` カーネル（7.0）ではなく、Ubuntu 24.04 の長期 Azure カーネル `linux-azure-lts-24.04`（6.8.x）を使います。新しい DB VM の処理は次の順に進みます。
+
+1. まずイメージのローリングカーネルで起動する
+2. CustomScript が MongoDB をインストールし、GRUB を 6.8 に切り替える
+3. **デプロイ手順の完了から約 1 分後に VM を 1 回再起動する**
+4. 再起動後に mongod が起動する
+
+デプロイ後スクリプトの Step 2 はこの完了を自動で待ちます（DB VM ごとに最大 15 分）。
+
+手動で確認する場合は、`vm-db-az1-prod`、続いて `vm-db-az2-prod` に接続します。
+
+```bash
+az network bastion ssh \
+  --name bastion-blogapp-prod \
+  --resource-group "$RESOURCE_GROUP" \
+  --target-resource-id "$(az vm show -g "$RESOURCE_GROUP" -n vm-db-az1-prod --query id -o tsv)" \
+  --auth-type ssh-key \
+  --username azureuser \
+  --ssh-key ~/.ssh/id_rsa
+```
+
+```bash
+uname -r                                   # 6.8.0-xxxx-azure
+sudo systemctl status mongod --no-pager    # active (running)
+sudo ss -lntp '( sport = :27017 )'         # mongod が待ち受けている
+mongosh --quiet --eval 'db.hello()'        # ok: 1（Step 3 の後は setName blogapp-rs0）
+sudo blogapp-kernel-track status           # running kernel ... OK (6.8 LTS track)
+```
+
+**チェックポイント:** `uname -r` が 6.19 以上（例: `7.0.x`）の場合や、mongod が `failed` の場合は、[トラブルシューティングランブック 7.1](../operations/troubleshooting-runbook.ja.md#71-mongodb-が起動しない-linux-カーネル-619-以上-issue-26) を確認します。
+
+> **AWS との比較:** Amazon DocumentDB では、ホストのカーネルの選択とパッチ適用を AWS が行います。IaaS VM 上の MongoDB では、EC2 の DB ホストでカーネル系列を固定するのと同じように、カーネルトラックを利用者が選択します。
+
 ## 10. Data Collection Rule を構成する
 
 Log Analytics のテーブル初期化後に DCR を作成します。
@@ -272,6 +307,7 @@ Azure Portal でフロントエンド SPA のアプリ登録を開きます。
 | DNS label が重複する | `appGatewayDnsLabel` がリージョン内で一意か | Step 4 |
 | Deployment が失敗する | Portal の Deployments の失敗リソースと error details | Step 7 |
 | MongoDB 接続に失敗する | `mongoDbAppPassword` と post-deployment script の値、`@` を含まない password か | Step 4、Step 9 |
+| post-deployment の Step 2 がタイムアウトする / API が `ECONNREFUSED` `ReplicaSetNoPrimary` になる | DB VM のカーネルが 6.8.x で mongod が active か | Step 9.1、[ランブック 7.1](../operations/troubleshooting-runbook.ja.md#71-mongodb-が起動しない-linux-カーネル-619-以上-issue-26) |
 | `az network bastion ssh` が見つからない | Bastion extension が Cloud Shell に入っているか | Step 8 |
 | Cloud Shell 再起動後に SSH できない | `~/.ssh/id_rsa` と環境変数を復旧したか | トラブルシューティングランブック |
 | Log Analytics にデータがない | DCR 作成、VM 関連付け、数分の待機 | Step 10、監視ガイド |
@@ -283,6 +319,7 @@ Azure Portal でフロントエンド SPA のアプリ登録を開きます。
 - `main.local.bicepparam` を作成し、必要値を設定できた。
 - Bicep deployment が `Succeeded` になった。
 - Azure CLI の Bastion extension を準備できた。
+- 両 DB VM が 6.8.x カーネルで起動し、mongod が active になっている。
 - デプロイ後セットアップが完了した。
 - Data Collection Rule を構成できた。
 - Application Gateway の FQDN を取得できた。
