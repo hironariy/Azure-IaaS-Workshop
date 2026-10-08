@@ -19,6 +19,11 @@ localworks/
 *.local.bicepparam.*
 materials/bicep/dev.bicepparam
 
+# Compiled ARM templates: deployments use main.bicep directly, and a committed
+# main.json silently drifts from it (Issue #37). Generate on demand with
+# `az bicep build --file materials/bicep/main.bicep`.
+materials/bicep/main.json
+
 # =============================================================================
 # Environment Files
 # =============================================================================
