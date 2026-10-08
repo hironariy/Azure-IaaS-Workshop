@@ -121,7 +121,9 @@ az vm list --resource-group "$RESOURCE_GROUP" --show-details \
   --query "[?contains(name, 'vm-db')].{name:name,powerState:powerState}" -o table
 ```
 
-Check that all three DB VMs (`vm-db-az1/az2/az3-prod`) are running (if two or more stop, the replica set loses its majority and has no PRIMARY), that `rs.status()` shows one PRIMARY and two SECONDARY members, App subnet to DB subnet TCP/27017, and post-deployment setup completion. If the API log shows `ECONNREFUSED` / `ReplicaSetNoPrimary`, see 7.1. If the environment was deployed before Issue #30 with two DB nodes and post-deployment setup reports that `vm-db-az3-prod` is missing or that the set has fewer than 3 members, see 7.2.
+Check that all three DB VMs (`vm-db-az1/az2/az3-prod`) are running (if two or more stop, the replica set loses its majority and has no PRIMARY), that `rs.status()` shows one PRIMARY and two SECONDARY members, App subnet to DB subnet TCP/27017, and post-deployment setup completion. If the API log shows `ECONNREFUSED` / `ReplicaSetNoPrimary`, see 7.1. If the environment was deployed before Issue #30 with two DB nodes and post-deployment setup reports that `vm-db-az3-prod` is missing or that the set has fewer than 3 members, see 7.2. If the API log shows `Authentication failed`, check that `mongoDbAppPassword` matches `APP_PASSWORD` in post-deployment setup. If post-deployment setup warns `mongod is running without authorization`, or a DB VM has `/etc/mongod.conf.pending-auth`, see 7.3.
+
+> **mongosh authentication (Issue #36):** MongoDB access control is on. Every command except `db.hello()` (for example `rs.status()` and `rs.add()`) must log in as the admin user `blogadmin`. Commands in this section use the form `mongosh -u blogadmin -p --authenticationDatabase admin`, which prompts for the password (`<YOUR_MONGODB_ADMIN_PASSWORD>`).
 
 ### 7.1 MongoDB Does Not Start: Linux Kernel 6.19 Or Newer (Issue #26)
 
@@ -186,7 +188,7 @@ mongosh --quiet --eval 'db.hello().isWritablePrimary + " " + db.hello().secondar
 sudo blogapp-kernel-track status                # finalize : done/not-needed
 ```
 
-Also check replica set health: `mongosh --quiet --eval 'rs.status().members.map(m => m.name + " " + m.stateStr)'`. After the target is back as `SECONDARY`, repeat the steps for the next VM. Do the PRIMARY (usually `vm-db-az1-prod`) last; for a planned switchover, run `rs.stepDown(300)` as described in the note below.
+Also check replica set health: `mongosh -u blogadmin -p --authenticationDatabase admin --quiet --eval 'rs.status().members.map(m => m.name + " " + m.stateStr)'`. After the target is back as `SECONDARY`, repeat the steps for the next VM. Do the PRIMARY (usually `vm-db-az1-prod`) last; for a planned switchover, run `rs.stepDown(300)` as described in the note below.
 
 > **Impact with 3 nodes:** as long as you reboot one VM at a time, the other two keep a majority (2 of 3 votes) and the API keeps working. For the PRIMARY VM, run `rs.stepDown(300)` on the PRIMARY right after Run Command returns (about 1 minute before the reboot). The default 60 seconds expires before the reboot, and az1 (priority 2) takes PRIMARY back. On a clean shutdown mongod hands over PRIMARY itself, so the election usually finishes within a few seconds. **Do not reboot two DB VMs at the same time** (the set loses its majority and has no PRIMARY).
 >
@@ -302,8 +304,10 @@ Connect to the PRIMARY (usually `vm-db-az1-prod`) through Bastion SSH.
 
 ```bash
 mongosh --quiet --eval 'db.hello().isWritablePrimary'   # must be true
-mongosh --quiet --eval 'rs.add({ host: "10.0.3.6:27017", priority: 1, votes: 1 })'
+mongosh -u blogadmin -p --authenticationDatabase admin --quiet --eval 'rs.add({ host: "10.0.3.6:27017", priority: 1, votes: 1 })'
 ```
+
+> **Environment deployed before Issue #36:** `vm-db-az3-prod`, redeployed in Step 3, starts with access control (keyFile), but the existing az1/az2 run without a keyFile. The new and existing members then cannot authenticate each other and the new member cannot sync. If `vm-db-az1-prod` has `/etc/mongod.conf.pending-auth`, **finish 7.3 first**, then run `rs.add()`.
 
 **Expected Result:** `{ ok: 1 }`. If you get `Found two member configurations with same host field`, the member was already added; continue with Step 6.
 
@@ -312,7 +316,7 @@ mongosh --quiet --eval 'rs.add({ host: "10.0.3.6:27017", priority: 1, votes: 1 }
 #### Step 6: Wait For Initial Sync To Finish
 
 ```bash
-mongosh --quiet --eval '
+mongosh -u blogadmin -p --authenticationDatabase admin --quiet --eval '
 const s = rs.status();
 const p = s.members.find(m => m.stateStr === "PRIMARY");
 s.members.forEach(m => print(m.name, m.stateStr, "lagSec=" + ((p.optimeDate - m.optimeDate) / 1000)));
@@ -341,7 +345,7 @@ If you did not redeploy the App tier in Step 3, edit the host list in `MONGODB_U
 #### Step 8: Verify
 
 ```bash
-mongosh --quiet --eval 'rs.status().members.map(m => m.name + " " + m.stateStr + " votes=" + rs.conf().members.find(c => c.host === m.name).votes)'
+mongosh -u blogadmin -p --authenticationDatabase admin --quiet --eval 'rs.status().members.map(m => m.name + " " + m.stateStr + " votes=" + rs.conf().members.find(c => c.host === m.name).votes)'
 ```
 
 - One PRIMARY and two SECONDARY members, all with `votes=1`.
@@ -350,6 +354,103 @@ mongosh --quiet --eval 'rs.status().members.map(m => m.name + " " + m.stateStr +
 - The Day 2 DB failover exercise (automatic election when the PRIMARY stops) can be run.
 
 **Rollback:** if something goes wrong, run `rs.remove("10.0.3.6:27017")` on the PRIMARY to return to two members (the driver ignores the third seed host). Delete `vm-db-az3-prod` and its disks if no longer needed, and delete the Step 1 snapshots after you confirm everything is healthy.
+
+### 7.3 Enable MongoDB Access Control On An Existing Environment (Issue #36)
+
+**Symptoms:**
+
+- Post-deployment setup ends with `Unauthenticated read was not rejected` / `mongod is running without authorization`.
+- Unauthenticated `mongosh --quiet --eval 'db.getSiblingDB("blogapp").posts.findOne()'` returns data.
+- A DB VM has `/etc/mongod.conf.pending-auth`.
+
+**Cause:** Environments deployed before Issue #36 run mongod without a keyFile (member-to-member authentication) and without `authorization` (client authentication). Redeploying with the new Bicep writes `/etc/mongodb/keyfile` on every DB VM. On an existing member that has data, however, it does not switch the config: it only stages the new config as `/etc/mongod.conf.pending-auth`. The three CustomScripts run in parallel, so restarting there would stop all members at once, and a member with a keyFile cannot talk to members without one. You therefore switch one member at a time, using `transitionToAuth`.
+
+> **AWS comparison:** Amazon DocumentDB always requires authentication; you cannot turn it off. With self-managed MongoDB, as on EC2, you enable access control and manage the key yourself.
+
+#### Step 1: Check Prerequisites
+
+1. You have redeployed `main.bicep` with `mongoDbReplicaSetKey` set, as in Day 1 Step 4. **All three VMs use the same key.** Do not change the key in later redeployments (CustomScript fails with `mongoDbReplicaSetKey differs`).
+2. The keyfile is identical on all three VMs. Connect to each DB VM through Bastion SSH and check that the hashes match (this does not print the key itself):
+
+   ```bash
+   sudo ls -l /etc/mongodb/keyfile /etc/mongod.conf.pending-auth   # -r-------- mongodb mongodb
+   sudo sha256sum /etc/mongodb/keyfile | cut -c1-16
+   ```
+
+3. The admin user `blogadmin` and the app user exist. Running the latest post-deployment setup once creates or checks them (the final warning is expected at this point). The app `MONGODB_URI` already contains the user name and password.
+4. Take snapshots or backups of the DB VMs, just in case.
+5. Do not redeploy `main.bicep` while you work through this section.
+
+#### Step 2: Phase 1 — Enable The keyFile With `transitionToAuth`
+
+A member with `transitionToAuth: true` accepts connections both with and without the keyFile, so restarting one member at a time keeps the replica set and the app running. Start with the SECONDARY members (`vm-db-az3-prod` → `vm-db-az2-prod`) and do the PRIMARY (usually `vm-db-az1-prod`) last. Connect to each VM through Bastion SSH and run:
+
+```bash
+sudo cp /etc/mongod.conf /etc/mongod.conf.pre-auth
+sed 's/^  authorization: enabled$/  transitionToAuth: true/' /etc/mongod.conf.pending-auth \
+  | sudo tee /etc/mongod.conf > /dev/null
+grep -A2 '^security:' /etc/mongod.conf    # keyFile and transitionToAuth: true
+sudo systemctl restart mongod
+sleep 15
+sudo systemctl is-active mongod           # active
+mongosh --quiet --eval 'db.hello().secondary'   # true (back as SECONDARY)
+```
+
+On the PRIMARY, hand over the PRIMARY role **before** the restart:
+
+```bash
+mongosh -u blogadmin -p --authenticationDatabase admin --quiet --eval 'rs.stepDown(300)'
+```
+
+After each member, check that the set is back to 1 PRIMARY + 2 SECONDARY before moving on:
+
+```bash
+mongosh -u blogadmin -p --authenticationDatabase admin --quiet --eval 'rs.status().members.map(m => m.name + " " + m.stateStr)'
+```
+
+#### Step 3: Phase 2 — Enable `authorization`
+
+When all three members have finished Phase 1, switch to the final config in the same order (SECONDARY members first, then the PRIMARY). On the PRIMARY, run `rs.stepDown(300)` first.
+
+```bash
+sudo mv /etc/mongod.conf.pending-auth /etc/mongod.conf
+sudo systemctl restart mongod
+sleep 15
+sudo systemctl is-active mongod           # active
+mongosh --quiet --eval 'db.hello().secondary'   # true
+```
+
+#### Step 4: Verify
+
+```bash
+mongosh --quiet --eval 'db.getSiblingDB("blogapp").posts.findOne()'   # rejected: requires authentication
+mongosh -u blogadmin -p --authenticationDatabase admin --quiet --eval 'rs.status().members.map(m => m.name + " " + m.stateStr)'
+```
+
+- You can create and edit posts in the browser.
+- Rerunning post-deployment setup no longer prints `mongod is running without authorization`.
+- After you confirm everything works, delete `/etc/mongod.conf.pre-auth` on each VM.
+
+**If something goes wrong:**
+
+- mongod does not start: check `sudo tail -n 50 /data/mongodb/log/mongod.log`. For `permissions on /etc/mongodb/keyfile are too open`, run `sudo chown mongodb:mongodb /etc/mongodb/keyfile && sudo chmod 400 /etc/mongodb/keyfile`.
+- A member stays `(not reachable/healthy)` and the log shows `Authentication failed`: the keyfiles differ. Compare the hashes as in Step 1, item 2, and redeploy with the same key.
+- To roll back during Phase 1, run `sudo cp /etc/mongod.conf.pre-auth /etc/mongod.conf && sudo systemctl restart mongod` (one member at a time). After Phase 2 has started, first return every member to the Phase 1 config.
+
+**If downtime is acceptable (short procedure):** in a practice environment where 1-2 minutes without writes is acceptable, you can switch all three members at once. Check Step 1, then run in Cloud Shell:
+
+```bash
+for vm in vm-db-az1-prod vm-db-az2-prod vm-db-az3-prod; do
+  az vm run-command invoke -g "$RESOURCE_GROUP" -n "$vm" --command-id RunShellScript \
+    --scripts 'mv /etc/mongod.conf.pending-auth /etc/mongod.conf && systemctl restart mongod && echo restarted' \
+    --query "value[0].message" -o tsv &
+done
+wait
+```
+
+Then verify with Step 4.
+
+> **Key rotation:** changing `mongoDbReplicaSetKey` and redeploying does not replace the key of a running member (CustomScript stops with an error). To change the key, follow MongoDB's [Rotate Keys for Self-Managed Replica Sets](https://www.mongodb.com/docs/manual/tutorial/rotate-key-replica-set/) one member at a time.
 
 ## 8. Cloud Shell Disconnected
 

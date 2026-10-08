@@ -170,6 +170,8 @@ az vm list --resource-group "$RESOURCE_GROUP" --show-details \
   --query "[?contains(name, 'vm-db')].{name:name,powerState:powerState}" -o table
 ```
 
+> **mongosh の認証（Issue #36）:** MongoDB はアクセス制御が有効です。`db.hello()` 以外のコマンド（`rs.status()`、`rs.add()` など）は、管理ユーザー `blogadmin` でログインして実行します。この章のコマンドは `mongosh -u blogadmin -p --authenticationDatabase admin` の形で、実行するとパスワード（`<YOUR_MONGODB_ADMIN_PASSWORD>`）を聞かれます。
+
 **対処:**
 
 - DB VM が停止していれば起動します。
@@ -177,6 +179,8 @@ az vm list --resource-group "$RESOURCE_GROUP" --show-details \
 - パスワード不一致が疑われる場合は `main.local.bicepparam` と `post-deployment-setup.local.sh` の値を照合します。
 - `mongoDbAppPassword` に `@` を含めた場合、Bicep が作成する `MONGODB_URI` の user info 区切りとして解釈され、接続文字列が壊れます。この教材では password を作り直し、`main.local.bicepparam` と `post-deployment-setup.local.sh` を同じ値にそろえてから再実行します。
 - API のログに `ECONNREFUSED` / `ReplicaSetNoPrimary` が出る場合は 7.1 を確認します。
+- API のログに `Authentication failed` が出る場合は、`mongoDbAppPassword` と post-deployment setup の `APP_PASSWORD` が一致しているか確認します。
+- post-deployment setup が `mongod is running without authorization` と警告した場合、または DB VM に `/etc/mongod.conf.pending-auth` がある場合は 7.3 を実施します。
 - Issue #30 以前に作成した 2 ノード環境で、post-deployment setup が `vm-db-az3-prod` が見つからない、またはメンバー数が 3 未満と警告する場合は 7.2 を実施します。
 
 ### 7.1 MongoDB が起動しない: Linux カーネル 6.19 以上 (Issue #26)
@@ -250,7 +254,7 @@ mongosh --quiet --eval 'db.hello().isWritablePrimary + " " + db.hello().secondar
 sudo blogapp-kernel-track status                # finalize : done/not-needed
 ```
 
-レプリカセットの状態も確認します: `mongosh --quiet --eval 'rs.status().members.map(m => m.name + " " + m.stateStr)'`。対象が `SECONDARY` として復帰したことを確認してから、次の VM で同じ手順を繰り返します。Primary（通常 `vm-db-az1-prod`）は最後に実施し、計画的に切り替える場合は下記の注意どおり `rs.stepDown(300)` を実行します。
+レプリカセットの状態も確認します: `mongosh -u blogadmin -p --authenticationDatabase admin --quiet --eval 'rs.status().members.map(m => m.name + " " + m.stateStr)'`。対象が `SECONDARY` として復帰したことを確認してから、次の VM で同じ手順を繰り返します。Primary（通常 `vm-db-az1-prod`）は最後に実施し、計画的に切り替える場合は下記の注意どおり `rs.stepDown(300)` を実行します。
 
 > **3 ノード構成での影響:** 1 台ずつ再起動する限り、残り 2 台で過半数（3 票中 2 票）を維持するため、API は動き続けます。Primary の VM では、Run Command が戻った直後（再起動の約 1 分前）に、Primary 上で `rs.stepDown(300)` を実行します。既定の 60 秒では再起動の前に期限が切れ、priority 2 の az1 が Primary に戻ってしまいます。正常なシャットダウンでは mongod が自分で Primary を引き渡すため、選出は通常数秒で終わります。**2 台を同時に再起動しないでください**（過半数を失い、Primary が存在しなくなります）。
 >
@@ -377,8 +381,10 @@ Primary（通常 `vm-db-az1-prod`）に Bastion SSH で接続します。
 
 ```bash
 mongosh --quiet --eval 'db.hello().isWritablePrimary'   # true であること
-mongosh --quiet --eval 'rs.add({ host: "10.0.3.6:27017", priority: 1, votes: 1 })'
+mongosh -u blogadmin -p --authenticationDatabase admin --quiet --eval 'rs.add({ host: "10.0.3.6:27017", priority: 1, votes: 1 })'
 ```
+
+> **Issue #36 以前の環境の場合:** 手順 3 で再デプロイした `vm-db-az3-prod` はアクセス制御（keyFile）付きで起動しますが、既存の az1/az2 は keyFile なしで動いています。この状態では新メンバーと既存メンバーが互いに認証できず、同期できません。`vm-db-az1-prod` に `/etc/mongod.conf.pending-auth` がある場合は、**先に 7.3 を完了してから** `rs.add()` を実行します。
 
 **期待結果:** `{ ok: 1 }` が返ります。すでに追加済みの場合は `Found two member configurations with same host field` というエラーになります。この場合は追加済みなので、手順 6 に進みます。
 
@@ -387,7 +393,7 @@ mongosh --quiet --eval 'rs.add({ host: "10.0.3.6:27017", priority: 1, votes: 1 }
 #### 手順 6: 初期同期の完了を待つ
 
 ```bash
-mongosh --quiet --eval '
+mongosh -u blogadmin -p --authenticationDatabase admin --quiet --eval '
 const s = rs.status();
 const p = s.members.find(m => m.stateStr === "PRIMARY");
 s.members.forEach(m => print(m.name, m.stateStr, "lagSec=" + ((p.optimeDate - m.optimeDate) / 1000)));
@@ -416,7 +422,7 @@ curl -s http://localhost:3000/health
 #### 手順 8: 動作を確認する
 
 ```bash
-mongosh --quiet --eval 'rs.status().members.map(m => m.name + " " + m.stateStr + " votes=" + rs.conf().members.find(c => c.host === m.name).votes)'
+mongosh -u blogadmin -p --authenticationDatabase admin --quiet --eval 'rs.status().members.map(m => m.name + " " + m.stateStr + " votes=" + rs.conf().members.find(c => c.host === m.name).votes)'
 ```
 
 - PRIMARY 1 台、SECONDARY 2 台、すべて `votes=1` であること。
@@ -425,6 +431,103 @@ mongosh --quiet --eval 'rs.status().members.map(m => m.name + " " + m.stateStr +
 - Day 2 の DB フェイルオーバー演習（Primary 停止で自動選出）が実施できること。
 
 **ロールバック:** 問題があれば、Primary で `rs.remove("10.0.3.6:27017")` を実行し、2 ノード構成に戻します（接続文字列の 3 つ目のホストは無視されます）。不要になった `vm-db-az3-prod` とそのディスクを削除し、手順 1 のスナップショットは確認後に削除します。
+
+### 7.3 既存環境で MongoDB のアクセス制御を有効にする (Issue #36)
+
+**症状:**
+
+- post-deployment setup の最後に `Unauthenticated read was not rejected` / `mongod is running without authorization` と警告される。
+- 認証なしの `mongosh --quiet --eval 'db.getSiblingDB("blogapp").posts.findOne()'` でデータが表示される。
+- DB VM に `/etc/mongod.conf.pending-auth` がある。
+
+**原因:** Issue #36 以前の環境では、mongod が keyFile（メンバー間認証）と `authorization`（クライアント認証）なしで動いていました。新しい Bicep で再デプロイすると、各 DB VM に `/etc/mongodb/keyfile` を書き込みます。ただし、データがある既存メンバーでは設定を切り替えず、新しい設定を `/etc/mongod.conf.pending-auth` に置くだけにします。3 台の CustomScript は並列に動くため、その場で再起動すると全台が同時に止まります。また、keyFile ありのメンバーと keyFile なしのメンバーは通信できません。そのため、`transitionToAuth` を使って 1 台ずつ切り替えます。
+
+> **AWS との比較:** Amazon DocumentDB では認証は常に有効で、無効にできません。自己管理の MongoDB では、EC2 上の構成と同じく、アクセス制御の有効化とキーの管理を利用者が行います。
+
+#### 手順 1: 前提を確認する
+
+1. Day 1 の Step 4 と同じ方法で、`mongoDbReplicaSetKey` を設定して `main.bicep` を再デプロイ済みであること。**キーは 3 台で同じ値です。** 以後の再デプロイでもキーを変更しません（変更すると CustomScript が `mongoDbReplicaSetKey differs` で失敗します）。
+2. 3 台すべてで keyfile が同じこと。各 DB VM に Bastion SSH で接続して実行し、ハッシュが一致することを確認します（キー自体は表示しません）。
+
+   ```bash
+   sudo ls -l /etc/mongodb/keyfile /etc/mongod.conf.pending-auth   # -r-------- mongodb mongodb
+   sudo sha256sum /etc/mongodb/keyfile | cut -c1-16
+   ```
+
+3. 管理ユーザー `blogadmin` とアプリ用ユーザーが存在すること。最新の post-deployment setup を 1 回実行すると、ユーザーを作成または確認します（最後の警告は、この時点では想定どおりです）。アプリの `MONGODB_URI` には、すでにユーザー名とパスワードが含まれています。
+4. 念のため、DB VM のスナップショットまたはバックアップを取得します。
+5. この作業中は `main.bicep` を再デプロイしません。
+
+#### 手順 2: フェーズ 1 — `transitionToAuth` で keyFile を有効にする
+
+`transitionToAuth: true` のメンバーは、keyFile を使う通信と使わない通信の両方を受け付けます。そのため、1 台ずつ再起動しても、レプリカセットとアプリは動き続けます。Secondary（`vm-db-az3-prod` → `vm-db-az2-prod`）から始め、Primary（通常 `vm-db-az1-prod`）を最後にします。各 VM に Bastion SSH で接続して実行します。
+
+```bash
+sudo cp /etc/mongod.conf /etc/mongod.conf.pre-auth
+sed 's/^  authorization: enabled$/  transitionToAuth: true/' /etc/mongod.conf.pending-auth \
+  | sudo tee /etc/mongod.conf > /dev/null
+grep -A2 '^security:' /etc/mongod.conf    # keyFile と transitionToAuth: true
+sudo systemctl restart mongod
+sleep 15
+sudo systemctl is-active mongod           # active
+mongosh --quiet --eval 'db.hello().secondary'   # true（Secondary として復帰）
+```
+
+Primary では、再起動の **前に** Primary を譲ります。
+
+```bash
+mongosh -u blogadmin -p --authenticationDatabase admin --quiet --eval 'rs.stepDown(300)'
+```
+
+1 台ごとに、レプリカセットが PRIMARY 1 台 + SECONDARY 2 台に戻ったことを確認してから次に進みます。
+
+```bash
+mongosh -u blogadmin -p --authenticationDatabase admin --quiet --eval 'rs.status().members.map(m => m.name + " " + m.stateStr)'
+```
+
+#### 手順 3: フェーズ 2 — `authorization` を有効にする
+
+3 台すべてがフェーズ 1 を終えたら、同じ順序（Secondary → Primary）で最終設定に切り替えます。Primary では先に `rs.stepDown(300)` を実行します。
+
+```bash
+sudo mv /etc/mongod.conf.pending-auth /etc/mongod.conf
+sudo systemctl restart mongod
+sleep 15
+sudo systemctl is-active mongod           # active
+mongosh --quiet --eval 'db.hello().secondary'   # true
+```
+
+#### 手順 4: 動作を確認する
+
+```bash
+mongosh --quiet --eval 'db.getSiblingDB("blogapp").posts.findOne()'   # requires authentication で拒否される
+mongosh -u blogadmin -p --authenticationDatabase admin --quiet --eval 'rs.status().members.map(m => m.name + " " + m.stateStr)'
+```
+
+- ブラウザで投稿の作成と編集ができること。
+- post-deployment setup を再実行しても `mongod is running without authorization` が表示されないこと。
+- 確認後、各 VM の `/etc/mongod.conf.pre-auth` を削除します。
+
+**うまくいかない場合:**
+
+- mongod が起動しない: `sudo tail -n 50 /data/mongodb/log/mongod.log` を確認します。`permissions on /etc/mongodb/keyfile are too open` なら `sudo chown mongodb:mongodb /etc/mongodb/keyfile && sudo chmod 400 /etc/mongodb/keyfile` を実行します。
+- メンバーが `(not reachable/healthy)` のまま、ログに `Authentication failed` が出る: keyfile が一致していません。手順 1 の 2 でハッシュを比較し、同じキーで再デプロイします。
+- フェーズ 1 の途中で戻す場合: `sudo cp /etc/mongod.conf.pre-auth /etc/mongod.conf && sudo systemctl restart mongod`（1 台ずつ）。フェーズ 2 を始めた後に戻す場合は、まず全台をフェーズ 1 の設定に戻します。
+
+**停止時間を許容できる場合（簡易手順）:** 1〜2 分の書き込み停止を許容できる演習環境では、3 台で同時に切り替えることもできます。手順 1 を確認してから、Cloud Shell で実行します。
+
+```bash
+for vm in vm-db-az1-prod vm-db-az2-prod vm-db-az3-prod; do
+  az vm run-command invoke -g "$RESOURCE_GROUP" -n "$vm" --command-id RunShellScript \
+    --scripts 'mv /etc/mongod.conf.pending-auth /etc/mongod.conf && systemctl restart mongod && echo restarted' \
+    --query "value[0].message" -o tsv &
+done
+wait
+```
+
+その後、手順 4 で確認します。
+
+> **キーのローテーション:** `mongoDbReplicaSetKey` を変更して再デプロイしても、稼働中のメンバーのキーは置き換えません（CustomScript がエラーで止まります）。キーを変更する場合は、MongoDB の [Rotate Keys for Self-Managed Replica Sets](https://www.mongodb.com/docs/manual/tutorial/rotate-key-replica-set/) に従い、1 台ずつ手動で実施します。
 
 ## 8. Cloud Shell が切断された
 

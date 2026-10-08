@@ -194,10 +194,12 @@ DB tier は 3 台のデータ保持メンバー（`vm-db-az1` / `az2` / `az3`、
 
 ### 9.1 準備: 状態確認コマンドと API プローブ
 
-Cloud Shell で、DB の状態を表示するコマンドを変数に入れます。停止していない DB VM に対して実行します。
+Cloud Shell で、DB の状態を表示するコマンドを変数に入れます。停止していない DB VM に対して実行します。MongoDB は認証が有効なため（Issue #36）、最初に管理ユーザー `blogadmin` のパスワード（Day 1 の `<YOUR_MONGODB_ADMIN_PASSWORD>`）を入力します。入力は画面に表示されず、この Cloud Shell セッションの変数にだけ保持されます。9.5 でも同じ変数を使います。
 
 ```bash
-RS_STATUS='mongosh --quiet --eval "rs.status().members.forEach(m => print(m.name, m.stateStr, \"health=\" + m.health, m.electionDate ? \"elected=\" + m.electionDate.toISOString() : \"\"))"'
+read -rsp 'MongoDB admin password: ' MONGO_ADMIN_PASSWORD; echo
+MONGO_AUTH="-u blogadmin -p '$MONGO_ADMIN_PASSWORD' --authenticationDatabase admin"
+RS_STATUS='mongosh '"$MONGO_AUTH"' --quiet --eval "rs.status().members.forEach(m => print(m.name, m.stateStr, \"health=\" + m.health, m.electionDate ? \"elected=\" + m.electionDate.toISOString() : \"\"))"'
 db_status() {
   az vm run-command invoke -g "$RESOURCE_GROUP" -n "$1" \
     --command-id RunShellScript --scripts "$RS_STATUS" \
@@ -292,7 +294,7 @@ db_status vm-db-az1-prod
 ### 9.5 再参加したノードのデータ一致を確認する
 
 ```bash
-COUNT='mongosh --quiet --eval "db.getMongo().setReadPref(\"secondaryPreferred\"); print(db.getSiblingDB(\"blogapp\").posts.countDocuments())"'
+COUNT='mongosh '"$MONGO_AUTH"' --quiet --eval "db.getMongo().setReadPref(\"secondaryPreferred\"); print(db.getSiblingDB(\"blogapp\").posts.countDocuments())"'
 for vm in vm-db-az1-prod vm-db-az2-prod vm-db-az3-prod; do
   echo "$vm: $(az vm run-command invoke -g "$RESOURCE_GROUP" -n $vm --command-id RunShellScript --scripts "$COUNT" --query "value[0].message" -o tsv | grep -E '^[0-9]+$')"
 done

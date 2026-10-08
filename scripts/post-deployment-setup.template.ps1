@@ -3,7 +3,9 @@
 # =============================================================================
 # This script configures the deployed Azure VMs after Bicep deployment:
 #   1. Initializes the 3-member MongoDB replica set (Issue #30)
-#   2. Creates MongoDB application users
+#   2. Creates the MongoDB admin user (through the localhost exception) and
+#      the application user. mongod runs with keyFile + authorization
+#      (Issue #36), so every later mongosh call authenticates as the admin.
 #   3. Verifies all configurations
 #
 # SETUP INSTRUCTIONS:
@@ -136,6 +138,21 @@ if ($ResourceGroup -like "*<*" -or $Config.AdminPassword -like "*<*") {
     exit 1
 }
 
+# Passwords are embedded in mongosh commands and in the app's MONGODB_URI,
+# so reject characters that would break shell/JS quoting or the connection
+# string (Issue #36).
+foreach ($pw in @(@{ Name = 'AdminPassword'; Value = $Config.AdminPassword }, @{ Name = 'AppPassword'; Value = $Config.AppPassword })) {
+    if ([string]::IsNullOrEmpty($pw.Value) -or $pw.Value -like "*<*") {
+        Write-LogError "Set $($pw.Name) in the Configuration section."
+        exit 1
+    }
+    if ($pw.Value -match '[\s''"`$\\@:/%]') {
+        Write-LogError "$($pw.Name) contains a character that is not supported here (space ' `" `` `$ \ @ : / %)."
+        Write-LogError "Use letters, digits and symbols such as - _ . ! # * + =. AppPassword must equal mongoDbAppPassword in Bicep."
+        exit 1
+    }
+}
+
 # Check Azure PowerShell login
 $context = Get-AzContext
 if (-not $context) {
@@ -266,17 +283,41 @@ function Get-RunCommandText {
     return (($Result.Value | ForEach-Object { $_.Message }) -join "`n")
 }
 
+# Access control (Issue #36): mongod starts with security.keyFile and
+# authorization enabled, so before the first user exists only the
+# "localhost exception" applies: a client on the DB VM itself (Run Command
+# runs there) may run rs.initiate() and create the FIRST user (on the
+# PRIMARY). db.hello() never needs authentication. Everything after the
+# admin user exists authenticates.
+# https://www.mongodb.com/docs/manual/core/localhost-exception/
+# AWS comparison: Amazon DocumentDB always requires authentication; on
+# self-managed MongoDB (EC2 or Azure VMs) you have to turn it on yourself.
+#
+# The admin password is passed with --password inside the Run Command
+# script. It is never printed (outputs are masked), but it is briefly visible
+# in the DB VM's process list; for production prefer a secret store such as
+# Azure Key Vault.
+$MongoAdminAuth = "--username `"$($Config.AdminUser)`" --password `"$($Config.AdminPassword)`" --authenticationDatabase admin"
+
+# Map a "host:port" from db.hello().primary to the DB VM name.
+$DbVmByHost = @{
+    "$($Config.DbVm1Ip):27017" = $Config.DbVm1Name
+    "$($Config.DbVm2Ip):27017" = $Config.DbVm2Name
+    "$($Config.DbVm3Ip):27017" = $Config.DbVm3Name
+}
+
 # Check whether the replica set is already initialized (idempotency).
-# rs.conf() throws NotYetInitialized on a fresh node.
+# db.hello() reports setName/hosts once a config exists, without auth
+# (rs.conf() would need a user once access control is active).
 $rsStateScript = @'
-mongosh --quiet --eval 'try { print("RSSTATE initialized " + rs.conf().members.length) } catch (e) { print("RSSTATE uninitialized " + e.codeName) }'
+mongosh --quiet --eval 'const h = db.hello(); print(h.setName ? "RSSTATE initialized " + (h.hosts || []).length : "RSSTATE uninitialized -")'
 '@
 $rsStateResult = Invoke-VMCommand -ResourceGroupName $ResourceGroup -VMName $Config.DbVm1Name -Script $rsStateScript
 $rsStateMatch = [regex]::Match((Get-RunCommandText $rsStateResult), 'RSSTATE (initialized|uninitialized) (\S+)')
 
 if ($rsStateMatch.Success -and $rsStateMatch.Groups[1].Value -eq "initialized") {
     $rsMemberCount = $rsStateMatch.Groups[2].Value
-    Write-LogWarning "Replica set already initialized ($rsMemberCount members), skipping rs.initiate."
+    Write-LogWarning "Replica set already initialized ($rsMemberCount electable members), skipping rs.initiate."
     if ($rsMemberCount -ne "3") {
         # Never force-reconfigure here: adding a member to a live set must be
         # done with rs.add() after the new VM is ready (runbook 7.2).
@@ -284,7 +325,7 @@ if ($rsStateMatch.Success -and $rsStateMatch.Groups[1].Value -eq "initialized") 
     }
 }
 elseif ($rsStateMatch.Success) {
-    Write-LogInfo "Initializing replica set $($Config.ReplicaSetName) with 3 members..."
+    Write-LogInfo "Initializing replica set $($Config.ReplicaSetName) with 3 members (localhost exception)..."
 
     # All 3 members are data-bearing, voting (votes: 1) and electable
     # (priority > 0). vm-db-az1 gets priority 2 only to make the INITIAL
@@ -310,7 +351,8 @@ mongosh --quiet --eval 'try {
     $initMatch = [regex]::Match((Get-RunCommandText $initResult), 'RSINIT .*')
     if (-not $initMatch.Success -or $initMatch.Value.Trim() -ne "RSINIT ok=1") {
         Write-LogError "rs.initiate failed on $($Config.DbVm1Name): $(if ($initMatch.Success) { $initMatch.Value } else { 'no answer' })"
-        Write-LogError "Check that all 3 DB VMs can reach each other on port 27017 (NSG, mongod bindIp), then re-run this script."
+        Write-LogError "Check that all 3 DB VMs can reach each other on port 27017 (NSG, mongod bindIp)"
+        Write-LogError "and use the same keyFile (mongoDbReplicaSetKey), then re-run this script."
         exit 1
     }
     Write-LogSuccess "Replica set initiated"
@@ -321,22 +363,25 @@ else {
     exit 1
 }
 
-# Wait until the set is healthy: exactly 1 PRIMARY and 2 SECONDARY.
-# (Replaces a fixed sleep: initial sync of an empty set takes ~10-30s.)
-Write-LogInfo "Waiting for 1 PRIMARY + 2 SECONDARY (up to 3 minutes)..."
-$rsHealthScript = @'
-mongosh --quiet --eval 'for (let i = 0; i < 36; i++) { let p = 0, s = 0; try { rs.status().members.forEach(m => { if (m.stateStr === "PRIMARY") p++; if (m.stateStr === "SECONDARY") s++; }); } catch (e) {} if (p === 1 && s === 2) { print("RSHEALTH ok"); quit(0); } sleep(5000); } print("RSHEALTH timeout");'
+# Wait for a PRIMARY (db.hello() needs no auth). The first user must be
+# created on the PRIMARY, through a localhost connection on that VM.
+Write-LogInfo "Waiting for a PRIMARY to be elected (up to 3 minutes)..."
+$rsPrimaryScript = @'
+mongosh --quiet --eval 'for (let i = 0; i < 36; i++) { const h = db.hello(); if (h.primary) { print("RSPRIMARY " + h.primary); quit(0); } sleep(5000); } print("RSPRIMARY none")'
 '@
-$rsHealthResult = Invoke-VMCommand -ResourceGroupName $ResourceGroup -VMName $Config.DbVm1Name -Script $rsHealthScript
-if ((Get-RunCommandText $rsHealthResult) -match 'RSHEALTH ok') {
-    Write-LogSuccess "Replica set healthy: 1 PRIMARY + 2 SECONDARY"
-}
-else {
+$rsPrimaryResult = Invoke-VMCommand -ResourceGroupName $ResourceGroup -VMName $Config.DbVm1Name -Script $rsPrimaryScript
+$rsPrimaryMatch = [regex]::Match((Get-RunCommandText $rsPrimaryResult), 'RSPRIMARY (\S+)')
+$primaryHost = if ($rsPrimaryMatch.Success) { $rsPrimaryMatch.Groups[1].Value } else { "" }
+$primaryVmName = $DbVmByHost[$primaryHost]
+if (-not $primaryVmName) {
     # Users cannot be created without a PRIMARY, so stop here (Issue #32).
-    Write-LogError "Replica set did not reach 1 PRIMARY + 2 SECONDARY within 3 minutes."
+    Write-LogError "No PRIMARY was elected within 3 minutes (got: '$primaryHost')."
+    Write-LogError "Typical causes: a DB VM is down, port 27017 is blocked between DB VMs, or the DB VMs have"
+    Write-LogError "different keyfiles (sudo journalctl -u mongod; grep -i keyfile /data/mongodb/log/mongod.log)."
     Write-LogError "See troubleshooting runbook section 7, then re-run this script (it is safe to re-run)."
     exit 1
 }
+Write-LogSuccess "PRIMARY is $primaryHost ($primaryVmName)"
 
 # -----------------------------------------------------------------------------
 # Step 4: Create MongoDB Admin User
@@ -360,37 +405,65 @@ function Assert-UserResult {
         }
     }
 }
-# Connect with the replica set URI so the write goes to the current PRIMARY
-# (createUser uses w:"majority" by default on a replica set).
 
+# Re-run safe: if the admin can already authenticate, keep it. Otherwise
+# create it through the localhost exception (only possible while NO user
+# exists yet), on the PRIMARY VM.
 $adminUserScript = @"
-mongosh --quiet "$RsUri" --eval '
-    try {
-        db = db.getSiblingDB("admin");
-        if (db.getUser("$($Config.AdminUser)") === null) {
-            db.createUser({
+mongosh --quiet --eval '
+    const adm = db.getSiblingDB("admin");
+    let authed = false;
+    try { const r = adm.auth("$($Config.AdminUser)", "$($Config.AdminPassword)"); authed = Boolean(r && r.ok); } catch (e) {}
+    if (authed) {
+        print("USER exists");
+    } else {
+        try {
+            adm.createUser({
                 user: "$($Config.AdminUser)",
                 pwd: "$($Config.AdminPassword)",
                 roles: [{ role: "root", db: "admin" }]
             });
             print("USER created");
-        } else {
-            print("USER exists");
+        } catch (e) {
+            if (e.codeName === "Unauthorized" || e.code === 51003) {
+                print("USER error " + e.codeName + ": a user already exists but $($Config.AdminUser) could not log in. AdminPassword must be the value used on the first run.");
+            } else {
+                print("USER error " + e.codeName + ": " + e.message);
+            }
         }
-    } catch (e) { print("USER error " + e.codeName + ": " + e.message) }
+    }
 '
 "@
 
-$adminUserResult = Invoke-VMCommand -ResourceGroupName $ResourceGroup -VMName $Config.DbVm1Name -Script $adminUserScript
+$adminUserResult = Invoke-VMCommand -ResourceGroupName $ResourceGroup -VMName $primaryVmName -Script $adminUserScript
 Assert-UserResult -Result $adminUserResult -Label "admin user $($Config.AdminUser)"
+
+# From here on every mongosh call authenticates as the admin user.
+# Wait until the set is healthy: exactly 1 PRIMARY and 2 SECONDARY.
+# (Replaces a fixed sleep: initial sync of an empty set takes ~10-30s.)
+Write-LogInfo "Waiting for 1 PRIMARY + 2 SECONDARY (up to 3 minutes)..."
+$rsHealthScript = @"
+mongosh --quiet $MongoAdminAuth --eval 'for (let i = 0; i < 36; i++) { let p = 0, s = 0; try { rs.status().members.forEach(m => { if (m.stateStr === "PRIMARY") p++; if (m.stateStr === "SECONDARY") s++; }); } catch (e) {} if (p === 1 && s === 2) { print("RSHEALTH ok"); quit(0); } sleep(5000); } print("RSHEALTH timeout");'
+"@
+$rsHealthResult = Invoke-VMCommand -ResourceGroupName $ResourceGroup -VMName $Config.DbVm1Name -Script $rsHealthScript
+if ((Get-RunCommandText $rsHealthResult) -match 'RSHEALTH ok') {
+    Write-LogSuccess "Replica set healthy: 1 PRIMARY + 2 SECONDARY"
+}
+else {
+    Write-LogError "Replica set did not reach 1 PRIMARY + 2 SECONDARY within 3 minutes."
+    Write-LogError "See troubleshooting runbook section 7, then re-run this script (it is safe to re-run)."
+    exit 1
+}
 
 # -----------------------------------------------------------------------------
 # Step 5: Create MongoDB Application User
 # -----------------------------------------------------------------------------
 Write-LogInfo "Step 5: Creating MongoDB application user..."
 
+# Connect with the replica set URI so the write goes to the current PRIMARY
+# (createUser uses w:"majority" by default on a replica set).
 $appUserScript = @"
-mongosh --quiet "$RsUri" --eval '
+mongosh --quiet "$RsUri" $MongoAdminAuth --eval '
     try {
         db = db.getSiblingDB("blogapp");
         if (db.getUser("$($Config.AppUser)") === null) {
@@ -417,8 +490,21 @@ Write-LogInfo "Step 6: Verifying configuration..."
 
 # Verify replica set status
 Write-LogInfo "Checking replica set status..."
-$rsVerifyScript = 'mongosh --quiet --eval "rs.status().members.forEach(m => print(m.name + \": \" + m.stateStr + \" (health=\" + m.health + \")\"))"'
-Invoke-VMCommand -ResourceGroupName $ResourceGroup -VMName $Config.DbVm1Name -Script $rsVerifyScript
+$rsVerifyScript = "mongosh --quiet $MongoAdminAuth --eval 'rs.status().members.forEach(m => print(m.name + `": `" + m.stateStr + `" (health=`" + m.health + `")`"))'"
+Invoke-VMCommand -ResourceGroupName $ResourceGroup -VMName $Config.DbVm1Name -Script $rsVerifyScript | Out-Null
+
+# Access control check: an unauthenticated client must be rejected.
+$authCheckScript = @'
+mongosh --quiet --eval 'try { db.getSiblingDB("blogapp").posts.findOne(); print("AUTHCHECK open") } catch (e) { print("AUTHCHECK " + e.codeName) }'
+'@
+$authCheckText = Get-RunCommandText (Invoke-VMCommand -ResourceGroupName $ResourceGroup -VMName $Config.DbVm1Name -Script $authCheckScript)
+if ($authCheckText -match 'AUTHCHECK Unauthorized') {
+    Write-LogSuccess "Access control is active: unauthenticated reads are rejected"
+}
+else {
+    Write-LogWarning "Unauthenticated read was not rejected."
+    Write-LogWarning "mongod is running without authorization. Existing environment? See troubleshooting runbook 7.3 (enable access control)."
+}
 Write-LogInfo "Expected: 3 members = 1 PRIMARY + 2 SECONDARY (10.0.3.4 is normally PRIMARY)."
 
 # -----------------------------------------------------------------------------

@@ -107,12 +107,15 @@ Set at least these values.
 | `sslCertificateData` | Base64 PFX contents | `cat ../../cert-base64.txt` |
 | `sslCertificatePassword` | PFX password | Default `Workshop2024!` |
 | `mongoDbAppPassword` | MongoDB app user password | Must exactly match Step 9's `<YOUR_MONGODB_APP_PASSWORD>` |
+| `mongoDbReplicaSetKey` | MongoDB replica set shared key (keyFile) | Paste the one-line output of `openssl rand -base64 756 \| tr -d '\n'`. Keep the same value on redeployments |
 | `appGatewayDnsLabel` | Unique DNS label | Example: `blogapp-team1-0106` |
 
 > [!IMPORTANT]
 > `mongoDbAppPassword` must exactly match `<YOUR_MONGODB_APP_PASSWORD>` in `post-deployment-setup.local.sh`. If they differ, the Backend API cannot connect to MongoDB.
 >
-> Do not use `@` in `mongoDbAppPassword`. `@` is reserved in connection strings and breaks the generated `MONGODB_URI`.
+> Do not use `@` in `mongoDbAppPassword`. `@` is reserved in connection strings and breaks the generated `MONGODB_URI`. The post-deployment script rejects passwords with spaces, quotes, `$`, `\`, `@`, `:`, `/` or `%` (for example, use `openssl rand -hex 16`).
+>
+> `mongoDbReplicaSetKey` is the shared key the 3 DB VMs use to authenticate each other (Issue #36). MongoDB starts with a keyFile and `authorization: enabled`, so nothing can be read or written without a user name and password. The key is passed in the CustomScript `protectedSettings` (encrypted), so it is not shown in the portal or by `az vm extension show`. Amazon DocumentDB always requires authentication; MongoDB on VMs (EC2 or Azure) must have it turned on by you.
 
 For multiple groups, also set `groupId`.
 
@@ -227,7 +230,7 @@ az network bastion ssh \
 uname -r                                   # 6.8.0-xxxx-azure
 sudo systemctl status mongod --no-pager    # active (running)
 sudo ss -lntp '( sport = :27017 )'         # mongod is listening
-mongosh --quiet --eval 'db.hello()'        # ok: 1 (after Step 3: setName blogapp-rs0)
+mongosh --quiet --eval 'db.hello()'        # ok: 1 (after Step 3: setName blogapp-rs0). db.hello() needs no login
 sudo blogapp-kernel-track status           # running kernel ... OK (6.8 LTS track)
 ```
 
@@ -237,11 +240,12 @@ sudo blogapp-kernel-track status           # running kernel ... OK (6.8 LTS trac
 
 ### 9.2 Check The 3-Member Replica Set
 
-The DB tier is 3 data-bearing members: 1 PRIMARY + 2 SECONDARY, no arbiter (Issue #30). Connect to `vm-db-az1-prod` and run:
+The DB tier is 3 data-bearing members: 1 PRIMARY + 2 SECONDARY, no arbiter (Issue #30). Connect to `vm-db-az1-prod` and run the command below. MongoDB requires authentication (Issue #36), so log in as the admin user `blogadmin`. `-p` without a value prompts for the password: enter `<YOUR_MONGODB_ADMIN_PASSWORD>` from Step 9 (it is not saved in the shell history).
 
 ```bash
-mongosh --quiet --eval 'rs.status().members.forEach(m => print(m.name, m.stateStr, "health=" + m.health))'
-mongosh --quiet --eval 'rs.conf().members.forEach(m => print(m.host, "priority=" + m.priority, "votes=" + m.votes))'
+mongosh -u blogadmin -p --authenticationDatabase admin --quiet --eval '
+  rs.status().members.forEach(m => print(m.name, m.stateStr, "health=" + m.health));
+  rs.conf().members.forEach(m => print(m.host, "priority=" + m.priority, "votes=" + m.votes))'
 ```
 
 **Expected Result:**
@@ -256,6 +260,14 @@ mongosh --quiet --eval 'rs.conf().members.forEach(m => print(m.host, "priority="
 ```
 
 **Checkpoint:** Only 2 members means an environment from the earlier 2-node design. Add the 3rd member with [Troubleshooting runbook 7.2](../operations/troubleshooting-runbook.md#72-migrate-an-existing-2-node-environment-to-3-nodes-issue-30). Priority 2 on `10.0.3.4` only makes the initial PRIMARY predictable for the workshop steps; any member can be elected PRIMARY.
+
+Next, check that data cannot be read without logging in (Issue #36).
+
+```bash
+mongosh --quiet --eval 'db.getSiblingDB("blogapp").posts.findOne()'
+```
+
+**Expected Result:** the command is rejected, for example `MongoServerError: Command find requires authentication`. If data is returned, access control is off: see [Troubleshooting runbook 7.3](../operations/troubleshooting-runbook.md#73-enable-mongodb-access-control-on-an-existing-environment-issue-36).
 
 > **AWS comparison:** this is the same layout as self-managed MongoDB on 3 EC2 instances, one per AZ. With Amazon DocumentDB the service promotes a replica for you; here you own the replica set configuration and elections.
 

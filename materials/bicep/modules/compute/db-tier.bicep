@@ -51,6 +51,20 @@
 //     `linux-azure-lts-24.04` (6.8.x, security updates continue) instead of
 //     the rolling `linux-azure` track (7.0 at the time of writing)
 //   - Helper: scripts/mongodb-kernel-track.sh (apt pin, GRUB, finalize unit)
+//
+// Access control (Issue #36):
+//   - mongod runs with security.keyFile (members authenticate each other with
+//     a shared key) and security.authorization: enabled (clients must log in).
+//   - The key comes from the @secure() parameter mongoDbReplicaSetKey. Because
+//     the install script embeds it, the script is sent in the CustomScript
+//     protectedSettings (encrypted), not in the public settings.
+//   - The first user is created by scripts/post-deployment-setup.* through the
+//     localhost exception. Existing environments that ran WITHOUT access
+//     control are not switched automatically: the script stages the new
+//     config as /etc/mongod.conf.pending-auth and the operator rolls it out
+//     (troubleshooting runbook 7.3).
+//   - AWS comparison: Amazon DocumentDB always enforces authentication; for
+//     self-managed MongoDB (EC2 or Azure VMs) you must enable it yourself.
 // =============================================================================
 
 @description('Azure region for all resources')
@@ -109,6 +123,12 @@ param dbVmAz2PrivateIp string = '10.0.3.5'
 @description('Static private IP for the 3rd DB VM (must be in dbSubnet range; .0-.3 are reserved by Azure)')
 param dbVmAz3PrivateIp string = '10.0.3.6'
 
+@description('Shared replica set key written to /etc/mongodb/keyfile on every DB VM (members authenticate each other with it). 6-1024 base64 characters; generate with: openssl rand -base64 756 | tr -d \'\\n\'')
+@secure()
+@minLength(6)
+@maxLength(1024)
+param mongoDbReplicaSetKey string
+
 @description('Availability Zone for the 3rd DB VM. Keep \'3\' so each replica set member is in its own zone. Use \'1\' or \'2\' only in regions/SKUs without a 3rd zone (then a zone outage that hosts 2 members loses the majority).')
 @allowed(['1', '2', '3'])
 param dbVmAz3Zone string = '3'
@@ -151,12 +171,15 @@ var kernelTrackScript = loadTextContent('scripts/mongodb-kernel-track.sh')
 // Note: Replica set initialization is a separate step
 //   (scripts/post-deployment-setup.*: rs.initiate with 3 voting, data-bearing
 //   members 10.0.3.4/.5/.6; Issue #30).
-// IMPORTANT (Issue #30): the script body below is intentionally byte-identical
-//   for all 3 VMs and unchanged by #30. Changing its content changes the
-//   CustomScript settings, which re-runs it on EXISTING DB VMs on the next
-//   deployment (restarting mongod). Keeping it stable lets the 2→3 node
-//   migration add vm-db-az3 without re-running the script on vm-db-az1/az2.
-var mongoInstallScript = replace(replace('''
+// IMPORTANT: the script body below is byte-identical for all 3 VMs.
+//   Changing its content re-runs it on EXISTING DB VMs on the next
+//   deployment. It is rerun-safe: a healthy node with an unchanged config is
+//   not restarted (Issue #39), and a node that runs WITHOUT access control
+//   only gets the auth config staged, not applied (Issue #36, runbook 7.3).
+// The script contains the replica set key, so it is passed to vm.bicep as
+//   protectedCustomScriptContent (CustomScript protectedSettings) and must
+//   never print the key.
+var mongoInstallScript = replace(replace(replace('''
 #!/bin/bash
 set -e
 
@@ -440,6 +463,37 @@ apt-get -o DPkg::Lock::Timeout=120 update
 apt-get -o DPkg::Lock::Timeout=120 -y install mongodb-org
 
 # ==========================================================
+# Replica set keyFile (Issue #36)
+# ==========================================================
+# All members must use the same key to authenticate each other (internal
+# authentication). mongod refuses to start if the file is readable by others.
+# Never print the key (CustomScript output is visible in the instance view).
+# https://www.mongodb.com/docs/manual/core/security-internal-authentication/
+KEYFILE=/etc/mongodb/keyfile
+REPLICA_SET_KEY='__REPLICA_SET_KEY__'
+if [ "${#REPLICA_SET_KEY}" -lt 6 ] || [ "${#REPLICA_SET_KEY}" -gt 1024 ] \
+  || ! [[ "$REPLICA_SET_KEY" =~ ^[A-Za-z0-9+/=]+$ ]]; then
+  echo "ERROR: mongoDbReplicaSetKey must be 6-1024 base64 characters (A-Z a-z 0-9 + / =)." >&2
+  echo "Generate one with: openssl rand -base64 756 | tr -d '\n'" >&2
+  exit 1
+fi
+install -d -m 0750 -o root -g mongodb /etc/mongodb
+( umask 077; printf '%s\n' "$REPLICA_SET_KEY" > "${KEYFILE}.new" )
+unset REPLICA_SET_KEY
+chown mongodb:mongodb "${KEYFILE}.new"
+chmod 0400 "${KEYFILE}.new"
+if [ -f "$KEYFILE" ] && ! cmp -s "${KEYFILE}.new" "$KEYFILE" && systemctl is-active --quiet mongod; then
+  # A running member keeps using the old key; replacing it here would split
+  # the replica set at the next restart. Key rotation is a manual, rolling
+  # procedure.
+  rm -f "${KEYFILE}.new"
+  echo "ERROR: mongoDbReplicaSetKey differs from the key this running member uses." >&2
+  echo "Deploy with the original key. Rotating the key is a manual rolling procedure (troubleshooting runbook 7.3)." >&2
+  exit 1
+fi
+mv "${KEYFILE}.new" "$KEYFILE"
+
+# ==========================================================
 # Configure MongoDB for Replica Set
 # ==========================================================
 # Set ownership (mongodb user created by package installation)
@@ -475,15 +529,31 @@ net:
 processManagement:
   timeZoneInfo: /usr/share/zoneinfo
 
-# Security (enable after replica set is initialized)
-# security:
-#   authorization: enabled
-#   keyFile: /etc/mongodb/keyfile
+# Access control (Issue #36): members authenticate each other with the
+# shared keyFile, clients must log in. The first user is created through the
+# localhost exception (scripts/post-deployment-setup.*).
+security:
+  keyFile: /etc/mongodb/keyfile
+  authorization: enabled
 
 # Replica set configuration
 replication:
   replSetName: blogapp-rs0
 EOF
+
+# Existing member that has data but runs WITHOUT access control (deployed
+# before Issue #36): do not switch it here. The 3 DB VMs run this script in
+# parallel, and a member with a keyFile cannot talk to members without one,
+# so enabling auth must be a rolling change. Stage the new config and keep
+# the current one; the operator applies it with troubleshooting runbook 7.3.
+if [ -f /data/mongodb/db/WiredTiger ] && [ -f /etc/mongod.conf ] \
+  && ! grep -Eq '^[[:space:]]*keyFile:' /etc/mongod.conf; then
+  mv /etc/mongod.conf.new /etc/mongod.conf.pending-auth
+  cp /etc/mongod.conf /etc/mongod.conf.new
+  echo "Access control is NOT active on this existing member."
+  echo "Staged /etc/mongod.conf.pending-auth and kept the current config."
+  echo "Enable it with a rolling restart: troubleshooting runbook 7.3 (Issue #36)."
+fi
 
 # Rerun on a healthy node (already on the LTS kernel, mongod running, same
 # config): leave mongod alone. The three DB VMs are deployed in parallel, so
@@ -560,19 +630,13 @@ exit 1
 # ==========================================================
 # Post-Installation Notes
 # ==========================================================
-# To initialize the replica set, run the following on the PRIMARY node:
+# The replica set and the users are created by
+# scripts/post-deployment-setup.* (rs.initiate with the 3 members, then the
+# first admin user through the localhost exception).
 #
-# mongosh --eval "rs.initiate({
-#   _id: 'blogapp-rs0',
-#   members: [
-#     { _id: 0, host: 'vm-db-az1-prod:27017', priority: 2 },
-#     { _id: 1, host: 'vm-db-az2-prod:27017', priority: 1 }
-#   ]
-# })"
-#
-# Check replica set status:
-# mongosh --eval "rs.status()"
-''', '__DATA_DISK_SIZE_GB__', string(dataDiskSizeGB)), '__KERNEL_TRACK_B64__', base64(kernelTrackScript))
+# Check replica set status (authenticated, prompts for the password):
+# mongosh -u blogadmin -p --authenticationDatabase admin --eval "rs.status()"
+''', '__DATA_DISK_SIZE_GB__', string(dataDiskSizeGB)), '__KERNEL_TRACK_B64__', base64(kernelTrackScript)), '__REPLICA_SET_KEY__', mongoDbReplicaSetKey)
 
 // =============================================================================
 // Database Tier VMs
@@ -603,7 +667,7 @@ module vmAz1 'vm.bicep' = {
     enableMonitoring: enableMonitoring
     logAnalyticsWorkspaceId: logAnalyticsWorkspaceId
     dataCollectionRuleId: dataCollectionRuleId
-    customScriptContent: base64(mongoInstallScript)
+    protectedCustomScriptContent: base64(mongoInstallScript)  // contains the keyFile (Issue #36)
     forceUpdateTag: forceUpdateTag
     skipVmCreation: skipVmCreation
     tags: union(allTags, { Role: 'primary' })
@@ -629,7 +693,7 @@ module vmAz2 'vm.bicep' = {
     enableMonitoring: enableMonitoring
     logAnalyticsWorkspaceId: logAnalyticsWorkspaceId
     dataCollectionRuleId: dataCollectionRuleId
-    customScriptContent: base64(mongoInstallScript)
+    protectedCustomScriptContent: base64(mongoInstallScript)  // contains the keyFile (Issue #36)
     forceUpdateTag: forceUpdateTag
     skipVmCreation: skipVmCreation
     tags: union(allTags, { Role: 'secondary' })
@@ -656,7 +720,7 @@ module vmAz3 'vm.bicep' = {
     enableMonitoring: enableMonitoring
     logAnalyticsWorkspaceId: logAnalyticsWorkspaceId
     dataCollectionRuleId: dataCollectionRuleId
-    customScriptContent: base64(mongoInstallScript)
+    protectedCustomScriptContent: base64(mongoInstallScript)  // contains the keyFile (Issue #36)
     forceUpdateTag: forceUpdateTag
     skipVmCreation: skipVmCreationAz3  // Separate flag for the 2→3 node migration
     tags: union(allTags, { Role: 'secondary' })

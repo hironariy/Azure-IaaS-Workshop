@@ -173,10 +173,12 @@ This exercise checks three things:
 
 ### 9.1 Prepare: Status Command And API Probe
 
-In Cloud Shell, define a helper that prints replica set state. Run it against a DB VM that is not stopped.
+In Cloud Shell, define a helper that prints replica set state. Run it against a DB VM that is not stopped. MongoDB requires authentication (Issue #36), so first enter the password of the admin user `blogadmin` (`<YOUR_MONGODB_ADMIN_PASSWORD>` from Day 1). The input is not echoed and is kept only in a variable of this Cloud Shell session. Section 9.5 reuses the same variable.
 
 ```bash
-RS_STATUS='mongosh --quiet --eval "rs.status().members.forEach(m => print(m.name, m.stateStr, \"health=\" + m.health, m.electionDate ? \"elected=\" + m.electionDate.toISOString() : \"\"))"'
+read -rsp 'MongoDB admin password: ' MONGO_ADMIN_PASSWORD; echo
+MONGO_AUTH="-u blogadmin -p '$MONGO_ADMIN_PASSWORD' --authenticationDatabase admin"
+RS_STATUS='mongosh '"$MONGO_AUTH"' --quiet --eval "rs.status().members.forEach(m => print(m.name, m.stateStr, \"health=\" + m.health, m.electionDate ? \"elected=\" + m.electionDate.toISOString() : \"\"))"'
 db_status() {
   az vm run-command invoke -g "$RESOURCE_GROUP" -n "$1" \
     --command-id RunShellScript --scripts "$RS_STATUS" \
@@ -271,7 +273,7 @@ db_status vm-db-az1-prod
 ### 9.5 Confirm Data Matches After Rejoin
 
 ```bash
-COUNT='mongosh --quiet --eval "db.getMongo().setReadPref(\"secondaryPreferred\"); print(db.getSiblingDB(\"blogapp\").posts.countDocuments())"'
+COUNT='mongosh '"$MONGO_AUTH"' --quiet --eval "db.getMongo().setReadPref(\"secondaryPreferred\"); print(db.getSiblingDB(\"blogapp\").posts.countDocuments())"'
 for vm in vm-db-az1-prod vm-db-az2-prod vm-db-az3-prod; do
   echo "$vm: $(az vm run-command invoke -g "$RESOURCE_GROUP" -n $vm --command-id RunShellScript --scripts "$COUNT" --query "value[0].message" -o tsv | grep -E '^[0-9]+$')"
 done

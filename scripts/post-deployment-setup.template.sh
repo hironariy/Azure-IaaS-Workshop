@@ -4,7 +4,9 @@
 # =============================================================================
 # This script configures the deployed Azure VMs after Bicep deployment:
 #   1. Initializes the 3-member MongoDB replica set (Issue #30)
-#   2. Creates MongoDB application users
+#   2. Creates the MongoDB admin user (through the localhost exception) and
+#      the application user. mongod runs with keyFile + authorization
+#      (Issue #36), so every later mongosh call authenticates as the admin.
 #   3. Verifies all configurations
 #
 # SETUP INSTRUCTIONS:
@@ -162,6 +164,24 @@ if [[ "$RESOURCE_GROUP" == *"<"* ]] || [[ "$BASTION_NAME" == *"<"* ]]; then
     exit 1
 fi
 
+# Passwords are embedded in mongosh commands and in the app's
+# MONGODB_URI, so reject characters that would break shell/JS quoting or the
+# connection string (Issue #36).
+check_password() {
+    local name="$1" value="$2"
+    if [[ "$value" == *"<"* ]] || [ -z "$value" ]; then
+        log_error "Set $name in the Configuration section."
+        exit 1
+    fi
+    if [[ "$value" =~ [[:space:]\'\"\`\$\\@:/%] ]]; then
+        log_error "$name contains a character that is not supported here (space ' \" \` \$ \\ @ : / %)."
+        log_error "Use letters, digits and symbols such as - _ . ! # * + =. APP_PASSWORD must equal mongoDbAppPassword in Bicep."
+        exit 1
+    fi
+}
+check_password ADMIN_PASSWORD "$ADMIN_PASSWORD"
+check_password APP_PASSWORD "$APP_PASSWORD"
+
 # SSH key preflight (Issue #32): az network bastion ssh cannot prompt for a
 # key passphrase reliably, so a protected key must be loaded into ssh-agent.
 SSH_KEY="${SSH_KEY/#\~/$HOME}"
@@ -276,22 +296,48 @@ log_info "Step 3: Initializing MongoDB replica set..."
 RS_HOSTS="$DB_VM1_IP:27017,$DB_VM2_IP:27017,$DB_VM3_IP:27017"
 RS_URI="mongodb://$RS_HOSTS/?replicaSet=$REPLICA_SET_NAME"
 
+# Access control (Issue #36): mongod starts with security.keyFile and
+# authorization enabled, so before the first user exists only the
+# "localhost exception" applies: a client on the DB VM itself may run
+# rs.initiate() and create the FIRST user (on the PRIMARY). db.hello() never
+# needs authentication. Everything after the admin user exists authenticates.
+# https://www.mongodb.com/docs/manual/core/localhost-exception/
+# AWS comparison: Amazon DocumentDB always requires authentication; on
+# self-managed MongoDB (EC2 or Azure VMs) you have to turn it on yourself.
+#
+# The admin password is passed with --password inside the remote command.
+# It is never printed (outputs are masked), but it is briefly visible in the
+# DB VM's process list; for production prefer an interactive prompt or a
+# secret store such as Azure Key Vault.
+MONGO_ADMIN_AUTH="--username \"$ADMIN_USER\" --password \"$ADMIN_PASSWORD\" --authenticationDatabase admin"
+
+# Map a "host:port" from db.hello().primary to the DB VM resource ID/name.
+db_vm_for_host() {
+    case "$1" in
+        "$DB_VM1_IP:27017") echo "$DB_VM1_ID $DB_VM1_NAME" ;;
+        "$DB_VM2_IP:27017") echo "$DB_VM2_ID $DB_VM2_NAME" ;;
+        "$DB_VM3_IP:27017") echo "$DB_VM3_ID $DB_VM3_NAME" ;;
+        *) echo "" ;;
+    esac
+}
+
 # Check whether the replica set is already initialized (idempotency).
-# rs.conf() throws NotYetInitialized on a fresh node.
-bastion_run "$DB_VM1_ID" "mongosh --quiet --eval 'try { print(\"RSSTATE initialized \" + rs.conf().members.length) } catch (e) { print(\"RSSTATE uninitialized \" + e.codeName) }'"
+# db.hello() reports setName/hosts once a config exists, without auth
+# (rs.conf() would need a user once access control is active).
+bastion_run "$DB_VM1_ID" "mongosh --quiet --eval 'const h = db.hello(); print(h.setName ? \"RSSTATE initialized \" + (h.hosts || []).length : \"RSSTATE uninitialized -\")'"
 RS_STATE_LINE=$(printf '%s\n' "$BASTION_OUT" | grep '^RSSTATE ' | tail -1 || true)
 log_info "Replica set state on $DB_VM1_NAME: ${RS_STATE_LINE:-unknown}"
 
 if [[ "$RS_STATE_LINE" == "RSSTATE initialized "* ]]; then
     RS_MEMBER_COUNT="${RS_STATE_LINE##* }"
-    log_warning "Replica set already initialized ($RS_MEMBER_COUNT members), skipping rs.initiate."
+    log_warning "Replica set already initialized ($RS_MEMBER_COUNT electable members), skipping rs.initiate."
     if [ "$RS_MEMBER_COUNT" != "3" ]; then
         # Never force-reconfigure here: adding a member to a live set must be
         # done with rs.add() after the new VM is ready (runbook 7.2).
         log_warning "Expected 3 members. For an existing 2-node set, follow troubleshooting runbook 7.2 (rs.add, wait for initial sync)."
     fi
 elif [[ "$RS_STATE_LINE" == "RSSTATE uninitialized "* ]]; then
-    log_info "Initializing replica set $REPLICA_SET_NAME with 3 members..."
+    log_info "Initializing replica set $REPLICA_SET_NAME with 3 members (localhost exception)..."
 
     # All 3 members are data-bearing, voting (votes: 1) and electable
     # (priority > 0). vm-db-az1 gets priority 2 only to make the INITIAL
@@ -314,7 +360,8 @@ elif [[ "$RS_STATE_LINE" == "RSSTATE uninitialized "* ]]; then
     if [ "$RS_INIT_LINE" != "RSINIT ok=1" ]; then
         log_error "rs.initiate failed on $DB_VM1_NAME: ${RS_INIT_LINE:-no answer (exit code $BASTION_RC)}"
         printf '%s\n' "$BASTION_OUT" | mask_secrets | tail -10 | sed 's/^/    /'
-        log_error "Check that all 3 DB VMs can reach each other on port 27017 (NSG, mongod bindIp), then re-run this script."
+        log_error "Check that all 3 DB VMs can reach each other on port 27017 (NSG, mongod bindIp)"
+        log_error "and use the same keyFile (mongoDbReplicaSetKey), then re-run this script."
         exit 1
     fi
     log_success "Replica set initiated"
@@ -324,20 +371,23 @@ else
     exit 1
 fi
 
-# Wait until the set is healthy: exactly 1 PRIMARY and 2 SECONDARY.
-# (Replaces a fixed sleep: initial sync of an empty set takes ~10-30s.)
-log_info "Waiting for 1 PRIMARY + 2 SECONDARY (up to 3 minutes)..."
-bastion_run "$DB_VM1_ID" "mongosh --quiet --eval 'for (let i = 0; i < 36; i++) { let p = 0, s = 0; try { rs.status().members.forEach(m => { if (m.stateStr === \"PRIMARY\") p++; if (m.stateStr === \"SECONDARY\") s++; }); } catch (e) {} if (p === 1 && s === 2) { print(\"RSHEALTH ok\"); quit(0); } sleep(5000); } print(\"RSHEALTH timeout\"); rs.status().members.forEach(m => print(\"  \" + m.name + \" \" + m.stateStr + \" health=\" + m.health));'"
-RS_HEALTH=$(printf '%s\n' "$BASTION_OUT" | grep '^RSHEALTH ' | tail -1 || true)
-if [ "$RS_HEALTH" = "RSHEALTH ok" ]; then
-    log_success "Replica set healthy: 1 PRIMARY + 2 SECONDARY"
-else
+# Wait for a PRIMARY (db.hello() needs no auth). The first user must be
+# created on the PRIMARY, through a localhost connection on that VM.
+log_info "Waiting for a PRIMARY to be elected (up to 3 minutes)..."
+bastion_run "$DB_VM1_ID" "mongosh --quiet --eval 'for (let i = 0; i < 36; i++) { const h = db.hello(); if (h.primary) { print(\"RSPRIMARY \" + h.primary); quit(0); } sleep(5000); } print(\"RSPRIMARY none\")'"
+RS_PRIMARY_LINE=$(printf '%s\n' "$BASTION_OUT" | grep '^RSPRIMARY ' | tail -1 || true)
+RS_PRIMARY_HOST="${RS_PRIMARY_LINE#RSPRIMARY }"
+read -r PRIMARY_VM_ID PRIMARY_VM_NAME <<< "$(db_vm_for_host "$RS_PRIMARY_HOST")"
+if [ -z "${PRIMARY_VM_ID:-}" ]; then
     # Users cannot be created without a PRIMARY, so stop here (Issue #32).
-    log_error "Replica set did not reach 1 PRIMARY + 2 SECONDARY within 3 minutes (${RS_HEALTH:-no answer, exit code $BASTION_RC})."
-    printf '%s\n' "$BASTION_OUT" | grep '^  ' | mask_secrets
+    log_error "No PRIMARY was elected within 3 minutes (${RS_PRIMARY_LINE:-no answer, exit code $BASTION_RC})."
+    printf '%s\n' "$BASTION_OUT" | mask_secrets | tail -5 | sed 's/^/    /'
+    log_error "Typical causes: a DB VM is down, port 27017 is blocked between DB VMs, or the DB VMs have"
+    log_error "different keyfiles (sudo journalctl -u mongod; grep -i keyfile /data/mongodb/log/mongod.log)."
     log_error "See troubleshooting runbook section 7, then re-run this script (it is safe to re-run)."
     exit 1
 fi
+log_success "PRIMARY is $RS_PRIMARY_HOST ($PRIMARY_VM_NAME)"
 
 # -----------------------------------------------------------------------------
 # Step 4: Create MongoDB Admin User
@@ -359,36 +409,58 @@ check_user_result() {
             ;;
     esac
 }
-# Connect with the replica set URI so the write goes to the current PRIMARY
-# (createUser uses w:"majority" by default on a replica set).
 
-# Prints "USER created|exists" or "USER error ..." so the result is checked
-# instead of assumed; any other failure stops the script (Issue #32).
-bastion_run "$DB_VM1_ID" "mongosh --quiet \"$RS_URI\" --eval '
-    try {
-        db = db.getSiblingDB(\"admin\");
-        if (db.getUser(\"$ADMIN_USER\") === null) {
-            db.createUser({
+# Re-run safe: if the admin can already authenticate, keep it. Otherwise
+# create it through the localhost exception (only possible while NO user
+# exists yet). Prints "USER created|exists" or "USER error ..." (Issue #32).
+bastion_run "$PRIMARY_VM_ID" "mongosh --quiet --eval '
+    const adm = db.getSiblingDB(\"admin\");
+    let authed = false;
+    try { const r = adm.auth(\"$ADMIN_USER\", \"$ADMIN_PASSWORD\"); authed = Boolean(r && r.ok); } catch (e) {}
+    if (authed) {
+        print(\"USER exists\");
+    } else {
+        try {
+            adm.createUser({
                 user: \"$ADMIN_USER\",
                 pwd: \"$ADMIN_PASSWORD\",
-                roles: [
-                    { role: \"root\", db: \"admin\" }
-                ]
+                roles: [ { role: \"root\", db: \"admin\" } ]
             });
             print(\"USER created\");
-        } else {
-            print(\"USER exists\");
+        } catch (e) {
+            if (e.codeName === \"Unauthorized\" || e.code === 51003) {
+                print(\"USER error \" + e.codeName + \": a user already exists but $ADMIN_USER could not log in. ADMIN_PASSWORD must be the value used on the first run.\");
+            } else {
+                print(\"USER error \" + e.codeName + \": \" + e.message);
+            }
         }
-    } catch (e) { print(\"USER error \" + e.codeName + \": \" + e.message) }
+    }
 '"
 check_user_result "admin user $ADMIN_USER"
+
+# From here on every mongosh call authenticates as the admin user.
+# Wait until the set is healthy: exactly 1 PRIMARY and 2 SECONDARY.
+# (Replaces a fixed sleep: initial sync of an empty set takes ~10-30s.)
+log_info "Waiting for 1 PRIMARY + 2 SECONDARY (up to 3 minutes)..."
+bastion_run "$DB_VM1_ID" "mongosh --quiet $MONGO_ADMIN_AUTH --eval 'for (let i = 0; i < 36; i++) { let p = 0, s = 0; try { rs.status().members.forEach(m => { if (m.stateStr === \"PRIMARY\") p++; if (m.stateStr === \"SECONDARY\") s++; }); } catch (e) {} if (p === 1 && s === 2) { print(\"RSHEALTH ok\"); quit(0); } sleep(5000); } print(\"RSHEALTH timeout\"); rs.status().members.forEach(m => print(\"  \" + m.name + \" \" + m.stateStr + \" health=\" + m.health));'"
+RS_HEALTH=$(printf '%s\n' "$BASTION_OUT" | grep '^RSHEALTH ' | tail -1 || true)
+if [ "$RS_HEALTH" = "RSHEALTH ok" ]; then
+    log_success "Replica set healthy: 1 PRIMARY + 2 SECONDARY"
+else
+    log_error "Replica set did not reach 1 PRIMARY + 2 SECONDARY within 3 minutes (${RS_HEALTH:-no answer, exit code $BASTION_RC})."
+    printf '%s\n' "$BASTION_OUT" | mask_secrets | tail -6 | sed 's/^/    /'
+    log_error "See troubleshooting runbook section 7, then re-run this script (it is safe to re-run)."
+    exit 1
+fi
 
 # -----------------------------------------------------------------------------
 # Step 5: Create MongoDB Application User
 # -----------------------------------------------------------------------------
 log_info "Step 5: Creating MongoDB application user..."
 
-bastion_run "$DB_VM1_ID" "mongosh --quiet \"$RS_URI\" --eval '
+# Connect with the replica set URI so the write goes to the current PRIMARY
+# (createUser uses w:"majority" by default on a replica set).
+bastion_run "$DB_VM1_ID" "mongosh --quiet \"$RS_URI\" $MONGO_ADMIN_AUTH --eval '
     try {
         db = db.getSiblingDB(\"blogapp\");
         if (db.getUser(\"$APP_USER\") === null) {
@@ -414,7 +486,17 @@ log_info "Step 6: Verifying configuration..."
 
 # Verify replica set status
 log_info "Checking replica set status..."
-bastion_show "$DB_VM1_ID" "mongosh --quiet --eval 'rs.status().members.forEach(m => print(m.name + \": \" + m.stateStr + \" (health=\" + m.health + \")\"))'"
+bastion_show "$DB_VM1_ID" "mongosh --quiet $MONGO_ADMIN_AUTH --eval 'rs.status().members.forEach(m => print(m.name + \": \" + m.stateStr + \" (health=\" + m.health + \")\"))'"
+
+# Access control check: an unauthenticated client must be rejected.
+bastion_run "$DB_VM1_ID" "mongosh --quiet --eval 'try { db.getSiblingDB(\"blogapp\").posts.findOne(); print(\"AUTHCHECK open\") } catch (e) { print(\"AUTHCHECK \" + e.codeName) }'"
+AUTH_CHECK=$(printf '%s\n' "$BASTION_OUT" | grep '^AUTHCHECK ' | tail -1 || true)
+if [ "$AUTH_CHECK" = "AUTHCHECK Unauthorized" ]; then
+    log_success "Access control is active: unauthenticated reads are rejected"
+else
+    log_warning "Unauthenticated read was not rejected (${AUTH_CHECK:-no answer})."
+    log_warning "mongod is running without authorization. Existing environment? See troubleshooting runbook 7.3 (enable access control)."
+fi
 log_info "Expected: 3 members = 1 PRIMARY + 2 SECONDARY (10.0.3.4 is normally PRIMARY)."
 
 # -----------------------------------------------------------------------------

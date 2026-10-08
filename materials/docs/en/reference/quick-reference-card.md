@@ -67,6 +67,7 @@ VM names do not change per group; always specify `--resource-group`.
 | `sslCertificateData` | Base64 encoded PFX | `cat cert-base64.txt` |
 | `sslCertificatePassword` | PFX password | Default `Workshop2024!` |
 | `mongoDbAppPassword` | MongoDB app user password | Same as post-deployment setup. Do not use `@` |
+| `mongoDbReplicaSetKey` | MongoDB replica set key (keyFile) | `openssl rand -base64 756 \| tr -d '\n'`. Keep the same value on redeployments |
 | `appGatewayDnsLabel` | Application Gateway FQDN DNS label | Example: `blogapp-team1-0106` |
 
 ## Common Cloud Shell Commands
@@ -97,13 +98,14 @@ Use `az vm stop` for workshop failure simulation. Do not use `az vm deallocate` 
 ### MongoDB Replica Set Status
 
 ```bash
+read -rsp 'MongoDB admin password: ' MONGO_ADMIN_PASSWORD; echo
 az vm run-command invoke -g "$RESOURCE_GROUP" -n vm-db-az1-prod \
   --command-id RunShellScript \
-  --scripts "mongosh --quiet --eval 'rs.status().members.map(m => m.name + \" \" + m.stateStr)'" \
+  --scripts "mongosh -u blogadmin -p '$MONGO_ADMIN_PASSWORD' --authenticationDatabase admin --quiet --eval 'rs.status().members.map(m => m.name + \" \" + m.stateStr)'" \
   --query "value[0].message" -o tsv
 ```
 
-Healthy output is one PRIMARY and two SECONDARY members. With one node down, an automatic election keeps writes working; with two nodes down, the majority is lost and writes stop.
+MongoDB requires authentication (Issue #36), so first enter the password of the admin user `blogadmin`. Healthy output is one PRIMARY and two SECONDARY members. With one node down, an automatic election keeps writes working; with two nodes down, the majority is lost and writes stop.
 
 ### Application Gateway FQDN
 

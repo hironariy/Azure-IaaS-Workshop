@@ -72,6 +72,10 @@ param dataCollectionRuleId string = ''
 @description('Custom script to run on VM startup (base64 encoded)')
 param customScriptContent string = ''
 
+@description('Custom script that contains secrets (base64 encoded). Sent as protectedSettings, so it is encrypted and never returned by the API or shown in the instance view. Used instead of customScriptContent when set (Issue #36).')
+@secure()
+param protectedCustomScriptContent string = ''
+
 @description('Force update tag to trigger script re-execution (change value to re-run script)')
 param forceUpdateTag string = ''
 
@@ -91,6 +95,20 @@ var defaultTags = {
   ManagedBy: 'Bicep'
 }
 var allTags = union(defaultTags, tags)
+
+// Custom Script Extension: public "settings" are readable by anyone with
+// read access to the VM (portal, az vm extension show, instance view).
+// A script that embeds a secret (DB tier: MongoDB keyFile, Issue #36) goes to
+// "protectedSettings" instead, which the platform encrypts and only the VM
+// can decrypt. AWS comparison: like passing secrets via SSM Parameter Store
+// SecureString instead of plain EC2 user data.
+// https://learn.microsoft.com/azure/virtual-machines/extensions/custom-script-linux#extension-schema
+// Note: Azure cannot compare protectedSettings with the deployed values, so
+// the CustomScript may re-run on redeployments; the DB script is rerun-safe
+// (Issue #39).
+var hasCustomScript = !empty(customScriptContent) || !empty(protectedCustomScriptContent)
+var customScriptSettings = empty(protectedCustomScriptContent) ? { script: customScriptContent } : {}
+var customScriptProtectedSettings = empty(protectedCustomScriptContent) ? null : { script: protectedCustomScriptContent }
 
 // Ubuntu 24.04 LTS image reference
 var imageReference = {
@@ -344,9 +362,11 @@ resource dcrAssociationExisting 'Microsoft.Insights/dataCollectionRuleAssociatio
 // Custom Script Extension (Optional)
 // =============================================================================
 // Runs custom setup script on VM (e.g., install NGINX, Node.js, MongoDB)
+// Script location: settings (public) or protectedSettings (secret), see the
+// variables above.
 // =============================================================================
 
-resource customScriptNew 'Microsoft.Compute/virtualMachines/extensions@2023-09-01' = if (!skipVmCreation && !empty(customScriptContent)) {
+resource customScriptNew 'Microsoft.Compute/virtualMachines/extensions@2023-09-01' = if (!skipVmCreation && hasCustomScript) {
   parent: vm
   name: 'CustomScript'
   location: location
@@ -357,16 +377,15 @@ resource customScriptNew 'Microsoft.Compute/virtualMachines/extensions@2023-09-0
     typeHandlerVersion: '2.1'
     autoUpgradeMinorVersion: true
     forceUpdateTag: !empty(forceUpdateTag) ? forceUpdateTag : null
-    settings: {
-      script: customScriptContent
-    }
+    settings: customScriptSettings
+    protectedSettings: customScriptProtectedSettings
   }
   dependsOn: [
     amaExtensionNew
   ]
 }
 
-resource customScriptExisting 'Microsoft.Compute/virtualMachines/extensions@2023-09-01' = if (skipVmCreation && !empty(customScriptContent)) {
+resource customScriptExisting 'Microsoft.Compute/virtualMachines/extensions@2023-09-01' = if (skipVmCreation && hasCustomScript) {
   parent: existingVm
   name: 'CustomScript'
   location: location
@@ -377,9 +396,8 @@ resource customScriptExisting 'Microsoft.Compute/virtualMachines/extensions@2023
     typeHandlerVersion: '2.1'
     autoUpgradeMinorVersion: true
     forceUpdateTag: !empty(forceUpdateTag) ? forceUpdateTag : null
-    settings: {
-      script: customScriptContent
-    }
+    settings: customScriptSettings
+    protectedSettings: customScriptProtectedSettings
   }
   dependsOn: [
     amaExtensionExisting
