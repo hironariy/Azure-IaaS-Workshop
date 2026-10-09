@@ -34,6 +34,7 @@ Day 2 の Backup、Restore、HA 検証、Azure Site Recovery (ASR) の背景を�
 - ASR test failover は分離ネットワークで実行します。
 - Test failover 後は必ず cleanup を実行します。
 - ASR 初回レプリケーションが長引く場合は、講師デモまたは設計ウォークスルーへ切り替えます。
+- **講師向け事前確認:** ワークショップ前に検証用 VM で `uname -r` を確認し、Mobility service の[対応カーネル一覧](https://github.com/Azure/Azure-SiteRecovery/tree/main/MobilityAgent/AzureToAzure/SupportedKernels)に含まれているか確認します。Ubuntu のローリングカーネル更新により一覧より先行することがあり、Enable replication がエラー 151141 で失敗する場合があります（対処: [トラブルシューティングランブック §10.1](troubleshooting-runbook.ja.md#101-エラー-151141カーネルが-mobility-service-未対応への対処)）。
 
 ## 3. Azure Backup の考え方
 

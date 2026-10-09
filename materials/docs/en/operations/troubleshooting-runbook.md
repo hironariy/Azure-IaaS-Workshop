@@ -516,7 +516,25 @@ Heartbeat
 | Backup job slow | Initial backup | Use only representative VMs if instructor says so |
 | ASR initial replication slow | Replication health and progress | Switch to instructor demo or design walkthrough |
 | Enabling ASR fails with `does not allow key based authentication and it does not have vault Managed System Identity configured` (28176) | Whether organization policy disables shared key access on the cache Storage account | Turn on the vault's system-assigned managed identity (vault > Identity), then assign it Contributor and Storage Blob Data Contributor on the cache Storage account. With Contributor only, ask the instructor to create the assignments (Day 0 Step 3.1). [Microsoft Learn](https://learn.microsoft.com/azure/site-recovery/asr-turn-off-key-authentication-cache) |
+| Enable replication fails with `151141: ... version of mobility service doesn't support the operating system kernel version (...) running on the source machine` | Whether `uname -r` on the source VM is in the Mobility service's supported-kernel list for the installed agent build ([Azure/Azure-SiteRecovery `MobilityAgent/AzureToAzure/SupportedKernels`](https://github.com/Azure/Azure-SiteRecovery/tree/main/MobilityAgent/AzureToAzure/SupportedKernels)). Common when Ubuntu 24.04's rolling `linux-azure` kernel (or the DB tier's `linux-azure-lts-24.04` kernel) ships ahead of an updated supported-kernel list | Run the official kernel-module hotfix in §10.1, then disable/remove the failed replicated item and enable replication again |
 | Test failover resources remain | Cleanup test failover | Run cleanup from Recovery Services vault |
+
+### 10.1 Error 151141 (Kernel Not Yet Supported By Mobility Service)
+
+The Mobility service agent compares the VM's exact kernel version against the supported-kernel list for the build it installed. When a new kernel patch ships (Ubuntu's `linux-azure`, or the DB tier's `linux-azure-lts-24.04`) ahead of an updated list on GitHub, Enable replication fails with 151141. Microsoft's published kernel-module hotfix ([aka.ms/asr-linux-kernel-module](https://aka.ms/asr-linux-kernel-module)) resolves it; run it **after** the failed attempt, since the agent is already installed by then.
+
+```bash
+sudo -i
+mkdir -p /root/asr-drivers && cd /root/asr-drivers
+wget https://raw.githubusercontent.com/Azure/Azure-SiteRecovery/main/MobilityAgent/hotfix_install.sh \
+     https://raw.githubusercontent.com/Azure/Azure-SiteRecovery/main/MobilityAgent/OS_details.sh
+chmod +x hotfix_install.sh OS_details.sh
+./hotfix_install.sh /root/asr-drivers/
+```
+
+You can also run this with `az vm run-command invoke --command-id RunShellScript` instead of SSH. After the hotfix, disable/remove the failed replicated item and re-run Enable replication.
+
+**Instructor pre-check:** Before the workshop, check `uname -r` on a freshly deployed Web/App/DB VM and compare it against the [supported-kernel list](https://github.com/Azure/Azure-SiteRecovery/tree/main/MobilityAgent/AzureToAzure/SupportedKernels). Ubuntu's rolling kernel updates can outpace the published list by the workshop date. If so, fold this procedure into the Day 2 Step 11 introduction.
 
 ## Next
 

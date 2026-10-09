@@ -81,6 +81,7 @@ Backup-heavy recovery is simpler but often has larger RTO. Replication/failover 
 - Clean up test failover resources.
 - Confirm all stopped VMs are running again.
 - Do not leave duplicate restored VMs unless the instructor explicitly wants them.
+- **Instructor pre-check:** Before the workshop, run `uname -r` on a representative VM and compare it against the Mobility service's [supported-kernel list](https://github.com/Azure/Azure-SiteRecovery/tree/main/MobilityAgent/AzureToAzure/SupportedKernels). Ubuntu's rolling kernel updates can outpace that list, causing Enable replication to fail with error 151141 (fix: [troubleshooting runbook §10.1](troubleshooting-runbook.md#101-error-151141-kernel-not-yet-supported-by-mobility-service)).
 
 ## Related Pages
 

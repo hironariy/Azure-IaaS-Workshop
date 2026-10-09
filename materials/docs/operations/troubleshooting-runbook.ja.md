@@ -611,7 +611,25 @@ Heartbeat
 | Backup job が遅い | 初回バックアップかどうか | 講師の指示に従い、代表 VM のみで進める |
 | ASR initial replication が終わらない | Replication health と進捗 | Test failover は講師デモまたは設計説明に切り替える |
 | ASR の有効化が `does not allow key based authentication and it does not have vault Managed System Identity configured`（28176）で失敗する | キャッシュ Storage アカウントの共有キー アクセスが組織ポリシーで無効化されていないか | vault の Identity でシステム割り当てマネージド ID を有効にし、そのマネージド ID にキャッシュ Storage アカウントの共同作成者と Storage BLOB データ共同作成者を割り当てる。共同作成者（Contributor）のみの場合は講師に割り当てを依頼する（Day 0 Step 3.1）。[Microsoft Learn](https://learn.microsoft.com/azure/site-recovery/asr-turn-off-key-authentication-cache) |
+| Enable replication が `151141: ... version of mobility service doesn't support the operating system kernel version (...) running on the source machine` で失敗する | `uname -r` の値が、vault に入っている Mobility service のビルドが対応するカーネル一覧（[Azure/Azure-SiteRecovery `MobilityAgent/AzureToAzure/SupportedKernels`](https://github.com/Azure/Azure-SiteRecovery/tree/main/MobilityAgent/AzureToAzure/SupportedKernels)）に含まれているか。Ubuntu 24.04 の rolling kernel（`linux-azure`）や、新しいカーネルパッチが先行して配布されている場合に起きやすい | §10.1 の公式カーネルモジュール ホットフィックスを実行してから、失敗した replicated item を disable/remove し、Enable replication をやり直す |
 | Test failover リソースが残った | Cleanup test failover 実行有無 | Recovery Services vault から cleanup を実行 |
+
+### 10.1 エラー 151141（カーネルが Mobility service 未対応）への対処
+
+Mobility service のエージェントは、インストール時点のビルドが対応する**正確な**カーネルバージョンのリストと VM のカーネルを比較します。新しいカーネルパッチ（Ubuntu の `linux-azure`、または DB VM の `linux-azure-lts-24.04`）が、GitHub 上の最新対応リストより先に配信されると、Enable replication が 151141 で失敗します。Microsoft が公開しているカーネルモジュール ホットフィックス（[aka.ms/asr-linux-kernel-module](https://aka.ms/asr-linux-kernel-module)）を、失敗後（エージェントは既にインストール済み）に実行すると解消します。
+
+```bash
+sudo -i
+mkdir -p /root/asr-drivers && cd /root/asr-drivers
+wget https://raw.githubusercontent.com/Azure/Azure-SiteRecovery/main/MobilityAgent/hotfix_install.sh \
+     https://raw.githubusercontent.com/Azure/Azure-SiteRecovery/main/MobilityAgent/OS_details.sh
+chmod +x hotfix_install.sh OS_details.sh
+./hotfix_install.sh /root/asr-drivers/
+```
+
+SSH の代わりに `az vm run-command invoke --command-id RunShellScript` でも実行できます。ホットフィックス適用後、失敗した replicated item を disable/remove してから Enable replication を再実行します。
+
+**講師向け事前確認:** ワークショップ開始前に、Web/App/DB の各テンプレートから起動した検証用 VM で `uname -r` を確認し、[対応カーネル一覧](https://github.com/Azure/Azure-SiteRecovery/tree/main/MobilityAgent/AzureToAzure/SupportedKernels)に含まれているか確認します（Ubuntu のローリングカーネル更新により、ワークショップ当日時点のカーネルが一覧に未反映のことがあります）。未対応の場合は、本手順を Day 2 Step 11 の事前説明に組み込みます。
 
 ## 次に進む
 
