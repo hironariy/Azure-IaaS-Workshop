@@ -174,9 +174,9 @@ chmod 644 ~/.ssh/id_rsa.pub
 | VM boot diagnostics | Virtual machines > target VM > Boot diagnostics |
 | Log Analytics | Log Analytics workspace > Logs |
 | DCR | Monitor > Data Collection Rules |
-| Backup | Recovery Services vault > Backup items |
-| Backup job | Recovery Services vault > Backup jobs |
-| ASR replication | Recovery Services vault > Site Recovery > Replicated items |
+| Backup | `rsv-blogapp-backup` in the VM region > Backup items |
+| Backup job | `rsv-blogapp-backup` > Backup jobs |
+| ASR replication | `rsv-blogapp-dr` in a target region different from the source > Site Recovery > Replicated items |
 | Entra app registrations | Microsoft Entra ID > App registrations |
 
 ## KQL Starters

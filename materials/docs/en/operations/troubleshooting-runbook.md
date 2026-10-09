@@ -512,7 +512,8 @@ Heartbeat
 
 | Symptom | Check | Action |
 |---|---|---|
-| Backup item missing | Vault and VM selection | Recheck Backup enablement |
+| Backup item missing | Whether `rsv-blogapp-backup` and the VMs are in the same region, and VM selection | Recheck Backup enablement |
+| ASR source region or VMs cannot be selected | Whether you opened the Backup vault or a vault in the source region | Use `rsv-blogapp-dr` in a recovery target region different from the source. See [Day 2 Step 2](../learner/day-2-resiliency-checklist.md#2-create-separate-recovery-services-vaults-for-backup-and-asr) |
 | Backup job slow | Initial backup | Use only representative VMs if instructor says so |
 | ASR initial replication slow | Replication health and progress | Switch to instructor demo or design walkthrough |
 | Enabling ASR fails with `does not allow key based authentication and it does not have vault Managed System Identity configured` (28176) | Whether organization policy disables shared key access on the cache Storage account | Turn on the vault's system-assigned managed identity (vault > Identity), then assign it Contributor and Storage Blob Data Contributor on the cache Storage account. With Contributor only, ask the instructor to create the assignments (Day 0 Step 3.1). [Microsoft Learn](https://learn.microsoft.com/azure/site-recovery/asr-turn-off-key-authentication-cache) |

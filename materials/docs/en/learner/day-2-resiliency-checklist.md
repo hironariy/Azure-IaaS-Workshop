@@ -53,24 +53,34 @@ az vm list --resource-group "$RESOURCE_GROUP" -o table
 
 **Checkpoint:** Do not put personal or confidential information in test posts.
 
-## 2. Create A Recovery Services Vault
+## 2. Create Separate Recovery Services Vaults For Backup And ASR
 
-Day 1 Bicep does not create Recovery Services vault, Azure Backup, or ASR resources. Create the vault in Azure Portal.
+Day 1 Bicep does not create Recovery Services vault, Azure Backup, or ASR resources. Create **two vaults** in Azure Portal. Azure VM Backup requires its vault in the same region as the VMs, while cross-region ASR requires its vault outside the source region. This exercise places the ASR vault in the recovery target region.
+
+| Purpose | Example Vault Name | Region |
+|---|---|---|
+| Azure Backup (Steps 3-6) | `rsv-blogapp-backup` | Day 1 VM `LOCATION` (default example: Japan West / `japanwest`) |
+| Azure Site Recovery (Steps 11-12) | `rsv-blogapp-dr` | Recovery target region, different from the source (default example: Japan East / `japaneast`) |
+
+Record the instructor-specified target region and use it again in Step 11. If Day 1 was deployed in Japan East, use Japan West or another different region as the target.
 
 1. Search for **Recovery Services vaults** in Azure Portal.
 2. Select **Create**.
 3. Use the same subscription and resource group as Day 1.
-4. Use a name such as `rsv-blogapp-workshop`.
-5. Use the same region as Day 1 `LOCATION`.
+4. Name the vault `rsv-blogapp-backup`.
+5. Use the same region as the Day 1 VM `LOCATION`.
 6. Review and create.
+7. Repeat to create `rsv-blogapp-dr` in the recorded target region. Vaults in the same resource group can have different regions.
 
-**Expected Result:** A Recovery Services vault is created.
+**Expected Result:** The Backup vault is in the source region and the ASR vault is in the recovery target region.
 
-**Checkpoint:** The `backups` container in the Bicep-created storage account is different from Recovery Services vault. Azure VM Backup and ASR are managed from Recovery Services vault.
+**Checkpoint:** The `backups` container in the Bicep-created storage account is different from a Recovery Services vault. If you already use a same-region vault for Backup, keep it and add only the ASR vault in a different region. See the official placement requirements for [Azure Backup](https://learn.microsoft.com/azure/backup/backup-create-recovery-services-vault) and [Azure-to-Azure Site Recovery](https://learn.microsoft.com/azure/site-recovery/azure-to-azure-tutorial-enable-replication).
+
+> **AWS comparison:** An Azure Backup vault is comparable to an AWS Backup vault. ASR is closer to AWS Elastic Disaster Recovery, where DR is configured in the recovery target region. Treat backup and regional DR as separate purposes with different placement requirements.
 
 ## 3. Enable Azure Backup
 
-1. Open the Recovery Services vault.
+1. Open the Backup vault `rsv-blogapp-backup`.
 2. Select **Backup**.
 3. Use **Azure** as workload location and **Virtual machine** as workload type.
 4. Create or select a short-retention policy for the workshop.
@@ -92,7 +102,7 @@ Day 1 Bicep does not create Recovery Services vault, Azure Backup, or ASR resour
 
 ## 4. Run On-Demand Backup
 
-1. Open Recovery Services vault > Backup items.
+1. Open the Backup vault `rsv-blogapp-backup` > Backup items.
 2. Select the target VM.
 3. Run **Backup now**.
 4. Check progress in Backup jobs.
@@ -107,7 +117,7 @@ Day 1 Bicep does not create Recovery Services vault, Azure Backup, or ASR resour
 
 ## 5. Check Restore Points
 
-1. Open the target backup item.
+1. Open the target backup item in the Backup vault `rsv-blogapp-backup`.
 2. Open **Restore VM** or **Restore points**.
 3. Confirm that a recent restore point exists.
 
@@ -350,11 +360,11 @@ az vm start --resource-group "$RESOURCE_GROUP" --name <VM_NAME>
 
 ASR can take time, so this may be an instructor demo or a representative-VM exercise.
 
-1. Open the Recovery Services vault.
+1. Open the ASR vault `rsv-blogapp-dr` created in the target region in Step 2. Do not use the Backup vault.
 2. Open **Site Recovery**.
 3. Select **Enable replication**.
 4. Select the Day 1 source resource group and region.
-5. Select the instructor-specified target region.
+5. Select the target region recorded in Step 2 (`japaneast` if the source is `japanwest`). Confirm it differs from the source and matches the ASR vault's region.
 6. Review target VNet/subnet mapping.
 7. Select the representative VM or instructor-specified VMs.
 8. Check the extension update setting under advanced settings. With Owner or User Access Administrator, you can keep "Allow Site Recovery to manage". **With the Contributor role only, choose to manage updates manually** (the role assignment for the auto-update Automation account would fail; see Day 0 Step 3.1). If organization policy disables shared key access on Storage, the cache Storage account also needs role assignments (error 28176, see [troubleshooting runbook §10](../operations/troubleshooting-runbook.md#10-backup-or-asr-does-not-progress)).
@@ -368,7 +378,7 @@ ASR can take time, so this may be an instructor demo or a representative-VM exer
 
 Test failover uses an isolated network to avoid production impact.
 
-1. Open the replicated item or recovery plan.
+1. Open the replicated item or recovery plan in the ASR vault `rsv-blogapp-dr`.
 2. Select **Test failover**.
 3. Select a recovery point and test VNet.
 4. Start test failover.
@@ -377,9 +387,17 @@ Test failover uses an isolated network to avoid production impact.
 
 **Checkpoint:** If you do not clean up test failover, extra test resources remain and can create cost and confusion.
 
+## 13. Review Cleanup Targets
+
+Test failover cleanup does not stop replication or delete either vault. Keep both vaults and the Day 1 VMs while exercises continue. After the workshop, remove only resources that are no longer needed, under instructor guidance.
+
+1. In `rsv-blogapp-dr`, confirm **Cleanup test failover** is complete, then disable replication for replicated items no longer needed. Check remaining replica disks, cache storage, and target networks for cleanup as well.
+2. In `rsv-blogapp-backup`, use **Stop backup** and **Delete backup data** only for backup items whose recovery points are no longer needed. Also check restored VMs and related resources created in Step 6. Deleting backup data removes the ability to restore it.
+3. After removing dependent protected items, include **both vaults** in final cleanup. If soft delete, retention, immutability, or organization policy prevents immediate deletion, report remaining resources to the instructor rather than disabling protections on your own. Follow the [Recovery Services vault deletion procedure](https://learn.microsoft.com/azure/backup/backup-azure-delete-vault).
+
 ## Completion Criteria
 
-- Recovery Services vault is created.
+- The Backup vault is in the VM region, and the ASR vault is in a recovery target region different from the source.
 - Backup is enabled for target VMs and restore points are visible.
 - Web VM failure behavior is observed and the VM is started again.
 - App VM failure behavior is observed and the VM is started again.
@@ -388,6 +406,7 @@ Test failover uses an isolated network to avoid production impact.
 - You can explain why losing two nodes at once loses the majority and stops writes.
 - ASR replication health and test failover concepts are explained.
 - Test failover cleanup is complete if test failover was run.
+- Both vaults and related resources are recorded for cleanup after the workshop.
 - All 7 VMs are `VM running`.
 
 ## When Stuck

@@ -55,24 +55,34 @@ az vm list --resource-group "$RESOURCE_GROUP" -o table
 
 **チェックポイント:** 個人情報や機密情報を投稿本文に入れないでください。
 
-## 2. Recovery Services vault を作成する
+## 2. Backup 用と ASR 用の Recovery Services vault を作成する
 
-Day 1 の Bicep では Recovery Services vault、Azure Backup、ASR は作成していません。Day 2 では Azure Portal で vault を作成します。
+Day 1 の Bicep では Recovery Services vault、Azure Backup、ASR は作成していません。Day 2 では Azure Portal で用途別に **2 つの vault** を作成します。Azure VM Backup の vault は VM と同じリージョンに必要ですが、リージョン間 ASR の vault はソースリージョン以外に必要です。この演習では ASR 用 vault を復旧先リージョンに配置します。
 
-1. Azure Portal で **Recovery Services vaults** (日本語の場合は **リRecovery Services コンテナー**)を検索します。
+| 用途 | Vault name の例 | Region |
+|---|---|---|
+| Azure Backup（Step 3-6） | `rsv-blogapp-backup` | Day 1 の VM と同じ `LOCATION`（既定例: Japan West / `japanwest`） |
+| Azure Site Recovery（Step 11-12） | `rsv-blogapp-dr` | ソースとは異なる復旧先リージョン（既定例: Japan East / `japaneast`） |
+
+講師指定の復旧先リージョンを記録し、Step 11 でも同じリージョンを使います。Day 1 を Japan East にデプロイした場合は、復旧先を Japan West など別リージョンにします。
+
+1. Azure Portal で **Recovery Services vaults** (日本語の場合は **Recovery Services コンテナー**)を検索します。
 2. **Create** (日本語の場合は**作成**)をクリックします。
 3. Subscription と Resource group は Day 1 と同じものを選びます。
-4. Vault name は例として `rsv-blogapp-workshop` のようにします。
-5. Region は Day 1 の `LOCATION` と同じリージョンを選びます。
+4. Vault name を `rsv-blogapp-backup` にします。
+5. Region は Day 1 の VM の `LOCATION` と同じリージョンを選びます。
 6. Review + create で作成します。
+7. 同じ操作を繰り返し、`rsv-blogapp-dr` を記録した復旧先リージョンに作成します。同じリソースグループ内でも、vault ごとに異なるリージョンを指定できます。
 
-**期待結果:** Recovery Services vault が作成されます。
+**期待結果:** Backup 用 vault と ASR 用 vault が、それぞれソースリージョンと復旧先リージョンに作成されます。
 
-**チェックポイント:** `materials/bicep` の Storage Account にある `backups` container は、Recovery Services vault とは別物です。Azure VM Backup と ASR は Recovery Services vault で操作します。
+**チェックポイント:** `materials/bicep` の Storage Account にある `backups` container は、Recovery Services vault とは別物です。既存の同一リージョン vault を Backup に使っている場合はそのまま維持し、ASR 用 vault だけを別リージョンに追加します。配置要件は [Azure Backup](https://learn.microsoft.com/azure/backup/backup-create-recovery-services-vault) と [Azure-to-Azure Site Recovery](https://learn.microsoft.com/azure/site-recovery/azure-to-azure-tutorial-enable-replication) の公式手順を参照してください。
+
+> **AWS との比較:** Azure Backup の vault は AWS Backup vault に相当します。一方、ASR は AWS Elastic Disaster Recovery に近く、復旧先リージョンで DR を設定する考え方です。Backup とリージョン DR の用途と配置要件を分けて考えます。
 
 ## 3. Azure Backup を有効化する
 
-1. 作成した Recovery Services vault を開きます。
+1. Backup 用 vault `rsv-blogapp-backup` を開きます。
 2. **Backup** を選択します。
 3. Workload location は **Azure**、Workload type は **Virtual machine** を選びます。
 4. Backup policy はワークショップ用に短い保持期間のポリシーを作成または選択します。
@@ -94,7 +104,7 @@ Day 1 の Bicep では Recovery Services vault、Azure Backup、ASR は作成し
 
 ## 4. オンデマンドバックアップを取得する
 
-1. Recovery Services vault > Backup items を開きます。
+1. Backup 用 vault `rsv-blogapp-backup` > Backup items を開きます。
 2. 対象 VM を選択し、右クリックします。
 3. **Backup now** を実行します。
 4. Backup jobs で進捗を確認します。
@@ -111,7 +121,7 @@ Day 1 の Bicep では Recovery Services vault、Azure Backup、ASR は作成し
 
 ## 5. 復元ポイントを確認する
 
-1. 対象 backup item を開きます。
+1. Backup 用 vault `rsv-blogapp-backup` の対象 backup item を開きます。
 2. **Restore VM** または **Restore points** を開きます。
 3. 最新の復元ポイントが表示されることを確認します。
 
@@ -372,11 +382,11 @@ az vm start --resource-group "$RESOURCE_GROUP" --name <VM_NAME>
 
 ASR は時間がかかるため、講師デモまたは代表 VM での演習にする場合があります。
 
-1. Recovery Services vault を開きます。
+1. Step 2 で復旧先リージョンに作成した ASR 用 vault `rsv-blogapp-dr` を開きます。Backup 用 vault は使いません。
 2. **Site Recovery** を開きます。
 3. **Enable replication** を選択します。
 4. Source は Day 1 のリソースグループとリージョンを選びます。
-5. Target region は講師指定のリージョンを選びます。
+5. Target region は Step 2 で記録した復旧先リージョン（ソースが `japanwest` なら `japaneast`）を選びます。ソースとは異なり、ASR 用 vault と同じリージョンであることを確認します。
 6. ターゲット VNet / subnet のマッピングを確認します。
 7. 代表 VM または講師指定の VM を選択します。
 8. 詳細設定（Advanced settings）の拡張機能の更新設定を確認します。所有者（Owner）またはユーザー アクセス管理者ロールがあれば「Site Recovery に管理を許可する」のままで構いません。**共同作成者（Contributor）しかない場合は「手動で管理」**を選びます（自動更新用 Automation アカウントへのロールの割り当てが失敗するため。Day 0 Step 3.1）。組織ポリシーで Storage の共有キー アクセスが無効化されていると、キャッシュ Storage アカウントへのロールの割り当ても必要になります（エラー 28176、[トラブルシューティングランブック §10](../operations/troubleshooting-runbook.ja.md#10-day-2-の-backup--asr-が進まない)）。
@@ -392,7 +402,7 @@ ASR は時間がかかるため、講師デモまたは代表 VM での演習に
 
 Test failover は本番側に影響しない分離ネットワークで行います。
 
-1. Replicated item または Recovery Plan を開きます。
+1. ASR 用 vault `rsv-blogapp-dr` の Replicated item または Recovery Plan を開きます。
 2. **Test failover** を選択します。
 3. 復旧ポイントとテスト用 VNet を選択します。
 4. Test failover を開始します。
@@ -403,9 +413,17 @@ Test failover は本番側に影響しない分離ネットワークで行いま
 
 **チェックポイント:** Cleanup test failover を実行しないと、不要なテストリソースが残り課金や混乱の原因になります。
 
+## 13. クリーンアップ対象を確認する
+
+Test failover の cleanup は、レプリケーションの停止や vault の削除とは別です。演習を続ける間は 2 つの vault と Day 1 の VM を維持します。ワークショップ終了後、講師の指示で不要なリソースだけを削除します。
+
+1. `rsv-blogapp-dr` で **Cleanup test failover** の完了を確認し、不要になった replicated item のレプリケーションを無効化します。残ったレプリカディスク、キャッシュ Storage、復旧先ネットワークなども削除対象として確認します。
+2. `rsv-blogapp-backup` で、復元ポイントが不要になった backup item に限り **Stop backup** と **Delete backup data** を実行します。Step 6 で作成した復元 VM と関連リソースも確認します。バックアップデータの削除は復元できなくなる操作です。
+3. 依存する保護項目を除去した後、**両方の vault** を削除対象に含めます。Soft delete、保持期間、immutability、組織ポリシーによりすぐ削除できない場合は、保護設定を独断で無効化せず、講師に残存リソースを報告します。[Recovery Services vault の削除手順](https://learn.microsoft.com/azure/backup/backup-azure-delete-vault) を参照してください。
+
 ## Day 2 完了条件
 
-- Recovery Services vault を作成できた。
+- Backup 用 vault を VM と同じリージョン、ASR 用 vault をソースとは異なる復旧先リージョンに作成できた。
 - 対象 VM の Backup を有効化し、復元ポイントを確認できた。
 - Web VM 停止時の HA 挙動を確認し、VM を起動状態へ戻した。
 - App VM 停止時の HA 挙動を確認し、VM を起動状態へ戻した。
@@ -414,6 +432,7 @@ Test failover は本番側に影響しない分離ネットワークで行いま
 - 2 台を同時に失うと過半数を失い、書き込みができなくなる理由を説明できた。
 - ASR の replication health と test failover の考え方を説明できた。
 - Test failover を実施した場合は、cleanup が完了している。
+- ワークショップ終了後の削除対象として、両方の vault と関連リソースを記録した。
 - 7 台の VM がすべて `VM running` である。
 
 ## 迷ったとき

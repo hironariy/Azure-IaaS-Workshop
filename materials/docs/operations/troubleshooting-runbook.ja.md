@@ -607,7 +607,8 @@ Heartbeat
 
 | 症状 | 確認すること | 対処 |
 |---|---|---|
-| Backup item が出ない | Recovery Services vault と VM の選択 | Backup の有効化手順を再確認 |
+| Backup item が出ない | `rsv-blogapp-backup` と VM が同じリージョンか、VM の選択 | Backup の有効化手順を再確認 |
+| ASR でソースリージョンや VM を選択できない | Backup 用 vault を使っていないか、vault がソースと同じリージョンでないか | ソースとは異なる復旧先リージョンの `rsv-blogapp-dr` を使う。[Day 2 Step 2](../learner/day-2-resiliency-checklist.ja.md#2-backup-用と-asr-用の-recovery-services-vault-を作成する) を参照 |
 | Backup job が遅い | 初回バックアップかどうか | 講師の指示に従い、代表 VM のみで進める |
 | ASR initial replication が終わらない | Replication health と進捗 | Test failover は講師デモまたは設計説明に切り替える |
 | ASR の有効化が `does not allow key based authentication and it does not have vault Managed System Identity configured`（28176）で失敗する | キャッシュ Storage アカウントの共有キー アクセスが組織ポリシーで無効化されていないか | vault の Identity でシステム割り当てマネージド ID を有効にし、そのマネージド ID にキャッシュ Storage アカウントの共同作成者と Storage BLOB データ共同作成者を割り当てる。共同作成者（Contributor）のみの場合は講師に割り当てを依頼する（Day 0 Step 3.1）。[Microsoft Learn](https://learn.microsoft.com/azure/site-recovery/asr-turn-off-key-authentication-cache) |
