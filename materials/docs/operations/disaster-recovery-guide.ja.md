@@ -20,7 +20,7 @@ Day 2 の Backup、Restore、HA 検証、Azure Site Recovery (ASR) の背景を�
 | 目的 | 使う Azure サービス | AWS との類比 |
 |---|---|---|
 | ポイントインタイム復旧 | Azure Backup | AWS Backup |
-| VM のリージョン DR | Azure Site Recovery | EC2 レプリケーション + DR オーケストレーションに近い |
+| VM のリージョン DR | Azure Site Recovery | AWS Elastic Disaster Recovery |
 | 障害検知と確認 | Azure Monitor / Log Analytics | CloudWatch |
 | トラフィック入口の正常性 | Application Gateway | ALB target health |
 
@@ -42,7 +42,7 @@ Azure Backup は、VM やデータの復元ポイントを作成するための�
 
 ### ワークショップで確認すること
 
-1. Recovery Services vault を作成する。
+1. VM と同じリージョンに Backup 用 vault `rsv-blogapp-backup` を作成する。
 2. VM Backup を有効化する。
 3. Backup now を実行する。
 4. Restore point を確認する。
@@ -64,17 +64,21 @@ DB tier はステートフルであり、Web/App tier よりも停止の影響�
 
 ## 5. Azure Site Recovery の考え方
 
-ASR は VM を別リージョンへレプリケートし、災害時の failover を支援します。
+ASR は VM を別リージョンへレプリケートし、災害時の failover を支援します。リージョン間 ASR の vault はソースリージョン以外に必要なため、Backup 用 vault は再利用しません。この演習では復旧先リージョンに ASR 用 vault `rsv-blogapp-dr` を作成します（ソースが `japanwest` なら復旧先は `japaneast`。ソースが `japaneast` なら復旧先は `japanwest` など）。[公式の配置要件](https://learn.microsoft.com/azure/site-recovery/azure-to-azure-tutorial-enable-replication)を参照してください。
+
+> **AWS との比較:** Backup 用 vault は AWS Backup vault に相当し、ASR は復旧先リージョンで設定する AWS Elastic Disaster Recovery に近いサービスです。2 つの用途と配置要件を分けて考えます。
 
 ### ワークショップで確認すること
 
-1. Recovery Services vault の Site Recovery を開く。
+1. 復旧先リージョンの `rsv-blogapp-dr` の Site Recovery を開く。
 2. Enable replication で対象 VM とターゲットリージョンを選ぶ。
 3. Replicated items で replication health を確認する。
 4. 初回レプリケーション完了後、分離ネットワークへ test failover する。
 5. 検証後、cleanup test failover を実行する。
 
 **期待結果:** レプリケーションの状態と、test failover を始められる条件を説明できます。
+
+**クリーンアップ:** Test failover の cleanup だけではレプリケーションも vault も削除されません。ワークショップ終了後は、`rsv-blogapp-dr` のレプリケーション停止、`rsv-blogapp-backup` の不要なバックアップデータの削除、両方の vault と関連リソースの削除を確認します。保持期間や Soft delete などの注意点を含む手順は [Day 2 Step 13](../learner/day-2-resiliency-checklist.ja.md#13-クリーンアップ対象を確認する) を参照します。
 
 ## 6. Test failover と本番 failover の違い
 

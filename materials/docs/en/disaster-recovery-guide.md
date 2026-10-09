@@ -29,7 +29,7 @@ Failing over the DB tier is more nuanced than stateless tiers. This guide focuse
 - ASR replicate web/app/db VMs
 - Requires clearer DB failover plan and consistent recovery sequencing
 
-**AWS analogy:** ASR resembles a managed version of replicating instances + orchestrating failover (a blend of Route 53 failover + EC2 replication patterns), while Azure Backup resembles AWS Backup.
+**AWS analogy:** Azure Backup vaults resemble AWS Backup vaults, while ASR is closer to AWS Elastic Disaster Recovery configured in the recovery target region. Separate backup and regional DR placement requirements.
 
 ---
 
@@ -37,8 +37,8 @@ Failing over the DB tier is more nuanced than stateless tiers. This guide focuse
 
 ### 2.1 Create a Recovery Services vault
 
-1. In Azure portal, create **Recovery Services vault**.
-2. Place it in the same subscription and (typically) the same region as the workload.
+1. In Azure portal, create a Backup **Recovery Services vault**, such as `rsv-blogapp-backup`.
+2. Place it in the same subscription and the same region as the workload VMs. The same-region requirement is mandatory for Azure VM Backup; see [Create a Recovery Services vault](https://learn.microsoft.com/azure/backup/backup-create-recovery-services-vault).
 
 ### 2.2 Enable VM backups
 
@@ -62,13 +62,15 @@ Failing over the DB tier is more nuanced than stateless tiers. This guide focuse
 
 ### 3.1 Prerequisites
 
-- A **Recovery Services vault** to manage replication
-- A **target region** (often the Azure paired region)
+- A separate **Recovery Services vault**, such as `rsv-blogapp-dr`, outside the source region to manage replication; do not reuse the same-region Backup vault
+- A **target region** different from the source (for example, `japanwest` source → `japaneast` target); place the ASR vault in this target region for the workshop
 - Target networking prepared (VNet/subnets) or mapped during ASR setup
+
+See the [Azure-to-Azure Site Recovery vault placement requirement](https://learn.microsoft.com/azure/site-recovery/azure-to-azure-tutorial-enable-replication).
 
 ### 3.2 Enable replication
 
-1. In the Recovery Services vault, go to **Site Recovery**.
+1. In the target-region ASR vault `rsv-blogapp-dr`, go to **Site Recovery**.
 2. Choose **Enable replication** for Azure VMs.
 3. Select:
    - Source region/resource group
@@ -93,6 +95,8 @@ You can also include manual steps, but keep it minimal for the workshop.
    - VMs start in the expected order
    - web/app endpoints respond in the test network
 3. Clean up the test failover resources.
+
+Test failover cleanup does not stop replication or delete either vault. After the workshop, include both `rsv-blogapp-dr` and `rsv-blogapp-backup` and their related resources in cleanup. Follow [Day 2 Step 13](learner/day-2-resiliency-checklist.md#13-review-cleanup-targets), including its backup-data deletion and soft-delete/retention cautions.
 
 ### 3.5 Planned failover / unplanned failover
 

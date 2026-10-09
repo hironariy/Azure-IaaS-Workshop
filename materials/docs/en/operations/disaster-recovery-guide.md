@@ -33,7 +33,7 @@ For this IaaS workshop, Web and App tiers are easier to reason about because the
 
 ## 2. Azure Backup Pattern
 
-1. Create a Recovery Services vault in the workload region.
+1. Create the Backup vault `rsv-blogapp-backup` in the same region as the workload VMs.
 2. Enable Backup for selected workshop VMs.
 3. Run on-demand backup when the instructor tells you to.
 4. Confirm restore points.
@@ -43,7 +43,11 @@ For this IaaS workshop, Web and App tiers are easier to reason about because the
 
 ## 3. Azure Site Recovery Pattern
 
-1. Use Recovery Services vault > Site Recovery.
+Cross-region ASR requires a vault outside the source region, so do not reuse the Backup vault. This exercise creates `rsv-blogapp-dr` in the recovery target region (`japaneast` for a `japanwest` source, or `japanwest` for a `japaneast` source). See the [official placement requirements](https://learn.microsoft.com/azure/site-recovery/azure-to-azure-tutorial-enable-replication).
+
+> **AWS comparison:** The Backup vault is comparable to an AWS Backup vault, while ASR is closer to AWS Elastic Disaster Recovery configured in the recovery target region. Separate their purposes and placement requirements.
+
+1. Use the target-region vault `rsv-blogapp-dr` > Site Recovery.
 2. Enable replication for representative VMs or instructor-selected tiers.
 3. Review target region and VNet/subnet mapping.
 4. Wait for initial replication or switch to instructor demo.
@@ -51,6 +55,8 @@ For this IaaS workshop, Web and App tiers are easier to reason about because the
 6. Clean up test failover resources.
 
 **Good Outcome:** Learners can explain the difference between replication health, test failover, cleanup, planned failover, and unplanned failover.
+
+**Cleanup:** Test failover cleanup does not stop replication or delete the vaults. After the workshop, review replication disablement in `rsv-blogapp-dr`, deletion of unneeded backup data in `rsv-blogapp-backup`, and removal of both vaults and related resources. See [Day 2 Step 13](../learner/day-2-resiliency-checklist.md#13-review-cleanup-targets) for the procedure and retention/soft-delete cautions.
 
 ## 4. Database Tier Considerations
 
