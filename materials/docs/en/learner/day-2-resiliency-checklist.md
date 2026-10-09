@@ -362,6 +362,8 @@ ASR can take time, so this may be an instructor demo or a representative-VM exer
 
 **Expected Result:** A replicated item is created, and initial replication starts or completes.
 
+**Checkpoint (error 151141):** Enable replication can fail with `151141: ... version of mobility service doesn't support the operating system kernel version (...) running on the source machine`, typically when Ubuntu's rolling kernel update ships ahead of the Mobility service's supported-kernel list. See [troubleshooting runbook §10.1](../operations/troubleshooting-runbook.md#101-error-151141-kernel-not-yet-supported-by-mobility-service) for the fix. Since the agent is already installed by the time it fails, run the official kernel-module hotfix, then disable/remove the failed replicated item and enable replication again (`az vm run-command invoke` works in place of SSH).
+
 ## 12. Review Test Failover
 
 Test failover uses an isolated network to avoid production impact.

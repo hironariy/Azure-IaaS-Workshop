@@ -386,6 +386,8 @@ ASR は時間がかかるため、講師デモまたは代表 VM での演習に
 
 **チェックポイント:** 初回レプリケーションが完了しない場合、test failover は講師デモまたは設計ウォークスルーに切り替えます。
 
+**チェックポイント（エラー 151141）:** Enable replication が `151141: ... version of mobility service doesn't support the operating system kernel version (...) running on the source machine` で失敗することがあります（Ubuntu のローリングカーネル更新が、Mobility service の対応カーネル一覧より先に配信された場合）。対処は [トラブルシューティングランブック §10.1](../operations/troubleshooting-runbook.ja.md#101-エラー-151141カーネルが-mobility-service-未対応への対処) を参照します。エージェントは失敗時点で既にインストール済みのため、公式ホットフィックスを実行してから、失敗した replicated item を disable/remove して Enable replication をやり直します（SSH の代わりに `az vm run-command invoke` も使えます）。
+
 ## 12. Test failover を確認する
 
 Test failover は本番側に影響しない分離ネットワークで行います。
