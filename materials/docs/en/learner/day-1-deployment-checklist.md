@@ -219,6 +219,8 @@ Run the script.
 
 **Checkpoint:** Password mismatch or a password containing `@` will prevent the backend from connecting to MongoDB.
 
+If Step 2 succeeds but Step 3 stops with `Replica set state ...: unknown`, follow [Troubleshooting runbook 7.4](../operations/troubleshooting-runbook.md#74-db-setup-step-3-cannot-read-rsstate-issue-58) to change the local script's SSH option from `-t` to `-T`.
+
 ### 9.1 Check DB VM Readiness
 
 MongoDB 8.0 does not start on Linux kernel 6.19 or newer, so the DB VMs use Ubuntu 24.04's long-term Azure kernel `linux-azure-lts-24.04` (6.8.x) instead of the rolling `linux-azure` kernel (7.0). A new DB VM boots the image's rolling kernel first. The CustomScript then installs MongoDB, switches GRUB to 6.8, and **reboots the VM once, about 1 minute after the deployment step finishes**. mongod starts after that reboot. Step 2 of the post-deployment script waits for this automatically (up to 15 minutes per DB VM).

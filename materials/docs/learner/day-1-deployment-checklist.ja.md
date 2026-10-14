@@ -240,6 +240,8 @@ code post-deployment-setup.local.sh
 
 **チェックポイント:** `MONGODB_APP_PASSWORD` と `mongoDbAppPassword` が一致しない場合、バックエンド API は MongoDB に接続できません。`@` を含む password も MongoDB connection string を壊すため使わないでください。
 
+Step 2 が成功しても Step 3 が `Replica set state ...: unknown` で停止する場合は、[トラブルシューティングランブック 7.4](../operations/troubleshooting-runbook.ja.md#74-db-セットアップの-step-3-が-rsstate-を取得できない-issue-58) に従い、ローカルスクリプトの SSH オプションを `-t` から `-T` に変更します。
+
 ### 9.1 DB VM の準備完了を確認する
 
 MongoDB 8.0 は Linux カーネル 6.19 以上では起動しません。そのため DB VM では、ローリングの `linux-azure` カーネル（7.0）ではなく、Ubuntu 24.04 の長期 Azure カーネル `linux-azure-lts-24.04`（6.8.x）を使います。新しい DB VM の処理は次の順に進みます。

@@ -453,6 +453,26 @@ for vm in vm-db-az1-prod vm-db-az2-prod vm-db-az3-prod; do
     --query "value[0].message" -o tsv &
 done
 wait
+### 7.4 DB Setup Step 3 Cannot Read `RSSTATE` (Issue #58)
+
+**Symptom:** All three DB VMs report ready with `kernel=6.8.x mongod=active`, but setup stops with `Replica set state ...: unknown` and `Could not read the replica set state ... (got: 'nothing')`.
+
+**Cause:** When the Bash `bastion_run` helper allocates a pseudo-terminal with SSH `-t`, `mongosh` writes terminal-title control sequences immediately before `RSSTATE`. The line-start marker check misses the result even though MongoDB is healthy. Later steps using the same output handling are also affected. If the key is already loaded into ssh-agent and Step 2 succeeds, this is not a key-passphrase or kernel issue.
+
+**Fix:** In `bastion_run` in `scripts/post-deployment-setup.local.sh`, change SSH `-t` to **`-T` (uppercase)**. The fixed template also uses `-T`. Edit only this line rather than overwriting your local script with the template and losing your configuration.
+
+```bash
+        -- -o StrictHostKeyChecking=no -o ConnectTimeout=20 -T \
+```
+
+Keep your configured passwords and key unchanged, then rerun from the repository root.
+
+```bash
+./scripts/post-deployment-setup.local.sh "$RESOURCE_GROUP"
+```
+
+**Expected Result:** A fresh deployment reports `RSSTATE uninitialized -` and proceeds with initialization; an existing set reports `RSSTATE initialized 3` and skips initialization. Confirm that setup reaches `1 PRIMARY + 2 SECONDARY` and creates or verifies the users. Manual `rs.initiate()` or forced reconfiguration is unnecessary. If setup still stops, inspect the exit code and remote error printed by the fixed version.
+
 ```
 
 Then verify with Step 4.

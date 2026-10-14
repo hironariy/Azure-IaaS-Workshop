@@ -530,6 +530,26 @@ for vm in vm-db-az1-prod vm-db-az2-prod vm-db-az3-prod; do
     --query "value[0].message" -o tsv &
 done
 wait
+### 7.4 DB セットアップの Step 3 が `RSSTATE` を取得できない (Issue #58)
+
+**症状:** 3 台とも `kernel=6.8.x mongod=active` で準備完了となるのに、`Replica set state ...: unknown` と `Could not read the replica set state ... (got: 'nothing')` が表示されます。
+
+**原因:** Bash 版の `bastion_run` が SSH の `-t` で疑似端末を割り当てると、`mongosh` が端末タイトル用の制御文字を `RSSTATE` の直前に出力します。行頭の `RSSTATE` を探す処理が見落とすため、MongoDB が正常でも停止します。同じ出力処理を使う後続ステップにも影響します。SSH 鍵を ssh-agent に追加済みで、Step 2 が成功している場合、鍵のパスフレーズやカーネルの問題ではありません。
+
+**対処:** `scripts/post-deployment-setup.local.sh` の `bastion_run` 関数で、SSH オプションの `-t` を **`-T`（大文字）** に変更します。修正版テンプレートも `-T` を使います。既存のローカルスクリプトをテンプレートで上書きすると設定値が失われるため、この 1 行だけを編集してください。
+
+```bash
+        -- -o StrictHostKeyChecking=no -o ConnectTimeout=20 -T \
+```
+
+設定済みのパスワードとキーは変更せず、リポジトリのルートから再実行します。
+
+```bash
+./scripts/post-deployment-setup.local.sh "$RESOURCE_GROUP"
+```
+
+**期待結果:** 初回は `RSSTATE uninitialized -` の後に初期化が進み、既存環境では `RSSTATE initialized 3` の後に初期化をスキップします。`1 PRIMARY + 2 SECONDARY` とユーザー作成・確認まで進むことを確認します。手動の `rs.initiate()` や強制再構成は不要です。まだ停止する場合は、修正版が表示する終了コードとリモートエラーを確認してください。
+
 ```
 
 その後、手順 4 で確認します。

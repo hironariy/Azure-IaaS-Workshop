@@ -120,6 +120,8 @@ fail_on_ssh_auth_error() {
 # Sets BASTION_OUT (stdout+stderr, CR removed) and BASTION_RC (exit code).
 # Never returns non-zero itself, so callers decide how to handle failures
 # under `set -e`; SSH authentication errors stop the script immediately.
+# Disable PTY allocation: mongosh emits terminal-title control sequences
+# before result markers on interactive terminals (Issue #58).
 BASTION_OUT=""
 BASTION_RC=0
 bastion_run() {
@@ -132,7 +134,7 @@ bastion_run() {
         --auth-type "ssh-key" \
         --username "$USERNAME" \
         --ssh-key "$SSH_KEY" \
-        -- -o StrictHostKeyChecking=no -o ConnectTimeout=20 -t \
+        -- -o StrictHostKeyChecking=no -o ConnectTimeout=20 -T \
         "$remote_cmd" 2>&1) || BASTION_RC=$?
     BASTION_OUT=$(printf '%s\n' "$BASTION_OUT" | tr -d '\r')
     fail_on_ssh_auth_error "$BASTION_OUT"
@@ -328,7 +330,13 @@ bastion_run "$DB_VM1_ID" "mongosh --quiet --eval 'const h = db.hello(); print(h.
 RS_STATE_LINE=$(printf '%s\n' "$BASTION_OUT" | grep '^RSSTATE ' | tail -1 || true)
 log_info "Replica set state on $DB_VM1_NAME: ${RS_STATE_LINE:-unknown}"
 
-if [[ "$RS_STATE_LINE" == "RSSTATE initialized "* ]]; then
+if [ "$BASTION_RC" -ne 0 ] || [ -z "$RS_STATE_LINE" ]; then
+    log_error "Could not read the replica set state from $DB_VM1_NAME (exit code $BASTION_RC; result: ${RS_STATE_LINE:-missing RSSTATE marker})."
+    printf '%s\n' "$BASTION_OUT" | mask_secrets | tail -10 | sed 's/^/    /'
+    log_error "Use -T (not -t) in bastion_run to disable terminal control sequences (Issue #58)."
+    log_error "Check: mongosh --eval 'db.hello()' on $DB_VM1_NAME, then re-run this script."
+    exit 1
+elif [[ "$RS_STATE_LINE" == "RSSTATE initialized "* ]]; then
     RS_MEMBER_COUNT="${RS_STATE_LINE##* }"
     log_warning "Replica set already initialized ($RS_MEMBER_COUNT electable members), skipping rs.initiate."
     if [ "$RS_MEMBER_COUNT" != "3" ]; then
@@ -367,6 +375,7 @@ elif [[ "$RS_STATE_LINE" == "RSSTATE uninitialized "* ]]; then
     log_success "Replica set initiated"
 else
     log_error "Could not read the replica set state from $DB_VM1_NAME (got: '${RS_STATE_LINE:-nothing}')."
+    printf '%s\n' "$BASTION_OUT" | mask_secrets | tail -10 | sed 's/^/    /'
     log_error "Check: mongosh --eval 'db.hello()' on $DB_VM1_NAME, then re-run this script."
     exit 1
 fi
