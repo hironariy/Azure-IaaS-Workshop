@@ -68,8 +68,16 @@ FQDN=$(az network public-ip show \
 | `sslCertificatePassword` | PFX password | 既定 `Workshop2024!` |
 | `mongoDbAppPassword` | MongoDB app user password | Step 9 の post-deployment setup と同じ値。`@` は使わない |
 | `assignKeyVaultRoles` | Key Vault のロールを割り当てるか | 既定 `true`。共同作成者（Contributor）のみの場合は `false`（Day 0 Step 3.1） |
-| `mongoDbReplicaSetKey` | MongoDB replica set key (keyFile) | `openssl rand -base64 756 \| tr -d '\n'`。再デプロイでも同じ値 |
+| `mongoDbReplicaSetKey` | MongoDB replica set key (keyFile) | 下記の生成コマンドの出力。再デプロイでも同じ値 |
 | `appGatewayDnsLabel` | Application Gateway FQDN の DNS label | 例: `blogapp-team1-0106` |
+
+`mongoDbReplicaSetKey` の初回設定用の生成コマンド（コピーして実行）:
+
+```bash
+openssl rand -base64 756 | tr -d '\n'
+```
+
+出力された 1 行の文字列だけを貼り付け、直後のプロンプトや `%` は含めません。キーは安全に保管し、GitHub に push しないでください。再デプロイ時は生成し直さず、同じキーを使います。
 
 ## よく使う Cloud Shell コマンド
 

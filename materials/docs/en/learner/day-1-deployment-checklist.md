@@ -107,9 +107,17 @@ Set at least these values.
 | `sslCertificateData` | Base64 PFX contents | `cat ../../cert-base64.txt` |
 | `sslCertificatePassword` | PFX password | Default `Workshop2024!` |
 | `mongoDbAppPassword` | MongoDB app user password | Must exactly match Step 9's `<YOUR_MONGODB_APP_PASSWORD>` |
-| `mongoDbReplicaSetKey` | MongoDB replica set shared key (keyFile) | Paste the one-line output of `openssl rand -base64 756 \| tr -d '\n'`. Keep the same value on redeployments |
+| `mongoDbReplicaSetKey` | MongoDB replica set shared key (keyFile) | Paste the one-line output of the generation command below. Keep the same value on redeployments |
 | `assignKeyVaultRoles` | `true` (default). **Set `false` only if you have just the Contributor role** | Your role from Day 0 Step 3.1. With `false`, no Key Vault roles are assigned |
 | `appGatewayDnsLabel` | Unique DNS label | Example: `blogapp-team1-0106` |
+
+When setting `mongoDbReplicaSetKey` for the first time, copy and run this command in Cloud Shell or a local terminal.
+
+```bash
+openssl rand -base64 756 | tr -d '\n'
+```
+
+Paste only the one-line output into `mongoDbReplicaSetKey`. The output has no trailing newline, so do not copy the prompt or `%` displayed immediately after it. Store the key securely and do not push it to GitHub. On redeployments, reuse the saved key instead of generating a new one.
 
 > [!IMPORTANT]
 > `mongoDbAppPassword` must exactly match `<YOUR_MONGODB_APP_PASSWORD>` in `post-deployment-setup.local.sh`. If they differ, the Backend API cannot connect to MongoDB.

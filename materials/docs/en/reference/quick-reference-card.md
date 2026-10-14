@@ -68,8 +68,16 @@ VM names do not change per group; always specify `--resource-group`.
 | `sslCertificatePassword` | PFX password | Default `Workshop2024!` |
 | `mongoDbAppPassword` | MongoDB app user password | Same as post-deployment setup. Do not use `@` |
 | `assignKeyVaultRoles` | Whether to assign Key Vault roles | Default `true`. Set `false` with the Contributor role only (Day 0 Step 3.1) |
-| `mongoDbReplicaSetKey` | MongoDB replica set key (keyFile) | `openssl rand -base64 756 \| tr -d '\n'`. Keep the same value on redeployments |
+| `mongoDbReplicaSetKey` | MongoDB replica set key (keyFile) | Output of the generation command below. Keep the same value on redeployments |
 | `appGatewayDnsLabel` | Application Gateway FQDN DNS label | Example: `blogapp-team1-0106` |
+
+To generate `mongoDbReplicaSetKey` for the first deployment, copy and run:
+
+```bash
+openssl rand -base64 756 | tr -d '\n'
+```
+
+Paste only the one-line output, without the prompt or `%` displayed immediately after it. Store the key securely and do not push it to GitHub. On redeployments, reuse the same key instead of generating a new one.
 
 ## Common Cloud Shell Commands
 
