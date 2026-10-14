@@ -193,7 +193,6 @@ pm2 logs blogapp-api --lines 20
 ```bash
 curl http://localhost:3000/health
 curl http://localhost:3000/api/posts
-curl http://10.0.2.10:3000/health
 ```
 
 **期待結果:** health endpoint が `healthy` を返し、`/api/posts` が JSON 配列を返します。投稿がまだない場合は `[]` が正常です。

@@ -176,7 +176,6 @@ pm2 logs blogapp-api --lines 20
 ```bash
 curl http://localhost:3000/health
 curl http://localhost:3000/api/posts
-curl http://10.0.2.10:3000/health
 ```
 
 **Expected Result:** Health returns `healthy`, and `/api/posts` returns a JSON array.
