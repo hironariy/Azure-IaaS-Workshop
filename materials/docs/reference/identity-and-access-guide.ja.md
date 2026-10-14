@@ -8,8 +8,6 @@
 - Managed Identity（Azure 内でのサービス間認証）
 - このリポジトリで採用しているシークレット取り扱いパターン
 
-AWS 経験者が理解しやすいように、Azure の概念を既存のメンタルモデルへマッピングして書いています。
-
 ## 1) 最重要のメンタルモデル: 2つの “プレーン（plane）”
 
 Azure には混同されやすい「2つの認可の世界」があります。
@@ -18,15 +16,9 @@ Azure には混同されやすい「2つの認可の世界」があります。
 - 「Azure リソースを作成／更新／参照してよいか？」
 - **Azure RBAC のロール割り当て**（subscription / resource group / resource などのスコープ）で制御されます
 
-AWS との類比:
-- AWS API（CreateVpc, RunInstances など）を呼ぶための IAM 権限に概念的に近いです。
-
 ### 1.2 データプレーン（あなたのアプリ API）
 - 「ブログ API を呼んでよいか？」
 - アプリ側の **認証／認可**（OAuth トークン、JWT 検証、アプリロールなど）で制御されます
-
-AWS との類比:
-- Cognito が発行した JWT を API 側が検証する形に近いです。
 
 このワークショップでは:
 - Azure RBAC が Azure インフラ（portal、デプロイ、Key Vault など）へのアクセスを制御
@@ -62,9 +54,6 @@ Bicep パラメータファイルでは:
 
 用途:
 - パスワード不要で Azure リソースへアクセス（例: Key Vault の secret read）
-
-AWS との類比:
-- EC2 の instance profile / インスタンスに紐づく IAM role に近いです。
 
 どこに出るか:
 - Bicep（`vm.bicep`）で `identity: { type: 'SystemAssigned' }`

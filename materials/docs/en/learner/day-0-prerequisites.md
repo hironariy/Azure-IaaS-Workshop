@@ -93,7 +93,7 @@ az role assignment list --assignee "$(az ad signed-in-user show --query id -o ts
 > [!NOTE]
 > If your organization's policy **disables shared key access** on Storage accounts, ASR accesses the cache Storage account with the Recovery Services vault's managed identity. That identity then needs role assignments on the cache Storage account (Contributor and Storage Blob Data Contributor), which the Contributor role alone cannot create. In that case, ask the instructor to create the role assignments for Day 2 Step 11, or follow the instructor demo instead ([troubleshooting runbook §10](../operations/troubleshooting-runbook.md#10-backup-or-asr-does-not-progress)).
 
-> **AWS comparison:** Contributor is like an IAM user who can create EC2 and other resources but is not allowed to attach IAM policies (`iam:AttachRolePolicy` and similar). In Azure, role assignments are themselves operations on `Microsoft.Authorization` and are permission-controlled.
+> **Permission note:** In Azure, role assignments are themselves operations on `Microsoft.Authorization` and are permission-controlled. Contributor alone cannot assign roles.
 
 This workshop uses 7 Dsv6-series VMs (the DB tier is a 3-member MongoDB replica set, one VM in each of Zones 1/2/3, Issue #30).
 

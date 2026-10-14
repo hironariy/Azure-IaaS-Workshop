@@ -78,8 +78,6 @@ Day 1 の Bicep では Recovery Services vault、Azure Backup、ASR は作成し
 
 **チェックポイント:** `materials/bicep` の Storage Account にある `backups` container は、Recovery Services vault とは別物です。既存の同一リージョン vault を Backup に使っている場合はそのまま維持し、ASR 用 vault だけを別リージョンに追加します。配置要件は [Azure Backup](https://learn.microsoft.com/azure/backup/backup-create-recovery-services-vault) と [Azure-to-Azure Site Recovery](https://learn.microsoft.com/azure/site-recovery/azure-to-azure-tutorial-enable-replication) の公式手順を参照してください。
 
-> **AWS との比較:** Azure Backup の vault は AWS Backup vault に相当します。一方、ASR は AWS Elastic Disaster Recovery に近く、復旧先リージョンで DR を設定する考え方です。Backup とリージョン DR の用途と配置要件を分けて考えます。
-
 ## 3. Azure Backup を有効化する
 
 1. Backup 用 vault `rsv-blogapp-backup` を開きます。
@@ -200,8 +198,6 @@ DB tier は 3 台のデータ保持メンバー（`vm-db-az1` / `az2` / `az3`、
 2. Secondary を 1 台ずつ停止しても、読み書きが続くことを確認する。
 3. 停止したノードが再参加し、データが一致することを確認する。
 
-> **AWS との比較:** 3 つの AZ にある 3 台の EC2 に MongoDB を自己管理で構成した場合と同じ動きです。Amazon DocumentDB ではレプリカの昇格をサービスが行いますが、ここでは選出の仕組みを自分で観察します。
-
 ### 9.1 準備: 状態確認コマンドと API プローブ
 
 Cloud Shell で、DB の状態を表示するコマンドを変数に入れます。停止していない DB VM に対して実行します。MongoDB は認証が有効なため（Issue #36）、最初に管理ユーザー `blogadmin` のパスワード（Day 1 の `<YOUR_MONGODB_ADMIN_PASSWORD>`）を入力します。入力は画面に表示されず、この Cloud Shell セッションの変数にだけ保持されます。9.5 でも同じ変数を使います。
@@ -247,7 +243,7 @@ probe_summary() {
 | `000` | タイムアウトまたは接続失敗 | **数える** |
 | `429` | バックエンドのレート制限（Too Many Requests） | **数えない** |
 
-> **なぜ `429` を除外するのか:** バックエンドは `/api` 配下を **App VM ごとに 15 分あたり 100 リクエスト** に制限しています（`materials/backend/src/app.ts` の `express-rate-limit`、上限は `RATE_LIMIT_MAX_REQUESTS`）。プローブとブラウザ操作が同じ上限を使うため、間隔を短くすると DB が正常でも `429` が返ります。`429` は DB 障害ではないので、復旧時間の計算から外します。AWS でいえば、API Gateway のスロットリング（`429`）と ALB のターゲット障害（`502`/`503`）を区別するのと同じです。
+> **なぜ `429` を除外するのか:** バックエンドは `/api` 配下を **App VM ごとに 15 分あたり 100 リクエスト** に制限しています（`materials/backend/src/app.ts` の `express-rate-limit`、上限は `RATE_LIMIT_MAX_REQUESTS`）。プローブとブラウザ操作が同じ上限を使うため、間隔を短くすると DB が正常でも `429` が返ります。`429` は DB 障害ではないので、復旧時間の計算から外します。
 >
 > **`/health` をプローブに使わない理由:** `https://$FQDN/health` は Web VM の NGINX が直接 `200` を返す Application Gateway 用のエンドポイントで、App VM や MongoDB を経由しません。DB のフェイルオーバーを観察するには、DB を読む `/api/posts` を使います。
 
@@ -307,7 +303,7 @@ db_status vm-db-az2-prod
 - **選出時間** = `elected=` の時刻 − T0（目安: **約 10-15 秒**。Secondary は既定の `electionTimeoutMillis`（10 秒）の間 Primary からのハートビートがないと障害と判断し、選出を始めます）
 - **アプリ復旧時間** = 最後の `5xx`/`000` の次の `200` − T0（目安: 選出時間 + 数秒。ドライバーが新しい Primary を見つけるまでの時間が加わります）
 
-**9.2 と 9.3 の比較:** 計画的な引き渡し（9.2）はほぼ無停止ですが、障害検知による選出（9.3）は「検知の待ち時間（`electionTimeoutMillis`）」の分だけ書き込みが止まります。これが自動フェイルオーバーの RTO の目安です。AWS でいえば、RDS Multi-AZ の手動フェイルオーバー（reboot with failover）と、AZ 障害による自動フェイルオーバーの違いに相当します。
+**9.2 と 9.3 の比較:** 計画的な引き渡し（9.2）はほぼ無停止ですが、障害検知による選出（9.3）は「検知の待ち時間（`electionTimeoutMillis`）」の分だけ書き込みが止まります。これが自動フェイルオーバーの RTO の目安です。
 
 ```bash
 az vm start --resource-group "$RESOURCE_GROUP" --name vm-db-az1-prod

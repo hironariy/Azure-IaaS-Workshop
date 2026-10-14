@@ -17,12 +17,12 @@ Day 2 の Backup、Restore、HA 検証、Azure Site Recovery (ASR) の背景を�
 
 ## 1. BCDR の基本方針
 
-| 目的 | 使う Azure サービス | AWS との類比 |
-|---|---|---|
-| ポイントインタイム復旧 | Azure Backup | AWS Backup |
-| VM のリージョン DR | Azure Site Recovery | AWS Elastic Disaster Recovery |
-| 障害検知と確認 | Azure Monitor / Log Analytics | CloudWatch |
-| トラフィック入口の正常性 | Application Gateway | ALB target health |
+| 目的 | 使う Azure サービス |
+|---|---|
+| ポイントインタイム復旧 | Azure Backup |
+| VM のリージョン DR | Azure Site Recovery |
+| 障害検知と確認 | Azure Monitor / Log Analytics |
+| トラフィック入口の正常性 | Application Gateway |
 
 このワークショップでは、Azure IaaS の学習に集中するため、Backup / Restore / ASR は Portal で状態を見ながら進めます。CLI は VM 停止・起動や状態確認に使います。
 
@@ -66,8 +66,6 @@ DB tier はステートフルであり、Web/App tier よりも停止の影響�
 
 ASR は VM を別リージョンへレプリケートし、災害時の failover を支援します。リージョン間 ASR の vault はソースリージョン以外に必要なため、Backup 用 vault は再利用しません。この演習では復旧先リージョンに ASR 用 vault `rsv-blogapp-dr` を作成します（ソースが `japanwest` なら復旧先は `japaneast`。ソースが `japaneast` なら復旧先は `japanwest` など）。[公式の配置要件](https://learn.microsoft.com/azure/site-recovery/azure-to-azure-tutorial-enable-replication)を参照してください。
 
-> **AWS との比較:** Backup 用 vault は AWS Backup vault に相当し、ASR は復旧先リージョンで設定する AWS Elastic Disaster Recovery に近いサービスです。2 つの用途と配置要件を分けて考えます。
-
 ### ワークショップで確認すること
 
 1. 復旧先リージョンの `rsv-blogapp-dr` の Site Recovery を開く。
@@ -100,8 +98,6 @@ MongoDB レプリカセットはゾーン障害には有効ですが、リージ
 - 単一リージョン前提の replica set をそのまま別リージョンへ広げる設計は上級トピックとして扱います。
 - ワークショップ時間内では、DB の復旧は Azure Backup の Restore と、単一 VM 停止時の replica set 挙動確認（自動選出）を中心にします。
 - 2 台以上を失った場合の `rs.reconfig({force: true})` は、データ損失（コミット済み書き込みのロールバック）を伴い得る最終手段です。通常の障害対応では使いません。
-
-> **AWS との比較:** 3 AZ の EC2 に置いた自己管理 MongoDB と同じく、ゾーン障害はレプリカセットが吸収し、リージョン DR は別設計（AWS Elastic Disaster Recovery や DocumentDB Global Clusters に相当する仕組み）が必要です。
 
 ## 8. 成功条件
 

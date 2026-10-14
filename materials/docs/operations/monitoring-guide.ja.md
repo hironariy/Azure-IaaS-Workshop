@@ -17,13 +17,13 @@ Day 1 でデプロイした Azure IaaS 環境を、Azure Monitor と Log Analyti
 
 ## 1. 監視の全体像
 
-| 観点 | Azure で見る場所 | AWS との類比 |
-|---|---|---|
-| メトリック | Azure Monitor Metrics | CloudWatch Metrics |
-| ログ集約 | Log Analytics workspace | CloudWatch Logs + Logs Insights |
-| 制御プレーン操作 | Activity log | CloudTrail に近い操作履歴 |
-| VM ゲスト情報 | Azure Monitor Agent + DCR | CloudWatch Agent |
-| 入口の正常性 | Application Gateway backend health | ALB target health |
+| 観点 | Azure で見る場所 |
+|---|---|
+| メトリック | Azure Monitor Metrics |
+| ログ集約 | Log Analytics workspace |
+| 制御プレーン操作 | Activity log |
+| VM ゲスト情報 | Azure Monitor Agent + DCR |
+| 入口の正常性 | Application Gateway backend health |
 
 Day 1 の Bicep は Log Analytics workspace と VM 拡張を作成します。Data Collection Rule (DCR) は、Log Analytics table の初期化を待つ必要があるため、`scripts/configure-dcr.sh` で後から作成します。
 

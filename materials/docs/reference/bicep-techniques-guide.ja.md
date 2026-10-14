@@ -42,7 +42,7 @@ Infrastructure as Code（IaC）は、クラウドのリソースを手作業で�
 
 Bicep はシェルスクリプトのような「1 行ずつ実行する手順書」ではありません。Azure Resource Manager がテンプレートを読み取り、現在の状態とテンプレート上の望ましい状態を比較し、必要な作成や更新を行います。
 
-AWS 経験者向けにいうと、Azure Resource Manager と Bicep の関係は、CloudFormation と YAML/JSON template の関係に近いです。ただし、Azure の Bicep は ARM template JSON をより読みやすく書くための専用言語です。
+Bicep は ARM template JSON をより読みやすく書くための専用言語です。
 
 ### 1.2 Azure Resource Manager、ARM template、Bicep の関係
 
@@ -538,7 +538,7 @@ App/DB subnet からインターネットへ出るための NAT Gateway を作�
 
 - 3-tier 構成を 1 つの VNet 内に収め、学習しやすい構成にしています。
 - Application Gateway と Bastion には Azure が要求する専用 subnet を用意しています。
-- Azure の subnet は AWS の subnet と異なり、Availability Zone に固定されません。VM 側で zone を指定します。
+- Azure の subnet は Availability Zone に固定されません。VM 側で zone を指定します。
 
 #### `network/bastion.bicep`
 
@@ -654,7 +654,7 @@ DB tier として、MongoDB VM を 3 台作ります。
 
 今回のワークショップの特徴的な設定:
 
-- 3 node（PRIMARY + SECONDARY + SECONDARY、アービターなし）の MongoDB replica set を構成します。3 票中 2 票の過半数が残るため、どの 1 台が止まっても自動選出でき、`w=majority` の書き込みも継続します。アービターを使わないのは、データ保持ノードが 1 台止まると `w=majority` を満たせなくなるためです（Issue #30）。AWS でいえば、3 つの AZ に EC2 を 1 台ずつ置いた自己管理 MongoDB と同じ考え方です。
+- 3 node（PRIMARY + SECONDARY + SECONDARY、アービターなし）の MongoDB replica set を構成します。3 票中 2 票の過半数が残るため、どの 1 台が止まっても自動選出でき、`w=majority` の書き込みも継続します。アービターを使わないのは、データ保持ノードが 1 台止まると `w=majority` を満たせなくなるためです（Issue #30）。
 - `vm-db-az1`（10.0.3.4）、`vm-db-az2`（10.0.3.5）、`vm-db-az3`（10.0.3.6）を固定 IP で配置し、3 ホストを含む接続文字列を `output` で返します。
 - IaaS 上で DB を動かす場合のディスク、ネットワーク、可用性の設計ポイントを見える形にしています。
 

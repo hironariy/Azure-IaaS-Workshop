@@ -17,13 +17,13 @@ Inspect the Azure IaaS environment deployed on Day 1 with Azure Monitor and Log 
 
 ## 1. Monitoring Overview
 
-| Concern | Azure Location | AWS Analogy |
-|---|---|---|
-| Metrics | Azure Monitor Metrics | CloudWatch Metrics |
-| Logs | Log Analytics workspace | CloudWatch Logs + Logs Insights |
-| Control-plane operations | Activity log | Similar to CloudTrail for operations |
-| VM guest data | Azure Monitor Agent + DCR | CloudWatch Agent |
-| Entry-point health | Application Gateway backend health | ALB target health |
+| Concern | Azure Location |
+|---|---|
+| Metrics | Azure Monitor Metrics |
+| Logs | Log Analytics workspace |
+| Control-plane operations | Activity log |
+| VM guest data | Azure Monitor Agent + DCR |
+| Entry-point health | Application Gateway backend health |
 
 Day 1 Bicep creates the Log Analytics workspace and VM extensions. `scripts/configure-dcr.sh` creates the Data Collection Rule after Log Analytics tables initialize.
 

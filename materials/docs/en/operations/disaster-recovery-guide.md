@@ -45,8 +45,6 @@ For this IaaS workshop, Web and App tiers are easier to reason about because the
 
 Cross-region ASR requires a vault outside the source region, so do not reuse the Backup vault. This exercise creates `rsv-blogapp-dr` in the recovery target region (`japaneast` for a `japanwest` source, or `japanwest` for a `japaneast` source). See the [official placement requirements](https://learn.microsoft.com/azure/site-recovery/azure-to-azure-tutorial-enable-replication).
 
-> **AWS comparison:** The Backup vault is comparable to an AWS Backup vault, while ASR is closer to AWS Elastic Disaster Recovery configured in the recovery target region. Separate their purposes and placement requirements.
-
 1. Use the target-region vault `rsv-blogapp-dr` > Site Recovery.
 2. Enable replication for representative VMs or instructor-selected tiers.
 3. Review target region and VNet/subnet mapping.
@@ -67,8 +65,6 @@ MongoDB replica sets help with node or zonal failures, but regional DR requires 
 - `rs.reconfig({force: true})` after losing two or more members is a last resort that can roll back committed writes. Do not use it for normal failures.
 - Validate replica set health and primary election after failover.
 - If the workshop keeps DB regional DR as a design exercise, focus hands-on ASR on Web/App or representative VMs.
-
-> **AWS comparison:** like self-managed MongoDB on EC2 across three AZs, the replica set absorbs a zone failure, while regional DR needs a separate design (comparable to AWS Elastic Disaster Recovery or DocumentDB Global Clusters).
 
 ## 5. RPO And RTO
 

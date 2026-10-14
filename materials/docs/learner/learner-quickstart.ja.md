@@ -45,18 +45,6 @@ title: 受講者クイックスタート
 
 ローカルの Azure CLI、Azure PowerShell、Bicep CLI、OpenSSL、Node.js、Docker は、通常のワークショップ参加には必須ではありません。
 
-## AWS 経験者向けの対応関係
-
-| AWS での考え方 | Azure での対応 |
-|---|---|
-| VPC | Virtual Network (VNet) |
-| Security Group / NACL | Network Security Group (NSG) |
-| ALB | Application Gateway |
-| NLB | Standard Load Balancer |
-| IAM Role / Instance Profile | Azure RBAC / Managed Identity |
-| CloudWatch Logs | Azure Monitor / Log Analytics |
-| EC2 multi-AZ 配置 | VM の Availability Zone 配置 |
-
 ## チェックポイント
 
 - Day 0 で確認する内容を説明できる。

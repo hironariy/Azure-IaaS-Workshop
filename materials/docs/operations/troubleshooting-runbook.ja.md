@@ -205,8 +205,6 @@ az vm list --resource-group "$RESOURCE_GROUP" --show-details \
 
 MongoDB 8.0.x は TCMalloc / rseq の互換性問題により、Linux カーネル 6.19 以上では起動を拒否します（[SERVER-121912](https://jira.mongodb.org/browse/SERVER-121912)）。Ubuntu 24.04 の Azure イメージは *ローリング* の `linux-azure` カーネルを追従しており、[7.0 に切り替わりました](https://discourse.ubuntu.com/t/kernel-7-0-is-now-the-default-for-ubuntu-24-04-lts-on-azure/88459)。この教材では DB VM を Ubuntu の *長期* Azure カーネルトラック `linux-azure-lts-24.04`（6.8.x、セキュリティ更新は継続）に固定して対処します。新規デプロイでは自動的にこの構成になります。修正前に作成した DB VM は、下記の移行手順を実施します。
 
-> **AWS との比較:** EC2 上の DB ホストで、最新ではなく特定の Amazon Linux カーネル系列に留める判断と同じです。Amazon DocumentDB や RDS ではホスト OS を AWS が管理し、カーネルとエンジンの組み合わせを保証するため、この問題は表に出ません。IaaS VM では利用者がこの責任を持ちます。
-
 **確認（各 DB VM 内で実行）:**
 
 ```bash
@@ -309,8 +307,6 @@ Secondary（az3、az2）から復旧し、最後に Primary（通常 az1）を�
 **対象:** Issue #30 より前にデプロイし、`vm-db-az1-prod` と `vm-db-az2-prod` の 2 台だけで MongoDB レプリカセットを構成している環境です。
 
 **なぜ移行するか:** 2 ノード構成では、どちらか 1 台が止まると残り 1 台は 2 票中 1 票しか持たず、過半数を満たせません。そのため Primary を自動選出できず、手動の強制再構成が必要でした。3 台のデータ保持メンバー（PSS）にすると、どの 1 台が止まっても残り 2 台で自動選出でき、`w=majority` の書き込みも続きます。
-
-> **AWS との比較:** EC2 上の自己管理 MongoDB で、2 AZ 構成に 3 つ目の AZ のインスタンスを足すのと同じ作業です。Amazon DocumentDB ではレプリカインスタンスを追加するだけですが、ここではメンバー追加、初期同期の待機、接続文字列の更新を自分で行います。
 
 **方針:** オンラインで 1 台を追加します（`rs.add()`）。`rs.reconfig({force: true})` やレプリカセットの再作成、既存データの再初期化は **行いません**。
 
@@ -447,8 +443,6 @@ mongosh -u blogadmin -p --authenticationDatabase admin --quiet --eval 'rs.status
 
 **原因:** Issue #36 以前の環境では、mongod が keyFile（メンバー間認証）と `authorization`（クライアント認証）なしで動いていました。新しい Bicep で再デプロイすると、各 DB VM に `/etc/mongodb/keyfile` を書き込みます。ただし、データがある既存メンバーでは設定を切り替えず、新しい設定を `/etc/mongod.conf.pending-auth` に置くだけにします。3 台の CustomScript は並列に動くため、その場で再起動すると全台が同時に止まります。また、keyFile ありのメンバーと keyFile なしのメンバーは通信できません。そのため、`transitionToAuth` を使って 1 台ずつ切り替えます。
 
-> **AWS との比較:** Amazon DocumentDB では認証は常に有効で、無効にできません。自己管理の MongoDB では、EC2 上の構成と同じく、アクセス制御の有効化とキーの管理を利用者が行います。
-
 #### 手順 1: 前提を確認する
 
 1. Day 1 の Step 4 と同じ方法で、`mongoDbReplicaSetKey` を設定して `main.bicep` を再デプロイ済みであること。**キーは 3 台で同じ値です。** 以後の再デプロイでもキーを変更しません（変更すると CustomScript が `mongoDbReplicaSetKey differs` で失敗します）。
@@ -530,6 +524,12 @@ for vm in vm-db-az1-prod vm-db-az2-prod vm-db-az3-prod; do
     --query "value[0].message" -o tsv &
 done
 wait
+```
+
+その後、手順 4 で確認します。
+
+> **キーのローテーション:** `mongoDbReplicaSetKey` を変更して再デプロイしても、稼働中のメンバーのキーは置き換えません（CustomScript がエラーで止まります）。キーを変更する場合は、MongoDB の [Rotate Keys for Self-Managed Replica Sets](https://www.mongodb.com/docs/manual/tutorial/rotate-key-replica-set/) に従い、1 台ずつ手動で実施します。
+
 ### 7.4 DB セットアップの Step 3 が `RSSTATE` を取得できない (Issue #58)
 
 **症状:** 3 台とも `kernel=6.8.x mongod=active` で準備完了となるのに、`Replica set state ...: unknown` と `Could not read the replica set state ... (got: 'nothing')` が表示されます。
@@ -549,12 +549,6 @@ wait
 ```
 
 **期待結果:** 初回は `RSSTATE uninitialized -` の後に初期化が進み、既存環境では `RSSTATE initialized 3` の後に初期化をスキップします。`1 PRIMARY + 2 SECONDARY` とユーザー作成・確認まで進むことを確認します。手動の `rs.initiate()` や強制再構成は不要です。まだ停止する場合は、修正版が表示する終了コードとリモートエラーを確認してください。
-
-```
-
-その後、手順 4 で確認します。
-
-> **キーのローテーション:** `mongoDbReplicaSetKey` を変更して再デプロイしても、稼働中のメンバーのキーは置き換えません（CustomScript がエラーで止まります）。キーを変更する場合は、MongoDB の [Rotate Keys for Self-Managed Replica Sets](https://www.mongodb.com/docs/manual/tutorial/rotate-key-replica-set/) に従い、1 台ずつ手動で実施します。
 
 ## 8. Cloud Shell が切断された
 

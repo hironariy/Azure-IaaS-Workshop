@@ -147,8 +147,6 @@ Check that all three DB VMs (`vm-db-az1/az2/az3-prod`) are running (if two or mo
 
 MongoDB 8.0.x refuses to start on Linux kernel 6.19 or newer because of a TCMalloc/rseq incompatibility ([SERVER-121912](https://jira.mongodb.org/browse/SERVER-121912)). The Ubuntu 24.04 Azure image follows the *rolling* `linux-azure` kernel, which [moved to 7.0](https://discourse.ubuntu.com/t/kernel-7-0-is-now-the-default-for-ubuntu-24-04-lts-on-azure/88459). The fix in this workshop is to keep the DB VMs on Ubuntu's *long-term* Azure kernel track `linux-azure-lts-24.04` (6.8.x, still receives security updates). New deployments do this automatically. DB VMs created before this fix need the migration below.
 
-> **AWS comparison:** this is the same decision as keeping an EC2 database host on a specific Amazon Linux kernel line rather than the newest one. Amazon DocumentDB or RDS hide this problem because AWS owns the host OS and certifies the kernel/engine pair. On IaaS VMs, you own it.
-
 **Diagnose (inside each DB VM)**
 
 ```bash
@@ -232,8 +230,6 @@ Recover the SECONDARY members (az3, az2) first, then the PRIMARY (usually az1). 
 **Applies to:** environments deployed before Issue #30 whose MongoDB replica set has only `vm-db-az1-prod` and `vm-db-az2-prod`.
 
 **Why migrate:** with two nodes, if either one stops, the survivor has only 1 of 2 votes and is not a majority. It cannot elect a PRIMARY automatically, and recovery needed a manual forced reconfiguration. With three data-bearing members (PSS), any single node can stop: the other two elect a PRIMARY automatically and `w=majority` writes continue.
-
-> **AWS comparison:** this is the same work as adding an instance in a third AZ to a self-managed 2-AZ MongoDB deployment on EC2. With Amazon DocumentDB you just add a replica instance; here you add the member, wait for initial sync, and update the connection string yourself.
 
 **Approach:** add one member online with `rs.add()`. Do **not** use `rs.reconfig({force: true})`, recreate the replica set, or reinitialize existing data.
 
@@ -370,8 +366,6 @@ mongosh -u blogadmin -p --authenticationDatabase admin --quiet --eval 'rs.status
 
 **Cause:** Environments deployed before Issue #36 run mongod without a keyFile (member-to-member authentication) and without `authorization` (client authentication). Redeploying with the new Bicep writes `/etc/mongodb/keyfile` on every DB VM. On an existing member that has data, however, it does not switch the config: it only stages the new config as `/etc/mongod.conf.pending-auth`. The three CustomScripts run in parallel, so restarting there would stop all members at once, and a member with a keyFile cannot talk to members without one. You therefore switch one member at a time, using `transitionToAuth`.
 
-> **AWS comparison:** Amazon DocumentDB always requires authentication; you cannot turn it off. With self-managed MongoDB, as on EC2, you enable access control and manage the key yourself.
-
 #### Step 1: Check Prerequisites
 
 1. You have redeployed `main.bicep` with `mongoDbReplicaSetKey` set, as in Day 1 Step 4. **All three VMs use the same key.** Do not change the key in later redeployments (CustomScript fails with `mongoDbReplicaSetKey differs`).
@@ -453,6 +447,12 @@ for vm in vm-db-az1-prod vm-db-az2-prod vm-db-az3-prod; do
     --query "value[0].message" -o tsv &
 done
 wait
+```
+
+Then verify with Step 4.
+
+> **Key rotation:** changing `mongoDbReplicaSetKey` and redeploying does not replace the key of a running member (CustomScript stops with an error). To change the key, follow MongoDB's [Rotate Keys for Self-Managed Replica Sets](https://www.mongodb.com/docs/manual/tutorial/rotate-key-replica-set/) one member at a time.
+
 ### 7.4 DB Setup Step 3 Cannot Read `RSSTATE` (Issue #58)
 
 **Symptom:** All three DB VMs report ready with `kernel=6.8.x mongod=active`, but setup stops with `Replica set state ...: unknown` and `Could not read the replica set state ... (got: 'nothing')`.
@@ -472,12 +472,6 @@ Keep your configured passwords and key unchanged, then rerun from the repository
 ```
 
 **Expected Result:** A fresh deployment reports `RSSTATE uninitialized -` and proceeds with initialization; an existing set reports `RSSTATE initialized 3` and skips initialization. Confirm that setup reaches `1 PRIMARY + 2 SECONDARY` and creates or verifies the users. Manual `rs.initiate()` or forced reconfiguration is unnecessary. If setup still stops, inspect the exit code and remote error printed by the fixed version.
-
-```
-
-Then verify with Step 4.
-
-> **Key rotation:** changing `mongoDbReplicaSetKey` and redeploying does not replace the key of a running member (CustomScript stops with an error). To change the key, follow MongoDB's [Rotate Keys for Self-Managed Replica Sets](https://www.mongodb.com/docs/manual/tutorial/rotate-key-replica-set/) one member at a time.
 
 ## 8. Cloud Shell Disconnected
 

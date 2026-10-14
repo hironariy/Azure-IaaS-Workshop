@@ -93,7 +93,7 @@ az role assignment list --assignee "$(az ad signed-in-user show --query id -o ts
 > [!NOTE]
 > 組織のポリシーで Storage アカウントの**共有キー アクセスが無効化**されている場合、ASR はキャッシュ用 Storage アカウントへ Recovery Services vault のマネージド ID でアクセスします。このとき vault のマネージド ID へのロールの割り当て（キャッシュ Storage アカウントに対する共同作成者と Storage BLOB データ共同作成者）が必要になり、共同作成者だけでは実施できません。この場合、Day 2 Step 11 は講師にロールの割り当てを依頼するか、講師デモで確認します（[トラブルシューティングランブック §10](../operations/troubleshooting-runbook.ja.md#10-day-2-の-backup--asr-が進まない)）。
 
-> **AWS との比較:** 共同作成者は「EC2 などのリソースは作れるが、IAM ポリシーのアタッチ（`iam:AttachRolePolicy` など）は許可されていない IAM ユーザー」に近い権限です。Azure ではロールの割り当て自体が `Microsoft.Authorization` の操作として権限管理されます。
+> **権限の補足:** Azure ではロールの割り当て自体が `Microsoft.Authorization` の操作として権限管理されます。共同作成者だけではロールを割り当てられません。
 
 このワークショップでは Dsv6 シリーズ VM を 7 台使います（DB は Zone 1/2/3 に 1 台ずつの 3 台構成の MongoDB レプリカセット、Issue #30）。
 

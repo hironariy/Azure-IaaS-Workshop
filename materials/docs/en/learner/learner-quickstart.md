@@ -45,18 +45,6 @@ Confirm how to move through the 2-day Azure IaaS Workshop and which pages to ope
 
 Local Azure CLI, Azure PowerShell, Bicep CLI, OpenSSL, Node.js, and Docker are not required for the normal workshop path.
 
-## AWS-To-Azure Mental Map
-
-| AWS Concept | Azure Equivalent |
-|---|---|
-| VPC | Virtual Network (VNet) |
-| Security Group / NACL | Network Security Group (NSG) |
-| ALB | Application Gateway |
-| NLB | Standard Load Balancer |
-| IAM Role / Instance Profile | Azure RBAC / Managed Identity |
-| CloudWatch Logs | Azure Monitor / Log Analytics |
-| EC2 multi-AZ placement | VM placement across Availability Zones |
-
 ## Checkpoints
 
 - You can explain what Day 0 prepares.

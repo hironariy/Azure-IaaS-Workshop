@@ -76,8 +76,6 @@ Record the instructor-specified target region and use it again in Step 11. If Da
 
 **Checkpoint:** The `backups` container in the Bicep-created storage account is different from a Recovery Services vault. If you already use a same-region vault for Backup, keep it and add only the ASR vault in a different region. See the official placement requirements for [Azure Backup](https://learn.microsoft.com/azure/backup/backup-create-recovery-services-vault) and [Azure-to-Azure Site Recovery](https://learn.microsoft.com/azure/site-recovery/azure-to-azure-tutorial-enable-replication).
 
-> **AWS comparison:** An Azure Backup vault is comparable to an AWS Backup vault. ASR is closer to AWS Elastic Disaster Recovery, where DR is configured in the recovery target region. Treat backup and regional DR as separate purposes with different placement requirements.
-
 ## 3. Enable Azure Backup
 
 1. Open the Backup vault `rsv-blogapp-backup`.
@@ -179,8 +177,6 @@ This exercise checks three things:
 2. Stopping each SECONDARY one at a time does not interrupt reads or writes.
 3. A stopped node rejoins and its data matches.
 
-> **AWS comparison:** This behaves like a self-managed MongoDB replica set on three EC2 instances in three AZs. With Amazon DocumentDB the service promotes a replica for you; here you observe the election mechanism yourself.
-
 ### 9.1 Prepare: Status Command And API Probe
 
 In Cloud Shell, define a helper that prints replica set state. Run it against a DB VM that is not stopped. MongoDB requires authentication (Issue #36), so first enter the password of the admin user `blogadmin` (`<YOUR_MONGODB_ADMIN_PASSWORD>` from Day 1). The input is not echoed and is kept only in a variable of this Cloud Shell session. Section 9.5 reuses the same variable.
@@ -226,7 +222,7 @@ probe_summary() {
 | `000` | Timeout or connection failure | **Yes** |
 | `429` | Backend rate limit (Too Many Requests) | **No** |
 
-> **Why `429` is excluded:** the backend limits `/api` to **100 requests per 15 minutes per App VM** (`express-rate-limit` in `materials/backend/src/app.ts`, limit `RATE_LIMIT_MAX_REQUESTS`). The probe and your browser share that limit, so a shorter interval returns `429` even while the DB is healthy. A `429` is not a DB failure, so leave it out of the recovery-time calculation. In AWS terms, this is like telling API Gateway throttling (`429`) apart from ALB target failures (`502`/`503`).
+> **Why `429` is excluded:** the backend limits `/api` to **100 requests per 15 minutes per App VM** (`express-rate-limit` in `materials/backend/src/app.ts`, limit `RATE_LIMIT_MAX_REQUESTS`). The probe and your browser share that limit, so a shorter interval returns `429` even while the DB is healthy. A `429` is not a DB failure, so leave it out of the recovery-time calculation.
 >
 > **Why not probe `/health`:** `https://$FQDN/health` is answered directly by NGINX on the Web VM for the Application Gateway probe and never reaches the App VMs or MongoDB. To observe a DB failover, probe `/api/posts`, which reads from the DB.
 
@@ -287,7 +283,7 @@ Record:
 - **Election time** = `elected=` time − T0 (typically **about 10-15 seconds**: a SECONDARY starts an election after it gets no heartbeat from the PRIMARY for the default `electionTimeoutMillis` of 10 seconds)
 - **App recovery time** = first `200` after the last `5xx`/`000` − T0 (typically election time plus a few seconds while the driver discovers the new PRIMARY)
 
-**Comparing 9.2 and 9.3:** a planned handover (9.2) is almost zero-downtime, while a failure-driven election (9.3) stops writes for the detection wait (`electionTimeoutMillis`). That is the practical RTO of automatic failover. In AWS terms, it is the difference between an RDS Multi-AZ reboot with failover and an automatic failover after an AZ outage.
+**Comparing 9.2 and 9.3:** a planned handover (9.2) is almost zero-downtime, while a failure-driven election (9.3) stops writes for the detection wait (`electionTimeoutMillis`). That is the practical RTO of automatic failover.
 
 ```bash
 az vm start --resource-group "$RESOURCE_GROUP" --name vm-db-az1-prod

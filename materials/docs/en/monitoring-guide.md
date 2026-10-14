@@ -19,8 +19,6 @@ This guide shows how to observe and troubleshoot the workshop environment using:
 2. Create a workspace in the same region as your primary deployment (recommended).
 3. Name it with an environment suffix, e.g. `law-blogapp-dev`.
 
-**AWS analogy:** Log Analytics workspace is conceptually similar to a centralized CloudWatch Logs destination + query layer.
-
 ---
 
 ## 2. Enable platform diagnostics to Log Analytics

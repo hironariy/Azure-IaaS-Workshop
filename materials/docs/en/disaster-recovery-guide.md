@@ -29,8 +29,6 @@ Failing over the DB tier is more nuanced than stateless tiers. This guide focuse
 - ASR replicate web/app/db VMs
 - Requires clearer DB failover plan and consistent recovery sequencing
 
-**AWS analogy:** Azure Backup vaults resemble AWS Backup vaults, while ASR is closer to AWS Elastic Disaster Recovery configured in the recovery target region. Separate backup and regional DR placement requirements.
-
 ---
 
 ## 2. Azure Backup: protect the VMs

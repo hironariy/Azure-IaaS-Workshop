@@ -124,7 +124,7 @@ Paste only the one-line output into `mongoDbReplicaSetKey`. The output has no tr
 >
 > Do not use `@` in `mongoDbAppPassword`. `@` is reserved in connection strings and breaks the generated `MONGODB_URI`. The post-deployment script rejects passwords with spaces, quotes, `$`, `\`, `@`, `:`, `/` or `%` (for example, use `openssl rand -hex 16`).
 >
-> `mongoDbReplicaSetKey` is the shared key the 3 DB VMs use to authenticate each other (Issue #36). MongoDB starts with a keyFile and `authorization: enabled`, so nothing can be read or written without a user name and password. The key is passed in the CustomScript `protectedSettings` (encrypted), so it is not shown in the portal or by `az vm extension show`. Amazon DocumentDB always requires authentication; MongoDB on VMs (EC2 or Azure) must have it turned on by you.
+> `mongoDbReplicaSetKey` is the shared key the 3 DB VMs use to authenticate each other (Issue #36). MongoDB starts with a keyFile and `authorization: enabled`, so nothing can be read or written without a user name and password. The key is passed in the CustomScript `protectedSettings` (encrypted), so it is not shown in the portal or by `az vm extension show`.
 
 For multiple groups, also set `groupId`.
 
@@ -247,8 +247,6 @@ sudo blogapp-kernel-track status           # running kernel ... OK (6.8 LTS trac
 
 **Checkpoint:** If `uname -r` shows 6.19 or newer (for example `7.0.x`) or mongod is `failed`, see [Troubleshooting runbook 7.1](../operations/troubleshooting-runbook.md#71-mongodb-does-not-start-linux-kernel-619-or-newer-issue-26).
 
-> **AWS comparison:** with Amazon DocumentDB, AWS chooses and patches the host kernel for you. With MongoDB on IaaS VMs, you choose the kernel track, just as you would when pinning a kernel line on an EC2 database host.
-
 ### 9.2 Check The 3-Member Replica Set
 
 The DB tier is 3 data-bearing members: 1 PRIMARY + 2 SECONDARY, no arbiter (Issue #30). Connect to `vm-db-az1-prod` and run the command below. MongoDB requires authentication (Issue #36), so log in as the admin user `blogadmin`. `-p` without a value prompts for the password: enter `<YOUR_MONGODB_ADMIN_PASSWORD>` from Step 9 (it is not saved in the shell history).
@@ -279,8 +277,6 @@ mongosh --quiet --eval 'db.getSiblingDB("blogapp").posts.findOne()'
 ```
 
 **Expected Result:** the command is rejected, for example `MongoServerError: Command find requires authentication`. If data is returned, access control is off: see [Troubleshooting runbook 7.3](../operations/troubleshooting-runbook.md#73-enable-mongodb-access-control-on-an-existing-environment-issue-36).
-
-> **AWS comparison:** this is the same layout as self-managed MongoDB on 3 EC2 instances, one per AZ. With Amazon DocumentDB the service promotes a replica for you; here you own the replica set configuration and elections.
 
 ## 10. Configure The Data Collection Rule
 

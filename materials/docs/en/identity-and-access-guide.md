@@ -6,8 +6,6 @@ This guide explains how identity and access work in this workshop, focusing on:
 - Managed Identity (service-to-service auth inside Azure)
 - Secret handling patterns used in this repository
 
-It is written for AWS-experienced engineers and maps Azure concepts to familiar mental models.
-
 ## 1) The most important mental model: two planes
 
 Azure has two different “authorization worlds” that often get confused:
@@ -16,15 +14,9 @@ Azure has two different “authorization worlds” that often get confused:
 - “Can I create/update/read Azure resources?”
 - Governed by **Azure RBAC role assignments** on scopes (subscription / resource group / resource)
 
-AWS analogy:
-- Similar to IAM permissions used to call AWS APIs (CreateVpc, RunInstances, etc.).
-
 ### 1.2 Data plane (your application APIs)
 - “Can I call the blog API?”
 - Governed by your **app’s authentication and authorization** (OAuth tokens, JWT validation, app roles)
-
-AWS analogy:
-- Similar to Cognito-issued JWTs that your API validates.
 
 In this workshop:
 - Azure RBAC controls access to Azure infrastructure (portal, deployments, Key Vault access)
@@ -60,9 +52,6 @@ Each VM is created with a **system-assigned managed identity**.
 
 Used for:
 - Accessing Azure resources without a password (e.g., reading Key Vault secrets)
-
-AWS analogy:
-- Like an EC2 instance profile / IAM role attached to an instance.
 
 Where this shows up:
 - In Bicep (`vm.bicep`), VMs set `identity: { type: 'SystemAssigned' }`

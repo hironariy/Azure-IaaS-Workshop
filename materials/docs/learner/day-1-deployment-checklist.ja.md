@@ -139,7 +139,7 @@ openssl rand -base64 756 | tr -d '\n'
 >
 > MongoDB connection string では `@` が予約文字です。この教材では Bicep が password を connection string に埋め込むため、`mongoDbAppPassword` には `@` を使わないでください。迷った場合は、英数字と `!`、`-`、`_`、`.` の範囲で作成します。post-deployment script は空白、引用符、`$`、`\`、`@`、`:`、`/`、`%` を含む password を受け付けません（例: `openssl rand -hex 16`）。
 >
-> `mongoDbReplicaSetKey` は 3 台の DB VM が互いを認証するための共有キーです（Issue #36）。MongoDB は keyFile と `authorization: enabled` で起動し、ユーザー名とパスワードなしでは読み書きできません。キーは CustomScript の `protectedSettings`（暗号化）で渡されるため、ポータルや `az vm extension show` には表示されません。AWS の Amazon DocumentDB は常に認証必須ですが、VM 上の MongoDB（EC2 でも Azure VM でも）は自分で有効にする必要があります。
+> `mongoDbReplicaSetKey` は 3 台の DB VM が互いを認証するための共有キーです（Issue #36）。MongoDB は keyFile と `authorization: enabled` で起動し、ユーザー名とパスワードなしでは読み書きできません。キーは CustomScript の `protectedSettings`（暗号化）で渡されるため、ポータルや `az vm extension show` には表示されません。
 
 複数グループの場合は `groupId` も設定します。
 
@@ -275,8 +275,6 @@ sudo blogapp-kernel-track status           # running kernel ... OK (6.8 LTS trac
 
 **チェックポイント:** `uname -r` が 6.19 以上（例: `7.0.x`）の場合や、mongod が `failed` の場合は、[トラブルシューティングランブック 7.1](../operations/troubleshooting-runbook.ja.md#71-mongodb-が起動しない-linux-カーネル-619-以上-issue-26) を確認します。
 
-> **AWS との比較:** Amazon DocumentDB では、ホストのカーネルの選択とパッチ適用を AWS が行います。IaaS VM 上の MongoDB では、EC2 の DB ホストでカーネル系列を固定するのと同じように、カーネルトラックを利用者が選択します。
-
 ### 9.2 レプリカセットが 3 メンバーであることを確認する
 
 DB tier は 3 台のデータ保持メンバー（Primary 1 台 + Secondary 2 台、アービターなし）で構成します（Issue #30）。`vm-db-az1-prod` に接続して次を実行します。MongoDB は認証が有効なため（Issue #36）、管理ユーザー `blogadmin` でログインします。`-p` に値を付けないとパスワードを聞かれるので、Step 9 の `<YOUR_MONGODB_ADMIN_PASSWORD>` を入力します（コマンド履歴に残りません）。
@@ -307,8 +305,6 @@ mongosh --quiet --eval 'db.getSiblingDB("blogapp").posts.findOne()'
 ```
 
 **期待結果:** `MongoServerError: Command find requires authentication` のように拒否されます。データが表示された場合はアクセス制御が無効です。[トラブルシューティングランブック 7.3](../operations/troubleshooting-runbook.ja.md#73-既存環境で-mongodb-のアクセス制御を有効にする-issue-36) を確認します。
-
-> **AWS との比較:** 3 つの AZ に 1 台ずつ EC2 を置いて MongoDB を自己管理する構成と同じです。Amazon DocumentDB では、レプリカの昇格はサービスが行います。ここではレプリカセットの構成と選挙を利用者が管理します。
 
 ## 10. Data Collection Rule を構成する
 
