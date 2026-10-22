@@ -122,7 +122,14 @@ Paste only the one-line output into `mongoDbReplicaSetKey`. The output has no tr
 > [!IMPORTANT]
 > `mongoDbAppPassword` must exactly match `<YOUR_MONGODB_APP_PASSWORD>` in `post-deployment-setup.local.sh`. If they differ, the Backend API cannot connect to MongoDB.
 >
-> Do not use `@` in `mongoDbAppPassword`. `@` is reserved in connection strings and breaks the generated `MONGODB_URI`. The post-deployment script rejects passwords with spaces, quotes, `$`, `\`, `@`, `:`, `/` or `%` (for example, use `openssl rand -hex 16`).
+> In this workshop, Bicep embeds `mongoDbAppPassword` directly (without URL-encoding) into the MongoDB connection string (`MONGODB_URI`) and writes it to `/opt/blogapp/.env` and `/etc/environment` on the App VMs. Step 9's post-deployment script also embeds it into `mongosh` commands over SSH. **Do not use `@`, `#`, or any of the following characters in `mongoDbAppPassword` (or `ADMIN_PASSWORD`):**
+>
+> - **`@`**: Reserved in MongoDB connection strings as the delimiter between user credentials and hosts; breaks `MONGODB_URI`.
+> - **`#`**: Treated as the URI fragment delimiter and as the start of a comment in `.env` (`dotenv`) and `/etc/environment`, which truncates `MONGODB_URI` at `#` and causes MongoDB connection failures.
+> - **Other URI reserved / percent-encoding characters (`:`, `/`, `?`, `%`, `[`, `]`)**: Interpreted as URI delimiters or percent-encoding sequences, breaking connection string parsing or authentication.
+> - **Shell, `.env`, and script special characters (spaces/whitespace, single quote `'`, double quote `"`, backtick `` ` ``, `$`, `\`, `<`, `>`)**: Break variable expansion, command quoting, or placeholder validation during VM provisioning and post-deployment setup.
+>
+> Stick to **letters (`A-Z`, `a-z`), digits (`0-9`), and `!`, `-`, `_`, `.`**, or generate a hex password such as `openssl rand -hex 16`.
 >
 > `mongoDbReplicaSetKey` is the shared key the 3 DB VMs use to authenticate each other (Issue #36). MongoDB starts with a keyFile and `authorization: enabled`, so nothing can be read or written without a user name and password. The key is passed in the CustomScript `protectedSettings` (encrypted), so it is not shown in the portal or by `az vm extension show`.
 
@@ -217,7 +224,7 @@ Run the script.
 
 **Expected Result:** The 3-member MongoDB replica set and the users are created, and the Step 6 check shows 1 `PRIMARY` and 2 `SECONDARY`. The script is safe to re-run (it never re-initializes an initialized set). If a step fails, the script prints the cause and fix as `[ERROR]` lines and exits with a non-zero code; apply the fix and run it again. Passwords in MongoDB connection strings are masked as `***` in the output.
 
-**Checkpoint:** Password mismatch or a password containing `@` will prevent the backend from connecting to MongoDB.
+**Checkpoint:** Password mismatch or a password containing `@`, `#`, or other unsupported special characters (see Step 4) will prevent the backend from connecting to MongoDB.
 
 If Step 2 succeeds but Step 3 stops with `Replica set state ...: unknown`, follow [Troubleshooting runbook 7.4](../operations/troubleshooting-runbook.md#74-db-setup-step-3-cannot-read-rsstate-issue-58) to change the local script's SSH option from `-t` to `-T`.
 
@@ -322,7 +329,7 @@ Open the Frontend SPA app registration in Azure Portal.
 | DB CustomScript fails to identify its disk | Check LUN 0 and the `/dev/disk/azure/data/by-lun/0` symlink; rerun the DB extension on the existing VM with `skipVmCreationDb=true` and a new `forceUpdateTagDb` after fixing the script |
 | DNS label is already used | Choose a unique `appGatewayDnsLabel` |
 | Deployment fails | Resource group > Deployments > failed operation details |
-| MongoDB connection fails later | `mongoDbAppPassword` matches post-deployment setup and does not contain `@` |
+| MongoDB connection fails later | `mongoDbAppPassword` matches post-deployment setup and does not contain `@`, `#`, or other unsupported characters |
 | Post-deployment Step 2 times out / API shows `ECONNREFUSED` `ReplicaSetNoPrimary` | DB VM kernel is 6.8.x and mongod is active (Step 9.1, [runbook 7.1](../operations/troubleshooting-runbook.md#71-mongodb-does-not-start-linux-kernel-619-or-newer-issue-26)) |
 | `az network bastion ssh` is missing | Bastion extension is installed and updated |
 | Cloud Shell reconnect breaks SSH | Restore keys from `~/clouddrive/workshop-keys` |

@@ -131,7 +131,7 @@ You need to create **two app registrations** in Microsoft Entra ID for authentic
 
 4. **Configure the App**
    - **Name**: `BlogApp Frontend (Dev)` (or any name you prefer)
-   - **Supported account types**: Select "Accounts in this organizational directory only"
+   - **Supported account types**: Select **Single tenant only - \<Entra ID tenant name\>**
    - **Redirect URI**: 
      - Select **"Single-page application (SPA)"** from the dropdown
      - Enter: `http://localhost:5173`
@@ -160,7 +160,7 @@ You need to create **two app registrations** in Microsoft Entra ID for authentic
 
 2. **Configure the App**
    - **Name**: `BlogApp API (Dev)`
-   - **Supported account types**: "Accounts in this organizational directory only"
+   - **Supported account types**: **Single tenant only - \<Entra ID tenant name\>**
    - **Redirect URI**: Leave empty (APIs don't need redirect URIs)
 
 3. **Click "Register"**

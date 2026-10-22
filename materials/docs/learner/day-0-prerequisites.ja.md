@@ -183,7 +183,7 @@ Microsoft Entra ID でアプリ登録を作成するには、次のいずれか�
 
 1. Microsoft Entra ID > App registrations > **New registration** を開きます。
 2. Name に `BlogApp Frontend <自分またはチーム名>` を入力します。
-3. Supported account types は講師指定がなければ **Accounts in this organizational directory only** を選びます。
+3. Supported account types は講師指定がなければ **Single tenant only - \<Entra ID tenant name\>** を選びます。
 4. Redirect URI は platform に **Single-page application (SPA)** を選び、`http://localhost:5173` を入力します。
 5. Register をクリックします。
 6. Overview で **Application (client) ID** と **Directory (tenant) ID** を控えます。

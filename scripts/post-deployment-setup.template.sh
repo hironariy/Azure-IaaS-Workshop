@@ -175,9 +175,9 @@ check_password() {
         log_error "Set $name in the Configuration section."
         exit 1
     fi
-    if [[ "$value" =~ [[:space:]\'\"\`\$\\@:/%] ]]; then
-        log_error "$name contains a character that is not supported here (space ' \" \` \$ \\ @ : / %)."
-        log_error "Use letters, digits and symbols such as - _ . ! # * + =. APP_PASSWORD must equal mongoDbAppPassword in Bicep."
+    if [[ "$value" =~ [][[:space:]\'\"\`\$\\@#:/\?%\<\>] ]]; then
+        log_error "$name contains a character that is not supported here (space ' \" \` \$ \\ @ # : / ? % [ ] < >)."
+        log_error "Use letters, digits and symbols such as - _ . !. APP_PASSWORD must equal mongoDbAppPassword in Bicep."
         exit 1
     fi
 }

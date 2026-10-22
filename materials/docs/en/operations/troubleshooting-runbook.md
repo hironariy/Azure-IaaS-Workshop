@@ -115,7 +115,7 @@ az vm list --resource-group "$RESOURCE_GROUP" --show-details \
   --query "[?contains(name, 'vm-app')].{name:name,powerState:powerState}" -o table
 ```
 
-If MongoDB connectivity is suspected, confirm that `mongoDbAppPassword` and `post-deployment-setup.local.sh` use the same value and that the password does not contain `@`.
+If MongoDB connectivity is suspected, confirm that `mongoDbAppPassword` and `post-deployment-setup.local.sh` use the same value and that the password does not contain `@`, `#`, or other unsupported special characters.
 
 ## 7. DB Connection Timeout Occurs
 

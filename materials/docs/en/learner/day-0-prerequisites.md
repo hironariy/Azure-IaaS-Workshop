@@ -182,7 +182,7 @@ If you do not have permission, ask the instructor. The instructor may provide pr
 
 1. Open Microsoft Entra ID > App registrations > **New registration**.
 2. Enter `BlogApp Frontend <your name or team name>` as the name.
-3. Unless instructed otherwise, select **Accounts in this organizational directory only**.
+3. Unless instructed otherwise, select **Single tenant only - \<Entra ID tenant name\>** for Supported account types.
 4. For Redirect URI, select **Single-page application (SPA)** and enter `http://localhost:5173`.
 5. Select Register.
 6. On Overview, record **Application (client) ID** and **Directory (tenant) ID**.

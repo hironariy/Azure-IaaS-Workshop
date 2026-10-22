@@ -95,8 +95,9 @@ param sslCertificatePassword = ''  // REQUIRED: Add certificate password here
 
 // MongoDB application user password
 // Use a strong password with at least 12 characters.
-// Letters, digits and - _ . ! # * + = only: the password is embedded in the
-// MongoDB connection string, so @ : / % and quotes are not allowed.
+// Letters, digits and - _ . ! only: the password is embedded in the MongoDB
+// connection string and .env file, so @ # : / ? % [ ] < > $ \ spaces and
+// quotes are not allowed.
 // Example: Generate with: openssl rand -hex 16
 param mongoDbAppPassword = ''  // REQUIRED: Add MongoDB app password here
 

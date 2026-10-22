@@ -180,7 +180,7 @@ az vm list --resource-group "$RESOURCE_GROUP" --show-details \
 - DB VM が停止していれば起動します。
 - Day 1 の post-deployment setup を再確認します。
 - パスワード不一致が疑われる場合は `main.local.bicepparam` と `post-deployment-setup.local.sh` の値を照合します。
-- `mongoDbAppPassword` に `@` を含めた場合、Bicep が作成する `MONGODB_URI` の user info 区切りとして解釈され、接続文字列が壊れます。この教材では password を作り直し、`main.local.bicepparam` と `post-deployment-setup.local.sh` を同じ値にそろえてから再実行します。
+- `mongoDbAppPassword` に `@` や `#`、`:`、`/`、`?`、`%` などの使用不可文字を含めた場合、Bicep が作成する `MONGODB_URI` の区切り文字や `.env` のコメント開始（`#`）として解釈され、接続文字列が壊れます。この教材では英数字と `!`、`-`、`_`、`.` の範囲（または `openssl rand -hex 16`）で password を作り直し、`main.local.bicepparam` と `post-deployment-setup.local.sh` を同じ値にそろえてから再実行します。
 - API のログに `ECONNREFUSED` / `ReplicaSetNoPrimary` が出る場合は 7.1 を確認します。
 - API のログに `Authentication failed` が出る場合は、`mongoDbAppPassword` と post-deployment setup の `APP_PASSWORD` が一致しているか確認します。
 - post-deployment setup が `mongod is running without authorization` と警告した場合、または DB VM に `/etc/mongod.conf.pending-auth` がある場合は 7.3 を実施します。

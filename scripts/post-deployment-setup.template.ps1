@@ -146,9 +146,9 @@ foreach ($pw in @(@{ Name = 'AdminPassword'; Value = $Config.AdminPassword }, @{
         Write-LogError "Set $($pw.Name) in the Configuration section."
         exit 1
     }
-    if ($pw.Value -match '[\s''"`$\\@:/%]') {
-        Write-LogError "$($pw.Name) contains a character that is not supported here (space ' `" `` `$ \ @ : / %)."
-        Write-LogError "Use letters, digits and symbols such as - _ . ! # * + =. AppPassword must equal mongoDbAppPassword in Bicep."
+    if ($pw.Value -match '[\s''"`$\\@#:/?%\[\]<>]') {
+        Write-LogError "$($pw.Name) contains a character that is not supported here (space ' `" `` `$ \ @ # : / ? % [ ] < >)."
+        Write-LogError "Use letters, digits and symbols such as - _ . !. AppPassword must equal mongoDbAppPassword in Bicep."
         exit 1
     }
 }

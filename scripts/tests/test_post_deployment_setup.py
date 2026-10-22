@@ -89,6 +89,49 @@ TEST_STATE={state} TEST_RC={exit_code}
         self.assertIn("exit code 9", result.stdout)
         self.assertNotIn("Replica set initiated", result.stdout)
 
+    def test_should_validate_passwords_rejecting_uri_and_dotenv_special_chars(self):
+        check_fn = TEMPLATE.split("check_password() {", 1)[1].split(
+            "check_password ADMIN_PASSWORD", 1
+        )[0]
+        script = (
+            'RED="" GREEN="" YELLOW="" BLUE="" NC=""\n'
+            + HELPERS
+            + "check_password() {"
+            + check_fn
+            + 'check_password APP_PASSWORD "$TEST_PW"\n'
+        )
+        for valid_pw in ["SafePass123!_.-", "a1b2c3d4e5f6"]:
+            res = subprocess.run(
+                ["bash", "-s"],
+                input=f"TEST_PW='{valid_pw}'\n" + script,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(res.returncode, 0, f"Expected valid: {valid_pw}")
+
+        for invalid_pw in [
+            "pass@word",
+            "pass#word",
+            "pass:word",
+            "pass/word",
+            "pass?word",
+            "pass%word",
+            "pass[word",
+            "pass]word",
+            "pass<word",
+            "pass>word",
+            "pass word",
+        ]:
+            res = subprocess.run(
+                ["bash", "-s"],
+                input=f"TEST_PW='{invalid_pw}'\n" + script,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(res.returncode, 1, f"Expected invalid: {invalid_pw}")
+
 
 if __name__ == "__main__":
     unittest.main()

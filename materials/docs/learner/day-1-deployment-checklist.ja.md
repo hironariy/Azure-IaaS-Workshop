@@ -137,7 +137,14 @@ openssl rand -base64 756 | tr -d '\n'
 > [!IMPORTANT]
 > `mongoDbAppPassword` は、Step 9 の `post-deployment-setup.local.sh` に設定する `<YOUR_MONGODB_APP_PASSWORD>` と **1 文字も違わず一致**させます。不一致の場合、Bicep が作成する App VM の `MONGODB_URI` と MongoDB 上のユーザー password がずれ、Backend API が DB に接続できません。
 >
-> MongoDB connection string では `@` が予約文字です。この教材では Bicep が password を connection string に埋め込むため、`mongoDbAppPassword` には `@` を使わないでください。迷った場合は、英数字と `!`、`-`、`_`、`.` の範囲で作成します。post-deployment script は空白、引用符、`$`、`\`、`@`、`:`、`/`、`%` を含む password を受け付けません（例: `openssl rand -hex 16`）。
+> この教材では、Bicep が `mongoDbAppPassword` を URL エンコードせずにそのまま MongoDB 接続文字列（`MONGODB_URI`）へ埋め込み、App VM の `/opt/blogapp/.env` や `/etc/environment` に出力します。また、Step 9 の post-deployment script でも SSH 経由の `mongosh` コマンドに埋め込んで実行します。そのため、**`@` や `#` をはじめとする次の文字は `mongoDbAppPassword`（および `ADMIN_PASSWORD`）に使わないでください。**
+>
+> - **`@`**: MongoDB 接続文字列でユーザー情報とホスト名の区切りとして予約されており、`MONGODB_URI` の解釈が壊れます。
+> - **`#`**: URI のフラグメント区切りとして扱われるほか、`.env` ファイル（`dotenv`）や `/etc/environment` で `#` 以降がコメントとして切り捨てられるため、接続文字列が途中で切れて接続に失敗します。
+> - **その他の URI 予約文字・エンコード文字（`:`、`/`、`?`、`%`、`[`、`]`）**: 接続文字列の区切り（コロン、パス、クエリ等）やパーセントエンコードとして解釈され、`MONGODB_URI` のパースエラーや認証失敗の原因になります。
+> - **シェル・`.env`・スクリプトで特別な意味を持つ文字（空白、シングルクォート `'`、ダブルクォート `"`、バッククォート `` ` ``、`$`、`\`、`<`、`>`）**: VM プロビジョニング時や post-deployment script 実行時の変数展開・クォート崩れ・未置換プレースホルダ判定を引き起こします。
+>
+> 迷った場合は、**英数字（`A-Z`、`a-z`、`0-9`）と `!`、`-`、`_`、`.` の範囲**で作成するか、`openssl rand -hex 16` のように 16 進文字列を生成して使用してください。
 >
 > `mongoDbReplicaSetKey` は 3 台の DB VM が互いを認証するための共有キーです（Issue #36）。MongoDB は keyFile と `authorization: enabled` で起動し、ユーザー名とパスワードなしでは読み書きできません。キーは CustomScript の `protectedSettings`（暗号化）で渡されるため、ポータルや `az vm extension show` には表示されません。
 
@@ -238,7 +245,7 @@ code post-deployment-setup.local.sh
 
 **期待結果:** 3 メンバーの MongoDB レプリカセットとユーザーの作成が成功し、Step 6 の検証で `PRIMARY` 1 つと `SECONDARY` 2 つが表示されます。スクリプトは再実行しても安全です（初期化済みのレプリカセットを再初期化しません）。いずれかの手順が失敗すると、スクリプトは `[ERROR]` で原因と対処を表示し、0 以外の終了コードで止まります。表示された対処を行ってから再実行します。出力中の MongoDB 接続文字列のパスワードは `***` でマスクされます。
 
-**チェックポイント:** `MONGODB_APP_PASSWORD` と `mongoDbAppPassword` が一致しない場合、バックエンド API は MongoDB に接続できません。`@` を含む password も MongoDB connection string を壊すため使わないでください。
+**チェックポイント:** `MONGODB_APP_PASSWORD` と `mongoDbAppPassword` が一致しない場合、バックエンド API は MongoDB に接続できません。`@` や `#` など接続文字列や `.env` を壊す文字（Step 4 参照）を含む password も使わないでください。
 
 Step 2 が成功しても Step 3 が `Replica set state ...: unknown` で停止する場合は、[トラブルシューティングランブック 7.4](../operations/troubleshooting-runbook.ja.md#74-db-セットアップの-step-3-が-rsstate-を取得できない-issue-58) に従い、ローカルスクリプトの SSH オプションを `-t` から `-T` に変更します。
 
@@ -356,7 +363,7 @@ Azure Portal でフロントエンド SPA のアプリ登録を開きます。
 | DB VM の CustomScript が失敗する | VM 拡張のログで `LUN 0` と `/dev/disk/azure/data/by-lun/0` を確認 | 既存 VM は削除せず、修正後に `skipVmCreationDb=true` と新しい `forceUpdateTagDb` で拡張を再実行（[再デプロイ手順](../reference/bicep-techniques-guide.ja.md#53-forceupdatetag-で-custom-script-を再実行する)） |
 | DNS label が重複する | `appGatewayDnsLabel` がリージョン内で一意か | Step 4 |
 | Deployment が失敗する | Portal の Deployments の失敗リソースと error details | Step 7 |
-| MongoDB 接続に失敗する | `mongoDbAppPassword` と post-deployment script の値、`@` を含まない password か | Step 4、Step 9 |
+| MongoDB 接続に失敗する | `mongoDbAppPassword` と post-deployment script の値が一致しているか、`@` や `#` などの使用不可文字を含まない password か | Step 4、Step 9 |
 | post-deployment の Step 2 がタイムアウトする / API が `ECONNREFUSED` `ReplicaSetNoPrimary` になる | DB VM のカーネルが 6.8.x で mongod が active か | Step 9.1、[ランブック 7.1](../operations/troubleshooting-runbook.ja.md#71-mongodb-が起動しない-linux-カーネル-619-以上-issue-26) |
 | `az network bastion ssh` が見つからない | Bastion extension が Cloud Shell に入っているか | Step 8 |
 | Cloud Shell 再起動後に SSH できない | `~/.ssh/id_rsa` と環境変数を復旧したか | トラブルシューティングランブック |
