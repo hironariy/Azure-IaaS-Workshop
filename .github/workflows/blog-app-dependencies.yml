@@ -15,7 +15,8 @@ on:
       - "materials/backend/**"
   workflow_dispatch:
   schedule:
-    - cron: "24 3 * * 1"
+    # Quarterly on Jan/Apr/Jul/Oct 1 at 03:24 UTC (12:24 JST).
+    - cron: "24 3 1 1,4,7,10 *"
 
 permissions:
   contents: read
